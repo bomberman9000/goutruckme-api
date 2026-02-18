@@ -234,9 +234,14 @@
                             </div>
                             
                             <!-- AI Filter -->
-                            <button onclick="aiFilter()" class="w-full px-4 py-2 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark rounded-lg text-sm font-semibold transition-all transform hover:scale-[1.02] active:scale-[0.98]">
-                                🤖 AI: Подобрать за меня
-                            </button>
+                            <div class="flex flex-col gap-2">
+                                <button onclick="aiFilter()" class="w-full px-4 py-2 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark rounded-lg text-sm font-semibold transition-all transform hover:scale-[1.02] active:scale-[0.98]">
+                                    🤖 AI: Подобрать за меня
+                                </button>
+                                <button onclick="openBestLoadsModal()" class="w-full px-4 py-2 bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/30 text-yellow-300 rounded-lg text-sm font-semibold transition-all transform hover:scale-[1.02] active:scale-[0.98]">
+                                    ⚡ Лучшие 3 рейса
+                                </button>
+                            </div>
                             
                             <!-- Reset -->
                             <button onclick="clearAllFilters()" class="w-full px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg text-sm transition-all">
@@ -252,7 +257,12 @@
                         <!-- Table Header with Active Filters -->
                         <div class="p-4 border-b border-dark-border">
                             <div class="flex items-center justify-between mb-3">
-                                <h2 class="text-lg font-semibold">Грузы</h2>
+                                <div class="flex items-center gap-2">
+                                    <h2 class="text-lg font-semibold">Грузы</h2>
+                                    <span id="loadsCompactBadge" class="hidden px-2 py-1 text-xs rounded-full border border-yellow-500/30 bg-yellow-500/10 text-yellow-300">
+                                        Компактный режим
+                                    </span>
+                                </div>
                                 <div class="flex items-center gap-2">
                                     <button onclick="openColumnSettings()" class="p-2 hover:bg-dark-border rounded-lg transition-all" title="Настройки колонок">
                                         ⚙️
@@ -269,61 +279,10 @@
                         <!-- Table -->
                         <div class="overflow-x-auto">
                             <table class="w-full">
-                                <thead class="bg-dark border-b border-dark-border sticky top-0 z-10">
-                                    <tr>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase cursor-pointer hover:bg-dark-border/50 transition-colors" 
-                                            onclick="sortTable('weight')" data-column="cargo_weight">
-                                            <div class="flex items-center gap-2">
-                                                Груз / вес
-                                                <span id="sort-weight-icon" class="text-gray-500">⇅</span>
-                                            </div>
-                                        </th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase cursor-pointer hover:bg-dark-border/50 transition-colors" 
-                                            onclick="sortTable('route')" data-column="route">
-                                            <div class="flex items-center gap-2">
-                                                Маршрут
-                                                <span id="sort-route-icon" class="text-gray-500">⇅</span>
-                                            </div>
-                                        </th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase cursor-pointer hover:bg-dark-border/50 transition-colors" 
-                                            onclick="sortTable('price')" data-column="price">
-                                            <div class="flex items-center gap-2">
-                                                Ставка / за км
-                                                <span id="sort-price-icon" class="text-gray-500">⇅</span>
-                                            </div>
-                                        </th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase cursor-pointer hover:bg-dark-border/50 transition-colors" 
-                                            onclick="sortTable('date')" data-column="date">
-                                            <div class="flex items-center gap-2">
-                                                Дата / время
-                                                <span id="sort-date-icon" class="text-gray-500">⇅</span>
-                                            </div>
-                                        </th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase" data-column="truck_type">
-                                            Тип машины
-                                        </th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase cursor-pointer hover:bg-dark-border/50 transition-colors" 
-                                            onclick="sortTable('distance')" data-column="distance">
-                                            <div class="flex items-center gap-2">
-                                                Дистанция
-                                                <span id="sort-distance-icon" class="text-gray-500">⇅</span>
-                                            </div>
-                                        </th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase cursor-pointer hover:bg-dark-border/50 transition-colors" 
-                                            onclick="sortTable('risk')" data-column="risk">
-                                            <div class="flex items-center gap-2">
-                                                AI-риск
-                                                <span id="sort-risk-icon" class="text-gray-500">⇅</span>
-                                            </div>
-                                        </th>
-                                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase" data-column="actions">
-                                            Действия
-                                        </th>
-                                    </tr>
-                                </thead>
+                                <thead id="loadsTableHead" class="bg-dark border-b border-dark-border sticky top-0 z-10"></thead>
                                 <tbody id="loadsTableBody" class="divide-y divide-dark-border">
                                     <tr>
-                                        <td colspan="8" class="px-4 py-8 text-center text-gray-400">
+                                        <td colspan="9" class="px-4 py-8 text-center text-gray-400">
                                             Загрузка грузов...
                                         </td>
                                     </tr>
@@ -812,13 +771,149 @@
 
         <!-- PAGE: MODERATION (Модерация) -->
         <div id="page-moderation" class="page-content hidden">
-            <div class="bg-dark-card border border-dark-border rounded-xl p-6">
-                <h2 class="text-2xl font-bold mb-6">⚖️ AI Модерация</h2>
-                <p class="text-gray-400">Раздел в разработке...</p>
+            <div class="space-y-4">
+                <div class="bg-dark-card border border-dark-border rounded-xl p-4">
+                    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                        <div>
+                            <h2 class="text-2xl font-bold">⚖️ AI Модерация</h2>
+                            <p class="text-sm text-gray-400 mt-1">Очередь проверки сделок и документов: rules-only или rules+Ollama</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <select id="moderationEntityType" onchange="loadModerationReviews(true)" class="px-3 py-2 bg-dark border border-dark-border rounded-lg text-sm focus:outline-none focus:border-purple">
+                                <option value="deal">Сделки</option>
+                                <option value="document">Документы</option>
+                            </select>
+                            <button onclick="discoverModerationCandidates()" class="px-3 py-2 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 rounded-lg text-sm transition-all">
+                                Найти новые
+                            </button>
+                            <button onclick="moderationReviewSelected()" class="px-3 py-2 bg-purple/20 hover:bg-purple/30 border border-purple/30 rounded-lg text-sm transition-all">
+                                Проверить выбранные
+                            </button>
+                            <button onclick="moderationMarkSelectedDone()" class="px-3 py-2 bg-green-500/20 hover:bg-green-500/30 border border-green-500/30 rounded-lg text-sm transition-all">
+                                Пометить как обработано
+                            </button>
+                            <button onclick="loadModerationReviews(true)" class="px-3 py-2 bg-dark border border-dark-border hover:border-purple rounded-lg text-sm transition-all">
+                                Обновить
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex flex-wrap gap-2">
+                        <button onclick="setModerationStatusTab('pending')" data-moderation-tab="pending" class="moderation-status-tab px-3 py-2 text-sm rounded-lg border border-dark-border bg-dark hover:border-purple transition-all">
+                            Pending
+                        </button>
+                        <button onclick="setModerationStatusTab('done')" data-moderation-tab="done" class="moderation-status-tab px-3 py-2 text-sm rounded-lg border border-dark-border bg-dark hover:border-purple transition-all">
+                            Done
+                        </button>
+                        <button onclick="setModerationStatusTab('error')" data-moderation-tab="error" class="moderation-status-tab px-3 py-2 text-sm rounded-lg border border-dark-border bg-dark hover:border-purple transition-all">
+                            Error
+                        </button>
+                    </div>
+                </div>
+
+                <div id="moderationLoading" class="hidden bg-dark-card border border-dark-border rounded-xl p-6 text-gray-400">
+                    Загрузка модерации...
+                </div>
+
+                <div id="moderationError" class="hidden bg-red-500/10 border border-red-500/30 rounded-xl p-6 text-red-300">
+                    <div id="moderationErrorText" class="mb-3">Не удалось загрузить модерацию</div>
+                    <button onclick="loadModerationReviews(true)" class="px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 transition-all">
+                        Повторить
+                    </button>
+                </div>
+
+                <div id="moderationEmpty" class="hidden bg-dark-card border border-dark-border rounded-xl p-6 text-center text-gray-400">
+                    Нет объектов на модерации
+                </div>
+
+                <div id="moderationTableWrap" class="bg-dark-card border border-dark-border rounded-xl overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-dark border-b border-dark-border">
+                                <tr>
+                                    <th class="px-3 py-3 text-left text-xs uppercase text-gray-400">
+                                        <input id="moderationSelectAll" type="checkbox" onchange="toggleModerationSelectAll(this.checked)">
+                                    </th>
+                                    <th class="px-3 py-3 text-left text-xs uppercase text-gray-400">Объект</th>
+                                    <th class="px-3 py-3 text-left text-xs uppercase text-gray-400">Риск</th>
+                                    <th class="px-3 py-3 text-left text-xs uppercase text-gray-400">Trust</th>
+                                    <th class="px-3 py-3 text-left text-xs uppercase text-gray-400">Флаги</th>
+                                    <th class="px-3 py-3 text-left text-xs uppercase text-gray-400">Комментарий</th>
+                                    <th class="px-3 py-3 text-left text-xs uppercase text-gray-400">Обновлён</th>
+                                    <th class="px-3 py-3 text-left text-xs uppercase text-gray-400">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="moderationTableBody" class="divide-y divide-dark-border">
+                                <tr>
+                                    <td colspan="8" class="px-4 py-8 text-center text-gray-400">Загрузка...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
 
     </main>
+
+    <!-- Modal: Best Loads -->
+    <div id="modal-bestLoads" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+        <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-3xl w-full mx-4">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-bold">⚡ Лучшие 3 рейса сегодня</h3>
+                <button onclick="closeModal('bestLoads')" class="text-gray-400 hover:text-white">✕</button>
+            </div>
+            <div id="bestLoadsContent" class="space-y-3 max-h-[60vh] overflow-y-auto">
+                <div class="text-gray-400">Загрузка...</div>
+            </div>
+            <div class="flex justify-end mt-5">
+                <button onclick="closeModal('bestLoads')" class="px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg transition-all">
+                    Закрыть
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Column Settings -->
+    <div id="modal-columnSettings" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+        <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-bold">Настройка колонок</h3>
+                <button onclick="closeModal('columnSettings')" class="text-gray-400 hover:text-white transition-colors">✕</button>
+            </div>
+
+            <div class="space-y-3">
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="applyColumnsPreset('compact')" class="px-3 py-1.5 text-sm bg-dark border border-dark-border hover:border-purple rounded-lg transition-all">
+                        Компактный
+                    </button>
+                    <button onclick="applyColumnsPreset('expanded')" class="px-3 py-1.5 text-sm bg-dark border border-dark-border hover:border-purple rounded-lg transition-all">
+                        Расширенный
+                    </button>
+                    <button onclick="applyColumnsPreset('ai_only')" class="px-3 py-1.5 text-sm bg-dark border border-dark-border hover:border-purple rounded-lg transition-all">
+                        Только AI
+                    </button>
+                </div>
+                <div class="text-xs text-gray-400">
+                    Перетаскивайте строки за маркер `⋮⋮`, чтобы изменить порядок колонок.
+                </div>
+                <div id="columnSettingsList" class="space-y-2"></div>
+            </div>
+
+            <div class="flex flex-wrap gap-2 justify-between pt-5 mt-5 border-t border-dark-border">
+                <button onclick="resetColumnsToDefault()" class="px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg transition-all text-sm">
+                    Сбросить по умолчанию
+                </button>
+                <div class="flex gap-2">
+                    <button onclick="closeModal('columnSettings')" class="px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg transition-all text-sm">
+                        Отмена
+                    </button>
+                    <button onclick="saveColumnsSettings()" class="px-4 py-2 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark rounded-lg transition-all text-sm font-semibold">
+                        Сохранить
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- ChatGPT Widget -->
     <div id="chatWidget" class="fixed bottom-4 right-4 w-96 bg-dark-card border border-dark-border rounded-xl shadow-2xl hidden flex flex-col" style="height: 600px; z-index: 1000;">
@@ -1916,6 +2011,414 @@
             admin: 'Администратор'
         };
 
+        const moderationState = {
+            tab: 'pending',
+            rows: [],
+            loading: false,
+            selected: {},
+            entityType: 'deal',
+        };
+
+        function moderationCanAccess() {
+            const role = normalizeRole((currentUser && (currentUser.role || currentUser.role_raw)) || analyticsState.role);
+            return role === 'admin' || role === 'forwarder';
+        }
+
+        function moderationHeaders() {
+            if (!authToken) {
+                throw new Error('Нужна авторизация');
+            }
+            return {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json',
+            };
+        }
+
+        function moderationSetLoading(isLoading) {
+            const loading = document.getElementById('moderationLoading');
+            const tableWrap = document.getElementById('moderationTableWrap');
+            if (loading) loading.classList.toggle('hidden', !isLoading);
+            if (tableWrap) tableWrap.classList.toggle('hidden', isLoading);
+        }
+
+        function moderationSetError(message) {
+            const box = document.getElementById('moderationError');
+            const text = document.getElementById('moderationErrorText');
+            if (text) text.textContent = message || 'Ошибка модерации';
+            if (box) box.classList.remove('hidden');
+        }
+
+        function moderationClearError() {
+            const box = document.getElementById('moderationError');
+            if (box) box.classList.add('hidden');
+        }
+
+        function moderationRiskBadge(level) {
+            const normalized = String(level || 'low').toLowerCase();
+            if (normalized === 'high') {
+                return '<span class="px-2 py-0.5 rounded text-xs border bg-red-500/20 text-red-400 border-red-500/30">HIGH</span>';
+            }
+            if (normalized === 'medium') {
+                return '<span class="px-2 py-0.5 rounded text-xs border bg-yellow-500/20 text-yellow-400 border-yellow-500/30">MEDIUM</span>';
+            }
+            return '<span class="px-2 py-0.5 rounded text-xs border bg-green-500/20 text-green-400 border-green-500/30">LOW</span>';
+        }
+
+        function moderationTrustCell(row) {
+            const starsRaw = Number(row?.trust_stars);
+            if (!Number.isFinite(starsRaw) || starsRaw <= 0) {
+                return '<span class="text-gray-500">—</span>';
+            }
+            const rounded = Math.max(1, Math.min(5, Math.round(starsRaw)));
+            const scoreRaw = Number(row?.trust_score);
+            const scoreText = Number.isFinite(scoreRaw) ? ` ${Math.round(scoreRaw)}/100` : '';
+            return `<span class="text-xs">${'★'.repeat(rounded)}${'☆'.repeat(5 - rounded)}${scoreText}</span>`;
+        }
+
+        function moderationFlagsCell(flags) {
+            const list = Array.isArray(flags) ? flags : [];
+            if (list.length === 0) return '<span class="text-gray-500">—</span>';
+            return list.slice(0, 4).map(flag => (
+                `<span class="inline-flex mr-1 mb-1 px-2 py-0.5 rounded border border-dark-border bg-dark text-xs">${escapeHtml(flag)}</span>`
+            )).join('');
+        }
+
+        function moderationTabButtons() {
+            document.querySelectorAll('.moderation-status-tab').forEach(btn => {
+                const active = btn.dataset.moderationTab === moderationState.tab;
+                btn.classList.toggle('bg-gradient-to-r', active);
+                btn.classList.toggle('from-purple', active);
+                btn.classList.toggle('to-blue', active);
+                btn.classList.toggle('text-white', active);
+                btn.classList.toggle('border-purple', active);
+            });
+            const entityTypeSelect = document.getElementById('moderationEntityType');
+            if (entityTypeSelect && entityTypeSelect.value !== moderationState.entityType) {
+                entityTypeSelect.value = moderationState.entityType;
+            }
+        }
+
+        function setModerationStatusTab(tab) {
+            if (!['pending', 'done', 'error'].includes(tab)) return;
+            moderationState.tab = tab;
+            moderationState.selected = {};
+            moderationTabButtons();
+            loadModerationReviews(true);
+        }
+
+        function toggleModerationSelect(reviewId, checked) {
+            if (!reviewId) return;
+            if (checked) {
+                moderationState.selected[reviewId] = true;
+            } else {
+                delete moderationState.selected[reviewId];
+            }
+            syncModerationSelectAll();
+        }
+
+        function toggleModerationSelectAll(checked) {
+            moderationState.selected = {};
+            if (checked) {
+                moderationState.rows.forEach(row => {
+                    if (row && row.id) moderationState.selected[row.id] = true;
+                });
+            }
+            renderModerationRows();
+        }
+
+        function syncModerationSelectAll() {
+            const selectAll = document.getElementById('moderationSelectAll');
+            if (!selectAll) return;
+            const total = moderationState.rows.filter(row => row && row.id).length;
+            const selected = Object.keys(moderationState.selected).length;
+            selectAll.checked = total > 0 && selected === total;
+        }
+
+        function getSelectedModerationRows() {
+            const selectedIds = new Set(Object.keys(moderationState.selected).map(value => Number(value)));
+            return moderationState.rows.filter(row => selectedIds.has(Number(row.id)));
+        }
+
+        function moderationFormatObjectLink(row) {
+            const label = `${escapeHtml(row.entity_type)} #${Number(row.entity_id || 0)}`;
+            return `<button onclick="openModerationEntity('${escapeHtml(row.entity_type)}', ${Number(row.entity_id || 0)})" class="text-blue hover:text-blue-dark underline underline-offset-2">${label}</button>`;
+        }
+
+        function renderModerationRows() {
+            moderationTabButtons();
+
+            const empty = document.getElementById('moderationEmpty');
+            const tableWrap = document.getElementById('moderationTableWrap');
+            const tbody = document.getElementById('moderationTableBody');
+            if (!tbody) return;
+
+            if (!moderationState.rows || moderationState.rows.length === 0) {
+                if (empty) empty.classList.remove('hidden');
+                if (tableWrap) tableWrap.classList.add('hidden');
+                return;
+            }
+
+            if (empty) empty.classList.add('hidden');
+            if (tableWrap) tableWrap.classList.remove('hidden');
+
+            tbody.innerHTML = moderationState.rows.map(row => {
+                const reviewId = Number(row.id || 0);
+                const checked = Boolean(moderationState.selected[reviewId]);
+                const comment = String(row.comment || '').trim();
+                const oneLineComment = escapeHtml(comment.length > 120 ? `${comment.slice(0, 120)}...` : comment || '—');
+
+                const runLabel = row.status === 'done' ? 'Перепроверить' : 'Проверить';
+                const force = row.status === 'done';
+                const doneDisabled = row.status === 'done';
+
+                return `
+                    <tr>
+                        <td class="px-3 py-3">
+                            <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleModerationSelect(${reviewId}, this.checked)">
+                        </td>
+                        <td class="px-3 py-3">${moderationFormatObjectLink(row)}</td>
+                        <td class="px-3 py-3">${moderationRiskBadge(row.risk_level)}</td>
+                        <td class="px-3 py-3">${moderationTrustCell(row)}</td>
+                        <td class="px-3 py-3">${moderationFlagsCell(row.flags)}</td>
+                        <td class="px-3 py-3 text-gray-300" title="${escapeHtml(comment || '')}">${oneLineComment}</td>
+                        <td class="px-3 py-3 text-gray-400">${analyticsFormatDateTime(row.updated_at)}</td>
+                        <td class="px-3 py-3">
+                            <div class="flex flex-wrap gap-1">
+                                <button onclick="moderationRunReview('${escapeHtml(row.entity_type)}', ${Number(row.entity_id || 0)}, ${force})" class="px-2 py-1 rounded text-xs bg-purple/20 hover:bg-purple/30 border border-purple/30 transition-all">
+                                    ${runLabel}
+                                </button>
+                                <button onclick="moderationMarkDone(${reviewId})" ${doneDisabled ? 'disabled' : ''} class="px-2 py-1 rounded text-xs bg-green-500/20 hover:bg-green-500/30 border border-green-500/30 disabled:opacity-50 transition-all">
+                                    Done
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            syncModerationSelectAll();
+        }
+
+        async function loadModerationReviews(force = false) {
+            if (moderationState.loading) return;
+            moderationState.entityType = document.getElementById('moderationEntityType')?.value || moderationState.entityType || 'deal';
+            moderationTabButtons();
+
+            if (!authToken) {
+                moderationSetLoading(false);
+                moderationSetError('Для модерации нужна авторизация (роль admin/forwarder).');
+                return;
+            }
+
+            await fetchCurrentUser();
+            if (!moderationCanAccess()) {
+                moderationSetLoading(false);
+                moderationSetError('Раздел доступен только admin/forwarder.');
+                return;
+            }
+
+            moderationState.loading = true;
+            moderationSetLoading(true);
+            moderationClearError();
+
+            try {
+                const url = `${API_URL}/api/moderation/reviews?status=${encodeURIComponent(moderationState.tab)}&entity_type=${encodeURIComponent(moderationState.entityType)}&limit=100`;
+                const response = await fetch(url, { headers: moderationHeaders() });
+                if (!response.ok) {
+                    let detail = `HTTP ${response.status}`;
+                    try {
+                        const body = await response.json();
+                        if (body?.detail) detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);
+                    } catch (_) {}
+                    throw new Error(detail);
+                }
+                const payload = await response.json();
+                moderationState.rows = Array.isArray(payload) ? payload : [];
+                moderationState.selected = {};
+                renderModerationRows();
+            } catch (error) {
+                moderationState.rows = [];
+                renderModerationRows();
+                moderationSetError(`Ошибка загрузки модерации: ${error.message}`);
+            } finally {
+                moderationState.loading = false;
+                moderationSetLoading(false);
+            }
+        }
+
+        async function moderationRunReview(entityType, entityId, force = false) {
+            try {
+                const response = await fetch(`${API_URL}/api/moderation/review`, {
+                    method: 'POST',
+                    headers: moderationHeaders(),
+                    body: JSON.stringify({
+                        entity_type: entityType,
+                        entity_id: Number(entityId),
+                        force: Boolean(force),
+                    }),
+                });
+                if (!response.ok) {
+                    const body = await response.json().catch(() => ({}));
+                    throw new Error(body?.detail || `HTTP ${response.status}`);
+                }
+                showNotification('✅ Модерация выполнена', 'success');
+                await loadModerationReviews(true);
+            } catch (error) {
+                showNotification(`❌ ${error.message}`, 'error');
+            }
+        }
+
+        async function moderationReviewSelected() {
+            const selectedRows = getSelectedModerationRows();
+            if (selectedRows.length === 0) {
+                showNotification('Выберите записи для проверки', 'error');
+                return;
+            }
+
+            const entityType = selectedRows[0].entity_type;
+            if (!selectedRows.every(row => row.entity_type === entityType)) {
+                showNotification('Выберите записи одного типа (deal/document)', 'error');
+                return;
+            }
+
+            const entityIds = selectedRows.map(row => Number(row.entity_id || 0)).filter(value => value > 0);
+            if (entityIds.length === 0) {
+                showNotification('Нет корректных entity_id для batch', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/api/moderation/review/batch`, {
+                    method: 'POST',
+                    headers: moderationHeaders(),
+                    body: JSON.stringify({
+                        entity_type: entityType,
+                        entity_ids: entityIds,
+                        force: true,
+                    }),
+                });
+                if (!response.ok) {
+                    const body = await response.json().catch(() => ({}));
+                    throw new Error(body?.detail || `HTTP ${response.status}`);
+                }
+                showNotification(`✅ Проверено: ${entityIds.length}`, 'success');
+                await loadModerationReviews(true);
+            } catch (error) {
+                showNotification(`❌ ${error.message}`, 'error');
+            }
+        }
+
+        async function moderationMarkDone(reviewId) {
+            try {
+                const response = await fetch(`${API_URL}/api/moderation/reviews/${Number(reviewId)}`, {
+                    method: 'PATCH',
+                    headers: moderationHeaders(),
+                    body: JSON.stringify({ status: 'done' }),
+                });
+                if (!response.ok) {
+                    const body = await response.json().catch(() => ({}));
+                    throw new Error(body?.detail || `HTTP ${response.status}`);
+                }
+                showNotification('✅ Помечено как обработано', 'success');
+                await loadModerationReviews(true);
+            } catch (error) {
+                showNotification(`❌ ${error.message}`, 'error');
+            }
+        }
+
+        async function moderationMarkSelectedDone() {
+            const selectedRows = getSelectedModerationRows();
+            if (selectedRows.length === 0) {
+                showNotification('Выберите записи для статуса Done', 'error');
+                return;
+            }
+
+            try {
+                await Promise.all(
+                    selectedRows.map(row => fetch(`${API_URL}/api/moderation/reviews/${Number(row.id)}`, {
+                        method: 'PATCH',
+                        headers: moderationHeaders(),
+                        body: JSON.stringify({ status: 'done' }),
+                    }))
+                );
+                showNotification(`✅ Помечено Done: ${selectedRows.length}`, 'success');
+                await loadModerationReviews(true);
+            } catch (error) {
+                showNotification(`❌ ${error.message}`, 'error');
+            }
+        }
+
+        async function discoverModerationCandidates() {
+            const entityType = document.getElementById('moderationEntityType')?.value || moderationState.entityType || 'deal';
+            moderationState.entityType = entityType;
+
+            try {
+                const discoverRes = await fetch(`${API_URL}/api/moderation/discover?entity_type=${encodeURIComponent(entityType)}&limit=50`, {
+                    headers: moderationHeaders(),
+                });
+                if (!discoverRes.ok) {
+                    const body = await discoverRes.json().catch(() => ({}));
+                    throw new Error(body?.detail || `HTTP ${discoverRes.status}`);
+                }
+
+                const discoverPayload = await discoverRes.json();
+                const entityIds = Array.isArray(discoverPayload?.entity_ids) ? discoverPayload.entity_ids : [];
+                if (entityIds.length === 0) {
+                    showNotification('Новых объектов на проверку не найдено', 'info');
+                    await loadModerationReviews(true);
+                    return;
+                }
+
+                const batchRes = await fetch(`${API_URL}/api/moderation/review/batch`, {
+                    method: 'POST',
+                    headers: moderationHeaders(),
+                    body: JSON.stringify({
+                        entity_type: entityType,
+                        entity_ids: entityIds,
+                        force: false,
+                    }),
+                });
+                if (!batchRes.ok) {
+                    const body = await batchRes.json().catch(() => ({}));
+                    throw new Error(body?.detail || `HTTP ${batchRes.status}`);
+                }
+
+                showNotification(`✅ Добавлено и проверено: ${entityIds.length}`, 'success');
+                await loadModerationReviews(true);
+            } catch (error) {
+                showNotification(`❌ ${error.message}`, 'error');
+            }
+        }
+
+        function openModerationEntity(entityType, entityId) {
+            const type = String(entityType || '').toLowerCase();
+            const id = Number(entityId || 0);
+            if (!id) return;
+
+            if (type === 'deal') {
+                showPage('deals');
+                setTimeout(() => {
+                    try {
+                        const deals = window.dealsStore ? window.dealsStore.getDeals() : [];
+                        const localDeal = deals.find(item => Number(item.serverId) === id);
+                        if (localDeal && typeof openDealDetails === 'function') {
+                            openDealDetails(localDeal.id);
+                        } else {
+                            showNotification(`Сделка server_id=${id}. Откройте в списке сделок.`, 'info');
+                        }
+                    } catch (_) {
+                        showNotification(`Сделка server_id=${id}`, 'info');
+                    }
+                }, 250);
+                return;
+            }
+
+            if (type === 'document') {
+                showPage('documents');
+                showNotification(`Документ #${id}. Откройте список документов.`, 'info');
+            }
+        }
+
         function normalizeRole(role) {
             const value = String(role || '').toLowerCase();
             if (value === 'shipper') return 'client';
@@ -1957,6 +2460,8 @@
                 if (typeof loadCarriers === 'function') loadCarriers();
             } else if (page === 'analytics') {
                 loadAnalytics();
+            } else if (page === 'moderation') {
+                loadModerationReviews();
             }
         }
 
@@ -2092,6 +2597,10 @@
                     load.risk_score = 10;
                     load.risk_reasons = [];
                 }
+                const penalty = load.risk_level === 'high' ? 35 : load.risk_level === 'medium' ? 15 : 0;
+                load.ai_score = Math.max(0, Math.min(100, Math.round(60 + (distance <= 300 ? 5 : distance > 1200 ? -5 : 0) - penalty)));
+                load.ai_explain = `Ставка ${load.price_per_km || 0} ₽/км. Риск ${load.risk_level || 'low'}${penalty ? ` снизил балл на ${penalty}` : ' не снижал балл'}.`;
+                load.ai_flags = [];
                 
                 loads.push(load);
             }
@@ -2099,6 +2608,110 @@
             return loads;
         }
         
+        const LOADS_COLUMNS_STORAGE_KEY = 'goutruckme_columns_config';
+        const LOADS_TABLE_COLUMNS = [
+            { key: 'weight', label: 'Груз / Вес', sortable: true, sortKey: 'weight' },
+            { key: 'route', label: 'Маршрут', sortable: true, sortKey: 'route' },
+            { key: 'price', label: 'Ставка / за км', sortable: true, sortKey: 'price' },
+            { key: 'date', label: 'Дата / время', sortable: true, sortKey: 'date' },
+            { key: 'truck_type', label: 'Тип машины', sortable: false },
+            { key: 'distance', label: 'Дистанция', sortable: true, sortKey: 'distance' },
+            { key: 'risk', label: 'AI-Risk', sortable: true, sortKey: 'risk' },
+            { key: 'ai_score', label: 'AI-Score', sortable: true, sortKey: 'ai_score' },
+            { key: 'actions', label: 'Действия', sortable: false }
+        ];
+
+        function getDefaultLoadsColumnsConfig() {
+            const order = LOADS_TABLE_COLUMNS.map((column) => column.key);
+            const visibility = {};
+            order.forEach((key) => {
+                visibility[key] = true;
+            });
+            return { order, visibility };
+        }
+
+        function normalizeLoadsColumnsConfig(config) {
+            const defaults = getDefaultLoadsColumnsConfig();
+            const next = {
+                order: defaults.order.slice(),
+                visibility: { ...defaults.visibility }
+            };
+
+            if (config && typeof config === 'object') {
+                if (Array.isArray(config.order)) {
+                    const sanitizedOrder = config.order.filter((key, index) =>
+                        typeof key === 'string' &&
+                        defaults.order.includes(key) &&
+                        config.order.indexOf(key) === index
+                    );
+                    const missing = defaults.order.filter((key) => !sanitizedOrder.includes(key));
+                    next.order = [...sanitizedOrder, ...missing];
+                }
+
+                if (config.visibility && typeof config.visibility === 'object') {
+                    defaults.order.forEach((key) => {
+                        if (typeof config.visibility[key] === 'boolean') {
+                            next.visibility[key] = config.visibility[key];
+                        }
+                    });
+                }
+            }
+
+            if (!Object.values(next.visibility).some(Boolean)) {
+                next.visibility.route = true;
+            }
+
+            return next;
+        }
+
+        function getOrderedLoadsColumns(config = loadsColumnsConfig) {
+            const normalized = normalizeLoadsColumnsConfig(config);
+            const byKey = new Map(LOADS_TABLE_COLUMNS.map((column) => [column.key, column]));
+            const ordered = [];
+
+            normalized.order.forEach((key) => {
+                if (byKey.has(key)) {
+                    ordered.push(byKey.get(key));
+                    byKey.delete(key);
+                }
+            });
+
+            byKey.forEach((column) => ordered.push(column));
+            return ordered;
+        }
+
+        function getVisibleLoadsColumns(config = loadsColumnsConfig) {
+            const normalized = normalizeLoadsColumnsConfig(config);
+            return getOrderedLoadsColumns(normalized).filter((column) => normalized.visibility[column.key] !== false);
+        }
+
+        function getLoadsTableColspan(config = loadsColumnsConfig) {
+            return Math.max(getVisibleLoadsColumns(config).length, 1);
+        }
+
+        function readLoadsColumnsConfigFromStorage() {
+            try {
+                const raw = localStorage.getItem(LOADS_COLUMNS_STORAGE_KEY);
+                if (!raw) return getDefaultLoadsColumnsConfig();
+                return normalizeLoadsColumnsConfig(JSON.parse(raw));
+            } catch (error) {
+                console.error('Failed to read loads columns config:', error);
+                return getDefaultLoadsColumnsConfig();
+            }
+        }
+
+        function persistLoadsColumnsConfig(config = loadsColumnsConfig) {
+            try {
+                localStorage.setItem(LOADS_COLUMNS_STORAGE_KEY, JSON.stringify(normalizeLoadsColumnsConfig(config)));
+            } catch (error) {
+                console.error('Failed to save loads columns config:', error);
+            }
+        }
+
+        let loadsColumnsConfig = readLoadsColumnsConfigFromStorage();
+        let loadsColumnsDraft = null;
+        let draggedColumnKey = null;
+
         // Состояние менеджера грузов
         let cargoState = {
             allLoads: [],
@@ -2123,6 +2736,65 @@
             itemsPerPage: 20,
             filtersCollapsed: false
         };
+
+        function updateLoadsCompactBadge() {
+            const badge = document.getElementById('loadsCompactBadge');
+            if (!badge) return;
+
+            const hiddenCount = LOADS_TABLE_COLUMNS.filter((column) => loadsColumnsConfig.visibility[column.key] === false).length;
+            if (hiddenCount > 3) {
+                badge.textContent = 'Компактный режим';
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+
+        function renderLoadsTableHeader() {
+            const head = document.getElementById('loadsTableHead');
+            if (!head) return;
+
+            const columns = getVisibleLoadsColumns();
+            head.innerHTML = `
+                <tr>
+                    ${columns.map((column) => {
+                        if (!column.sortable) {
+                            return `
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase" data-column="${column.key}">
+                                    ${column.label}
+                                </th>
+                            `;
+                        }
+
+                        const sortKey = column.sortKey || column.key;
+                        return `
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase cursor-pointer hover:bg-dark-border/50 transition-colors"
+                                onclick="sortTable('${sortKey}')" data-column="${column.key}">
+                                <div class="flex items-center gap-2">
+                                    ${column.label}
+                                    <span id="sort-${sortKey}-icon" class="text-gray-500">⇅</span>
+                                </div>
+                            </th>
+                        `;
+                    }).join('')}
+                </tr>
+            `;
+
+            updateSortIcons();
+        }
+
+        function applyLoadsColumnsConfig(config, options = {}) {
+            const { persist = true, rerender = true } = options;
+            loadsColumnsConfig = normalizeLoadsColumnsConfig(config);
+            if (persist) {
+                persistLoadsColumnsConfig(loadsColumnsConfig);
+            }
+            renderLoadsTableHeader();
+            updateLoadsCompactBadge();
+            if (rerender) {
+                renderTable();
+            }
+        }
         
         // Загрузка состояния из localStorage
         function loadCargoState() {
@@ -2202,9 +2874,17 @@
             const sorted = [...loads].sort((a, b) => {
                 let aVal, bVal;
                 switch (column) {
+                    case 'route':
+                        aVal = `${a.from_city || ''} ${a.to_city || ''}`;
+                        bVal = `${b.from_city || ''} ${b.to_city || ''}`;
+                        break;
                     case 'price':
                         aVal = a.price;
                         bVal = b.price;
+                        break;
+                    case 'ai_score':
+                        aVal = a.ai_score || 0;
+                        bVal = b.ai_score || 0;
                         break;
                     case 'date':
                         aVal = new Date(a.created_at);
@@ -2475,12 +3155,15 @@
         function renderTable() {
             const tbody = document.getElementById('loadsTableBody');
             if (!tbody) return;
+
+            const columns = getVisibleLoadsColumns();
+            const colSpan = getLoadsTableColspan();
             
             if (cargoState.displayedLoads.length === 0) {
                 const hasActiveFilters = Object.values(cargoState.filters).some(v => v !== '');
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="8" class="px-4 py-16 text-center">
+                        <td colspan="${colSpan}" class="px-4 py-16 text-center">
                             <div class="flex flex-col items-center gap-6">
                                 <div class="text-7xl">${hasActiveFilters ? '🔍' : '📦'}</div>
                                 <div class="text-2xl font-semibold">${hasActiveFilters ? 'Пока нет подходящих грузов' : 'Грузов пока нет'}</div>
@@ -2515,7 +3198,6 @@
                 const riskLevel = load.risk_level || 'low';
                 const riskEmoji = window.RiskLabels ? window.RiskLabels.getLevelEmoji(riskLevel) : '⚪';
                 const riskLabel = window.RiskLabels ? window.RiskLabels.getLevelLabel(riskLevel) : riskLevel;
-                const riskColor = window.RiskLabels ? window.RiskLabels.getLevelColor(riskLevel) : 'gray';
                 
                 // Проверка аномалий цены (±30% от медианы)
                 let priceAnomaly = null;
@@ -2560,6 +3242,8 @@
                     high: 'bg-red-500/20 text-red-400 border-red-500/30'
                 };
                 const badgeColor = badgeColors[riskLevel] || badgeColors.low;
+                const aiScore = Math.max(0, Math.min(100, Math.round(Number(load.ai_score || 0))));
+                const aiExplain = escapeHtml(load.ai_explain || 'Без объяснения');
                 
                 // Подсветка строки для High-риска (очень мягкая)
                 const rowClass = riskLevel === 'high' 
@@ -2587,13 +3271,15 @@
                         Взять
                     </button>`;
                 }
-                
-                return `
-                    <tr class="${rowClass}" onclick="showLoadCard(${load.id})">
+
+                const columnCells = {
+                    weight: `
                         <td class="px-4 py-3">
                             <div class="font-semibold">${load.weight || '—'} т / ${load.volume || '—'} м³</div>
                             <div class="text-xs text-gray-400">ID: #${load.id}</div>
                         </td>
+                    `,
+                    route: `
                         <td class="px-4 py-3">
                             <div class="flex items-center gap-2">
                                 <span class="text-blue font-medium">${load.from_city}</span>
@@ -2606,6 +3292,8 @@
                             </div>
                             ` : ''}
                         </td>
+                    `,
+                    price: `
                         <td class="px-4 py-3">
                             <div class="font-semibold ${priceAnomaly === 'low' ? 'text-yellow-400 bg-yellow-500/10 px-2 py-1 rounded' : priceAnomaly === 'high' ? 'text-green-400' : 'text-green-400'}">
                                 ${formatPrice(load.price)}
@@ -2615,6 +3303,8 @@
                                 ${priceAnomaly ? '<span class="text-yellow-400" title="Цена отличается от среднерыночной более чем на 30%">⚠️</span>' : ''}
                             </div>
                         </td>
+                    `,
+                    date: `
                         <td class="px-4 py-3">
                             <div class="text-sm">${formatDate(load.created_at)}</div>
                             <div class="text-xs text-gray-400">${formatTime(load.created_at)}</div>
@@ -2622,12 +3312,18 @@
                             <div class="text-xs text-purple mt-1">Погрузка: ${formatDate(load.loading_date)}</div>
                             ` : ''}
                         </td>
+                    `,
+                    truck_type: `
                         <td class="px-4 py-3">
                             <span class="text-sm">${load.truck_type || '—'}</span>
                         </td>
+                    `,
+                    distance: `
                         <td class="px-4 py-3">
                             <span class="text-sm">${formatDistance(load.distance)}</span>
                         </td>
+                    `,
+                    risk: `
                         <td class="px-4 py-3">
                             <div class="relative inline-block group">
                                 <span class="px-2 py-1 rounded text-xs border ${badgeColor} cursor-help">
@@ -2643,9 +3339,29 @@
                                 ` : ''}
                             </div>
                         </td>
+                    `,
+                    ai_score: `
+                        <td class="px-4 py-3">
+                            <div class="relative inline-block group">
+                                <span class="px-2 py-1 rounded text-xs border border-purple/30 bg-purple/20 text-purple cursor-help">
+                                    ${aiScore}/100
+                                </span>
+                                <div class="absolute left-0 bottom-full mb-2 hidden group-hover:block z-20 w-72 p-3 bg-dark-card border border-dark-border rounded-lg shadow-xl text-xs text-gray-300">
+                                    ${aiExplain}
+                                </div>
+                            </div>
+                        </td>
+                    `,
+                    actions: `
                         <td class="px-4 py-3" onclick="event.stopPropagation()">
                             ${takeButtonHTML}
                         </td>
+                    `
+                };
+                
+                return `
+                    <tr class="${rowClass}" onclick="showLoadCard(${load.id})">
+                        ${columns.map((column) => columnCells[column.key] || '').join('')}
                     </tr>
                 `;
             }).join('');
@@ -2711,16 +3427,126 @@
             saveCargoState();
         }
         
-        // Настройки колонок (заглушка)
+        function renderColumnsSettingsDraft() {
+            const container = document.getElementById('columnSettingsList');
+            if (!container || !loadsColumnsDraft) return;
+
+            const orderedColumns = getOrderedLoadsColumns(loadsColumnsDraft);
+            container.innerHTML = orderedColumns.map((column) => {
+                const isVisible = loadsColumnsDraft.visibility[column.key] !== false;
+                return `
+                    <div class="flex items-center gap-3 px-3 py-2 bg-dark border border-dark-border rounded-lg transition-all hover:border-purple/60"
+                         draggable="true"
+                         ondragstart="onColumnDragStart(event, '${column.key}')"
+                         ondragover="onColumnDragOver(event)"
+                         ondragleave="onColumnDragLeave(event)"
+                         ondrop="onColumnDrop(event, '${column.key}')">
+                        <span class="text-gray-500 select-none">⋮⋮</span>
+                        <input type="checkbox" class="accent-purple" ${isVisible ? 'checked' : ''} onchange="toggleDraftColumnVisibility('${column.key}', this.checked)">
+                        <span class="flex-1 text-sm">${column.label}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
         function openColumnSettings() {
-            alert('Настройки колонок в разработке...');
+            loadsColumnsDraft = normalizeLoadsColumnsConfig(loadsColumnsConfig);
+            renderColumnsSettingsDraft();
+            openModal('columnSettings');
+        }
+
+        function onColumnDragStart(event, key) {
+            draggedColumnKey = key;
+            if (event.dataTransfer) {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', key);
+            }
+        }
+
+        function onColumnDragOver(event) {
+            event.preventDefault();
+            event.currentTarget.classList.add('border-purple', 'bg-purple/5');
+        }
+
+        function onColumnDragLeave(event) {
+            event.currentTarget.classList.remove('border-purple', 'bg-purple/5');
+        }
+
+        function onColumnDrop(event, targetKey) {
+            event.preventDefault();
+            event.currentTarget.classList.remove('border-purple', 'bg-purple/5');
+            if (!loadsColumnsDraft) return;
+
+            const sourceKey = draggedColumnKey || (event.dataTransfer ? event.dataTransfer.getData('text/plain') : null);
+            draggedColumnKey = null;
+            if (!sourceKey || sourceKey === targetKey) return;
+
+            const order = [...loadsColumnsDraft.order];
+            const sourceIndex = order.indexOf(sourceKey);
+            if (sourceIndex < 0) return;
+
+            order.splice(sourceIndex, 1);
+            const targetIndex = order.indexOf(targetKey);
+            if (targetIndex < 0) return;
+            order.splice(targetIndex, 0, sourceKey);
+            loadsColumnsDraft.order = order;
+            renderColumnsSettingsDraft();
+        }
+
+        function toggleDraftColumnVisibility(key, isVisible) {
+            if (!loadsColumnsDraft) return;
+            loadsColumnsDraft.visibility[key] = Boolean(isVisible);
+
+            if (!Object.values(loadsColumnsDraft.visibility).some(Boolean)) {
+                loadsColumnsDraft.visibility[key] = true;
+                showNotification('Оставьте минимум одну колонку', 'error');
+                renderColumnsSettingsDraft();
+            }
+        }
+
+        function applyColumnsPreset(preset) {
+            if (!loadsColumnsDraft) return;
+
+            const allKeys = LOADS_TABLE_COLUMNS.map((column) => column.key);
+            const presetMap = {
+                compact: ['route', 'price', 'risk', 'ai_score', 'actions'],
+                expanded: allKeys,
+                ai_only: ['route', 'risk', 'ai_score']
+            };
+            const selected = presetMap[preset];
+            if (!selected) return;
+
+            const selectedSet = new Set(selected);
+            const currentOrder = getOrderedLoadsColumns(loadsColumnsDraft).map((column) => column.key);
+            loadsColumnsDraft.order = [...selected, ...currentOrder.filter((key) => !selectedSet.has(key))];
+            loadsColumnsDraft.visibility = {};
+            allKeys.forEach((key) => {
+                loadsColumnsDraft.visibility[key] = selectedSet.has(key);
+            });
+
+            renderColumnsSettingsDraft();
+        }
+
+        function resetColumnsToDefault() {
+            loadsColumnsDraft = getDefaultLoadsColumnsConfig();
+            renderColumnsSettingsDraft();
+        }
+
+        function saveColumnsSettings() {
+            if (!loadsColumnsDraft) return;
+            applyLoadsColumnsConfig(loadsColumnsDraft, { persist: true, rerender: true });
+            closeModal('columnSettings');
+            showNotification('✅ Настройки колонок сохранены', 'success');
         }
         
         // Load Loads Table (обновленная версия)
         async function loadLoads() {
+            loadsColumnsConfig = readLoadsColumnsConfigFromStorage();
+            applyLoadsColumnsConfig(loadsColumnsConfig, { persist: false, rerender: false });
+
             const tbody = document.getElementById('loadsTableBody');
             if (tbody) {
-                tbody.innerHTML = '<tr><td colspan="8" class="px-4 py-8 text-center text-gray-400">Загрузка...</td></tr>';
+                tbody.innerHTML = `<tr><td colspan="${getLoadsTableColspan()}" class="px-4 py-8 text-center text-gray-400">Загрузка...</td></tr>`;
             }
 
             try {
@@ -2732,12 +3558,15 @@
                     // Добавляем мок-данные к реальным
                     cargoState.allLoads = apiLoads.map(load => ({
                         ...load,
-                        distance: load.distance || Math.round(Math.random() * 2000 + 500),
-                        price_per_km: load.price_per_km || Math.round(load.price / (load.distance || 1000)),
+                        distance: load.distance || load.distance_km || Math.round(Math.random() * 2000 + 500),
+                        price_per_km: load.price_per_km || load.rate_per_km || Math.round(load.price / (load.distance || load.distance_km || 1000)),
                         truck_type: load.truck_type || 'Тент',
-                        risk_level: load.risk_level || 'low',
+                        risk_level: load.ai_risk || load.risk_level || 'low',
                         risk_score: load.risk_score || Math.round(Math.random() * 30 + 10),
-                        risk_reasons: load.risk_reasons || []
+                        risk_reasons: load.risk_reasons || [],
+                        ai_score: Number.isFinite(Number(load.ai_score)) ? Number(load.ai_score) : 50,
+                        ai_explain: load.ai_explain || '',
+                        ai_flags: Array.isArray(load.ai_flags) ? load.ai_flags : []
                     }));
                 } else {
                     // Используем только моки
@@ -3493,6 +4322,10 @@
             loadData.risk_level = risk.level;
             loadData.risk_score = risk.score;
             loadData.risk_reasons = risk.reasons;
+            const riskPenalty = risk.level === 'high' ? 35 : risk.level === 'medium' ? 15 : 0;
+            loadData.ai_score = Math.max(0, Math.min(100, Math.round(60 - riskPenalty)));
+            loadData.ai_explain = `Недостаточно статистики, использована базовая оценка. Риск ${risk.level}${riskPenalty ? ` снизил балл на ${riskPenalty}` : ''}.`;
+            loadData.ai_flags = [];
             
             try {
                 // Пытаемся отправить на API
@@ -3649,7 +4482,89 @@
         }
 
         function aiFilter() {
-            alert('🤖 AI фильтр в разработке...');
+            cargoState.sortState.column = 'ai_score';
+            cargoState.sortState.order = 'desc';
+            cargoState.currentPage = 1;
+            applyFiltersAndSort();
+            saveCargoState();
+            showNotification('🤖 Грузы отсортированы по AI SCORE', 'info');
+        }
+
+        function renderBestLoadsList(loads) {
+            const container = document.getElementById('bestLoadsContent');
+            if (!container) return;
+
+            if (!Array.isArray(loads) || loads.length === 0) {
+                container.innerHTML = '<div class="text-gray-400">Подходящих рейсов пока нет</div>';
+                return;
+            }
+
+            container.innerHTML = loads.map((load, index) => {
+                const id = Number(load.id || 0);
+                const fromCity = escapeHtml(load.from_city || (load.route ? String(load.route).split('→')[0].trim() : '—'));
+                const toCity = escapeHtml(load.to_city || (load.route ? String(load.route).split('→')[1]?.trim() : '—'));
+                const aiScore = Math.max(0, Math.min(100, Math.round(Number(load.ai_score || 0))));
+                const explain = escapeHtml(load.ai_explain || 'Без объяснения');
+                const distance = load.distance_km || load.distance;
+                const price = Number(load.price || 0);
+                const rate = Number(load.rate_per_km || load.price_per_km || 0);
+                const risk = String(load.ai_risk || load.risk_level || 'low').toLowerCase();
+                const riskClass = risk === 'high'
+                    ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                    : risk === 'medium'
+                        ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                        : 'bg-green-500/20 text-green-400 border-green-500/30';
+
+                return `
+                    <div class="p-4 rounded-xl border border-dark-border bg-dark">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <div class="text-sm text-gray-400">#${index + 1} в подборке</div>
+                                <div class="font-semibold mt-1">${fromCity} → ${toCity}</div>
+                                <div class="text-sm text-gray-300 mt-1">${formatPrice(price)} • ${distance ? formatDistance(distance) : '—'} • ${rate ? Math.round(rate) : '—'} ₽/км</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="px-2 py-1 rounded text-xs border border-purple/30 bg-purple/20 text-purple">${aiScore}/100</div>
+                                <div class="mt-2">
+                                    <span class="px-2 py-0.5 rounded text-xs border ${riskClass}">${risk.toUpperCase()}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-xs text-gray-400 mt-3">${explain}</div>
+                        <div class="mt-3">
+                            <button onclick="closeModal('bestLoads'); openTakeCargoModal(${id})" class="px-3 py-1 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark rounded text-xs font-semibold transition-all">
+                                Взять
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function openBestLoadsModal() {
+            openModal('bestLoads');
+            const container = document.getElementById('bestLoadsContent');
+            if (container) {
+                container.innerHTML = '<div class="text-gray-400">Загрузка лучших рейсов...</div>';
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/api/ai/best-loads?limit=3`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const payload = await response.json();
+                renderBestLoadsList(Array.isArray(payload) ? payload : []);
+            } catch (error) {
+                const localTop = [...(cargoState.allLoads || [])]
+                    .sort((a, b) => {
+                        const scoreDiff = (Number(b.ai_score || 0) - Number(a.ai_score || 0));
+                        if (scoreDiff !== 0) return scoreDiff;
+                        return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+                    })
+                    .slice(0, 3);
+                renderBestLoadsList(localTop);
+            }
         }
 
         // Модалка подтверждения взятия груза
@@ -4401,6 +5316,7 @@
             dealsState.allDeals = window.dealsStore.getDeals();
             filterAndSortDeals();
             await fetchDealsModeration();
+            await prefetchTrustForDeals(dealsState.allDeals);
             renderDealsTable();
         }
         
@@ -4485,6 +5401,9 @@
             
             tbody.innerHTML = dealsState.displayedDeals.map(deal => {
                 const cargo = window.dealsStore.getDealCargo(deal, cargoState.allLoads);
+                const carrierCompanyId = getDealCarrierCompanyId(deal);
+                const carrierTrust = getCachedTrust(carrierCompanyId);
+                const trustBadgeCompact = renderTrustBadge(carrierTrust, { compact: true });
                 // Статус бейдж
                 const statusEmoji = window.DealLabels ? window.DealLabels.getStatusEmoji(deal.status) : '⚪';
                 const statusLabel = window.DealLabels ? window.DealLabels.getStatusLabel(deal.status) : deal.status;
@@ -4546,7 +5465,7 @@
                                     ${statusEmoji} ${statusLabel}
                                 </span>
                             </td>
-                            <td class="px-4 py-3">${riskBadge}</td>
+                            <td class="px-4 py-3"><div class="space-y-2">${riskBadge}${trustBadgeCompact}</div></td>
                             <td class="px-4 py-3" onclick="event.stopPropagation()">
                                 ${actionsHTML}
                             </td>
@@ -4585,6 +5504,7 @@
                                 ${riskBadge}
                                 ${mod && (mod.comment || (mod.flags && mod.flags.length)) ? '<div class="absolute left-0 bottom-full mb-2 hidden group-hover:block z-20 w-72 p-3 bg-dark-card border border-dark-border rounded-lg shadow-xl text-xs"><div class="font-semibold mb-2 text-gray-300 border-b border-dark-border pb-2">Модерация</div><div class="text-gray-400">' + (mod.comment || '') + '</div>' + (mod.flags && mod.flags.length ? '<div class="mt-2 text-gray-500">Флаги: ' + mod.flags.join(', ') + '</div>' : '') + '</div>' : ''}
                             </div>
+                            ${trustBadgeCompact}
                         </td>
                         <td class="px-4 py-3" onclick="event.stopPropagation()">
                             ${actionsHTML}
@@ -4618,7 +5538,7 @@
         }
         
         // Открытие деталей сделки
-        function openDealDetails(dealId) {
+        async function openDealDetails(dealId) {
             if (!window.dealsStore) {
                 alert('❌ Система сделок не загружена');
                 return;
@@ -4629,6 +5549,10 @@
                 alert('❌ Сделка не найдена');
                 return;
             }
+
+            try {
+                await prefetchTrustForDeals([deal]);
+            } catch (_) {}
 
             const cargo = window.dealsStore.getDealCargo(deal, cargoState.allLoads);
             const container = document.getElementById('dealDetailsContent');
@@ -4644,6 +5568,10 @@
             const hasContract = window.documentsStore ? window.documentsStore.hasDocument(dealId, 'CONTRACT') : false;
             const hasTTN = window.documentsStore ? window.documentsStore.hasDocument(dealId, 'TTN') : false;
             const hasUPD = window.documentsStore ? window.documentsStore.hasDocument(dealId, 'UPD') : false;
+            const carrierTrustBadge = renderTrustBadge(getCachedTrust(getDealCarrierCompanyId(deal)), { compact: false });
+            const counterpartyTrustBadge = deal.counterpartyId
+                ? renderTrustBadge(getCachedTrust(getDealClientCompanyId(deal)), { compact: false })
+                : '';
             
             // Проверка: документы недоступны для отменённых сделок
             const documentsDisabled = deal.status === 'CANCELLED';
@@ -4899,6 +5827,7 @@
                             <div class="font-semibold">${deal.carrier.name}</div>
                             ${deal.carrier.phone ? `<div class="text-gray-400">📞 ${deal.carrier.phone}</div>` : ''}
                             ${deal.carrier.telegram ? `<div class="text-gray-400">💬 ${deal.carrier.telegram}</div>` : ''}
+                            ${carrierTrustBadge}
                         </div>
                     </div>
                     
@@ -4934,6 +5863,7 @@
                                     return '';
                                 })() : '<div class="text-sm text-gray-400 italic">Клиент не выбран</div>'}
                             </div>
+                            ${counterpartyTrustBadge}
                         </div>
                     </div>
                     
@@ -4969,6 +5899,7 @@
                                     return '';
                                 })() : '<div class="text-sm text-gray-400 italic">Клиент не выбран</div>'}
                             </div>
+                            ${counterpartyTrustBadge}
                         </div>
                     </div>
                     
@@ -5453,6 +6384,204 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
                 .replace(/'/g, '&#39;');
         }
 
+        const trustState = {
+            cache: {},
+            pending: {}
+        };
+
+        const trustComponentLabels = {
+            history: 'История',
+            success: 'Успех',
+            disputes: 'Претензии',
+            risk: 'Риск',
+            profile: 'Профиль',
+            speed: 'Скорость'
+        };
+
+        function toCompanyId(value) {
+            const num = Number(value);
+            if (!Number.isFinite(num) || num <= 0) return null;
+            return Math.floor(num);
+        }
+
+        function getDefaultTrustPayload(companyId = 0) {
+            return {
+                company_id: companyId || 0,
+                trust_score: 50,
+                stars: 3,
+                components: {
+                    history: 0,
+                    success: 0,
+                    disputes: 0,
+                    risk: 0,
+                    profile: 0,
+                    speed: 0
+                },
+                signals: {
+                    deals_total: 0,
+                    deals_total_bucket: '0-2',
+                    flags_high: 0
+                },
+                flags: ['insufficient_data'],
+                updated_at: null
+            };
+        }
+
+        function normalizeTrustPayload(raw, fallbackCompanyId = 0) {
+            const base = getDefaultTrustPayload(fallbackCompanyId);
+            if (!raw || typeof raw !== 'object') return base;
+
+            const trustScore = Number(raw.trust_score);
+            const starsRaw = Number(raw.stars);
+            const stars = Number.isFinite(starsRaw) ? Math.max(1, Math.min(5, Math.round(starsRaw))) : 3;
+
+            return {
+                company_id: Number(raw.company_id || fallbackCompanyId || 0),
+                trust_score: Number.isFinite(trustScore) ? Math.max(0, Math.min(100, Math.round(trustScore))) : 50,
+                stars,
+                components: {
+                    ...base.components,
+                    ...(raw.components && typeof raw.components === 'object' ? raw.components : {})
+                },
+                signals: {
+                    ...base.signals,
+                    ...(raw.signals && typeof raw.signals === 'object' ? raw.signals : {})
+                },
+                flags: Array.isArray(raw.flags) ? raw.flags : base.flags,
+                updated_at: raw.updated_at || null
+            };
+        }
+
+        function renderTrustStars(stars) {
+            const safeStars = Math.max(1, Math.min(5, Number(stars) || 3));
+            return `${'★'.repeat(safeStars)}${'☆'.repeat(5 - safeStars)}`;
+        }
+
+        function getTrustToneClass(score) {
+            if (score >= 81) return 'border-green-500/40 bg-green-500/10 text-green-300';
+            if (score >= 61) return 'border-blue-500/40 bg-blue-500/10 text-blue-300';
+            if (score >= 41) return 'border-yellow-500/40 bg-yellow-500/10 text-yellow-300';
+            return 'border-red-500/40 bg-red-500/10 text-red-300';
+        }
+
+        function renderTrustBadge(trustPayload, options = {}) {
+            const trust = normalizeTrustPayload(trustPayload);
+            const compact = options.compact !== false;
+            const toneClass = getTrustToneClass(trust.trust_score);
+
+            const components = trust.components || {};
+            const componentEntries = Object.entries(components)
+                .filter(([_, value]) => Number.isFinite(Number(value)))
+                .map(([key, value]) => `${trustComponentLabels[key] || key}: ${Number(value) > 0 ? '+' : ''}${Number(value)}`);
+
+            const flags = Array.isArray(trust.flags) ? trust.flags : [];
+            const dealsTotal = Number(trust?.signals?.deals_total || 0);
+            const isPreliminary = flags.includes('insufficient_data') || dealsTotal < 3;
+            const hasColdStartCap = flags.includes('cold_start_cap');
+
+            const flagsHtml = flags.length > 0
+                ? flags.map(flag => `<span class="px-2 py-0.5 rounded border border-dark-border bg-dark">${escapeHtml(flag)}</span>`).join('')
+                : '<span class="text-gray-500">без критичных флагов</span>';
+
+            const metaBadges = [];
+            if (isPreliminary) {
+                metaBadges.push('<span class="px-2 py-0.5 rounded border border-blue-500/30 bg-blue-500/10 text-blue-300 text-[11px]" title="Недостаточно истории, рейтинг уточнится по мере сделок">Предварительный рейтинг</span>');
+            }
+            if (hasColdStartCap) {
+                metaBadges.push('<span class="px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 text-[11px]" title="Ограничение trust для новых компаний с малой историей">Лимит для новых компаний</span>');
+            }
+
+            const metaHtml = metaBadges.length > 0
+                ? `<div class="mt-1.5 flex flex-wrap gap-1">${metaBadges.join('')}</div>`
+                : '';
+
+            const detailsHtml = compact
+                ? ''
+                : `
+                    <details class="mt-2 text-xs text-gray-300">
+                        <summary class="cursor-pointer text-gray-400 hover:text-gray-200">почему такой trust</summary>
+                        <div class="mt-2 space-y-2">
+                            <div>${componentEntries.length > 0 ? componentEntries.map(item => `<div>${escapeHtml(item)}</div>`).join('') : '<div class="text-gray-500">нет данных для компонент</div>'}</div>
+                            <div class="flex flex-wrap gap-1">${flagsHtml}</div>
+                        </div>
+                    </details>
+                `;
+
+            return `
+                <div class="mt-2 inline-block max-w-full px-2.5 py-1.5 rounded-lg border ${toneClass}">
+                    <div class="flex items-center gap-2 text-xs font-semibold">
+                        <span>${renderTrustStars(trust.stars)}</span>
+                        <span>Trust ${trust.trust_score}/100</span>
+                    </div>
+                    ${metaHtml}
+                    ${detailsHtml}
+                </div>
+            `;
+        }
+
+        async function fetchCompanyTrust(companyId, force = false) {
+            const normalizedId = toCompanyId(companyId);
+            if (!normalizedId) return getDefaultTrustPayload(0);
+
+            if (!force && trustState.cache[normalizedId]) {
+                return trustState.cache[normalizedId];
+            }
+            if (!force && trustState.pending[normalizedId]) {
+                return trustState.pending[normalizedId];
+            }
+
+            const promise = (async () => {
+                try {
+                    const response = await fetch(`${API_URL}/api/companies/${normalizedId}/trust`);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    const payload = normalizeTrustPayload(await response.json(), normalizedId);
+                    trustState.cache[normalizedId] = payload;
+                    return payload;
+                } catch (_) {
+                    const fallback = normalizeTrustPayload({
+                        company_id: normalizedId,
+                        flags: ['trust_unavailable']
+                    }, normalizedId);
+                    trustState.cache[normalizedId] = fallback;
+                    return fallback;
+                } finally {
+                    delete trustState.pending[normalizedId];
+                }
+            })();
+
+            trustState.pending[normalizedId] = promise;
+            return promise;
+        }
+
+        function getDealCarrierCompanyId(deal) {
+            return toCompanyId(deal?.carrierId) || toCompanyId(deal?.carrier?.id);
+        }
+
+        function getDealClientCompanyId(deal) {
+            return toCompanyId(deal?.counterpartyId);
+        }
+
+        function getCachedTrust(companyId) {
+            const normalizedId = toCompanyId(companyId);
+            if (!normalizedId) return getDefaultTrustPayload(0);
+            return trustState.cache[normalizedId] || getDefaultTrustPayload(normalizedId);
+        }
+
+        async function prefetchTrustForDeals(deals) {
+            if (!Array.isArray(deals) || deals.length === 0) return;
+            const ids = new Set();
+            deals.forEach(deal => {
+                const carrierCompanyId = getDealCarrierCompanyId(deal);
+                const clientCompanyId = getDealClientCompanyId(deal);
+                if (carrierCompanyId) ids.add(carrierCompanyId);
+                if (clientCompanyId) ids.add(clientCompanyId);
+            });
+            if (ids.size === 0) return;
+            await Promise.all([...ids].map(companyId => fetchCompanyTrust(companyId)));
+        }
+
         function formatVehicleBodyType(bodyType) {
             const labels = {
                 'тент': 'Тент',
@@ -5515,6 +6644,7 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
                 const riskClass = getVehicleRiskClass(vehicle?.ai?.risk_level);
                 const riskLabel = getVehicleRiskLabel(vehicle?.ai?.risk_level);
                 const warnings = Array.isArray(vehicle?.ai?.warnings) ? vehicle.ai.warnings : [];
+                const trustBadge = renderTrustBadge(vehicle?.trust, { compact: false });
                 const warningsHint = warnings.length > 0
                     ? `<div class="text-xs text-yellow-300 mt-2">⚠ ${escapeHtml(warnings[0])}</div>`
                     : '';
@@ -5533,6 +6663,7 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
                             <div>📦 ${vehicle.volume_m3} м³</div>
                             <div>📅 Свободен с ${escapeHtml(formatVehicleDate(vehicle.available_from))}</div>
                             <div>⭐ Рейтинг ${vehicle?.carrier?.rating ? Number(vehicle.carrier.rating).toFixed(1) : '—'}</div>
+                            ${trustBadge}
                             <div>🧠 Подходит к ${vehicle.matching_loads || 0} активным грузам</div>
                             <div>💰 ${vehicle.rate_per_km ? `${Math.round(vehicle.rate_per_km)} ₽/км` : 'Ставка не указана'}</div>
                             ${warningsHint}
