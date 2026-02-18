@@ -11,7 +11,7 @@ load_dotenv()
 
 class Settings(BaseSettings):
     """Application settings."""
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
     
     # Application
     APP_NAME: str = "goutruckme"
