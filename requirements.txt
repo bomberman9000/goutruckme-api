@@ -11,6 +11,7 @@ alembic>=1.12.1
 
 # Security & Auth
 python-jose[cryptography]>=3.3.0
+bcrypt>=4.1.2
 
 # Configuration
 python-dotenv>=1.0.0
