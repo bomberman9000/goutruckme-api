@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Сделка #{{ deal.id }}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 p-6">
+  <div class="max-w-3xl mx-auto">
+    <nav class="mb-6 flex gap-4 text-sm">
+      <a href="/admin/applications" class="text-blue-600 hover:underline">Заявки</a>
+      <a href="/admin/deals" class="text-blue-600 hover:underline">Сделки (sync)</a>
+      <a href="/admin/moderation" class="text-blue-600 hover:underline">Модерация</a>
+    </nav>
+    <h1 class="text-2xl font-semibold mb-4">Сделка #{{ deal.id }}</h1>
+    <div class="mb-4 p-4 bg-white rounded border border-gray-200">
+      {% set payload = deal.payload or {} %}
+      {% set cargo = payload.get('cargoSnapshot') or {} %}
+      <p><strong>Маршрут:</strong> {{ cargo.get('from_city') or '—' }} → {{ cargo.get('to_city') or '—' }}</p>
+      <p><strong>Статус:</strong> {{ payload.get('status') or '—' }}</p>
+      <p><strong>local_id:</strong> {{ deal.local_id }}</p>
+    </div>
+    <div class="mb-4 p-4 bg-white rounded border border-gray-200">
+      <h2 class="font-semibold mb-2">AI Модерация</h2>
+      {% if review %}
+      <p><strong>Risk:</strong>
+        <span class="px-2 py-0.5 rounded text-xs font-medium
+          {% if review.risk_level == 'high' %}bg-red-200 text-red-800
+          {% elif review.risk_level == 'medium' %}bg-yellow-200 text-yellow-800
+          {% else %}bg-green-200 text-green-800{% endif %}">{{ review.risk_level or '—' }}</span>
+        <span class="text-gray-500 text-sm">({{ review.status }})</span>
+      </p>
+      {% if review.flags %}
+      <p class="mt-2"><strong>Флаги:</strong> {{ review.flags | join(', ') }}</p>
+      {% endif %}
+      {% if review.comment %}
+      <p class="mt-2"><strong>Комментарий:</strong> {{ review.comment }}</p>
+      {% endif %}
+      {% if review.recommended_action %}
+      <p class="mt-2"><strong>Рекомендация:</strong> {{ review.recommended_action }}</p>
+      {% endif %}
+      <p class="mt-2 text-sm text-gray-500">Model: {{ review.model_used or '—' }} · {{ review.updated_at.strftime('%Y-%m-%d %H:%M') if review.updated_at else '' }}</p>
+      {% else %}
+      <p class="text-gray-500">Отзыв модерации отсутствует.</p>
+      {% endif %}
+      <form method="post" action="/admin/deals/{{ deal.id }}/run-moderation" class="mt-4">
+        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Перезапустить модерацию</button>
+      </form>
+    </div>
+    <p><a href="/admin/deals" class="text-blue-600 underline">← К списку сделок</a></p>
+  </div>
+</body>
+</html>

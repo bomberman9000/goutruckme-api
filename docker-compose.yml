@@ -1,0 +1,32 @@
+services:
+  api:
+    build: .
+    container_name: goutruckme-api
+    restart: always
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/goutruckme
+      BUILD_SHA: ${BUILD_SHA:-local}
+      BUILD_TIME: ${BUILD_TIME:-}
+    volumes:
+      - .:/app
+
+  db:
+    image: postgres:15
+    container_name: goutruckme-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: goutruckme
+    ports:
+      - "5433:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+volumes:
+  db_data:
+

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Заявка {{ app.id }}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 p-6">
+  <div class="max-w-4xl mx-auto">
+    <p class="mb-4">
+      <a href="/admin/applications{% if audit_filter_query %}?{{ audit_filter_query }}{% endif %}" class="text-sm underline text-blue-600">← к списку заявок</a>
+    </p>
+
+    <h1 class="text-2xl font-semibold mb-2">Заявка #{{ app.id }}</h1>
+    <p class="text-gray-600 mb-4">Документ: {{ app.doc_type }}, статус: {{ app.status }}{% if deal %} · Сделка {{ deal.id }}{% endif %}</p>
+
+    <p class="mb-4 flex gap-3">
+      <a href="/admin/applications/{{ app.id }}/pdf{% if audit_filter_query %}?{{ audit_filter_query }}{% endif %}" class="px-3 py-1.5 rounded bg-gray-900 text-white text-sm">Скачать PDF</a>
+      <form method="post" action="/admin/applications/{{ app.id }}/send" class="inline">
+        <input type="hidden" name="return_qs" value="{{ audit_filter_query }}">
+        <button type="submit" class="px-3 py-1.5 rounded bg-gray-700 text-white text-sm">Отправить стороне</button>
+      </form>
+    </p>
+
+    <h2 class="text-lg font-medium mt-6 mb-2">История действий</h2>
+    <form method="get" class="flex flex-wrap gap-4 items-center mb-3">
+      <label class="flex items-center gap-2">
+        <input type="checkbox" name="ev_sent" value="1" {% if audit_filter.sent %}checked{% endif %}>
+        <span>Отправки</span>
+      </label>
+      <label class="flex items-center gap-2">
+        <input type="checkbox" name="ev_signed" value="1" {% if audit_filter.signed %}checked{% endif %}>
+        <span>Подписи</span>
+      </label>
+      <label class="flex items-center gap-2">
+        <input type="checkbox" name="ev_error" value="1" {% if audit_filter.error %}checked{% endif %}>
+        <span>Ошибки</span>
+      </label>
+      <button class="px-3 py-1 rounded bg-gray-900 text-white" type="submit">Применить</button>
+      <a class="text-sm underline" href="/admin/applications/{{ app.id }}">Сброс</a>
+    </form>
+
+    <table class="w-full border border-gray-200 rounded overflow-hidden">
+      <thead class="bg-gray-100">
+        <tr>
+          <th class="text-left p-2">Дата</th>
+          <th class="text-left p-2">Объект</th>
+          <th class="text-left p-2">Действие</th>
+          <th class="text-left p-2">Детали</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ev in audit_events %}
+        <tr class="border-t border-gray-200">
+          <td class="p-2 text-sm">{{ ev.created_at.strftime('%d.%m.%Y %H:%M') if ev.created_at else '—' }}</td>
+          <td class="p-2 text-sm">{{ ev.entity_type }} {{ ev.entity_id }}</td>
+          <td class="p-2 text-sm">{{ ev.action }}</td>
+          <td class="p-2 text-sm text-gray-600">{{ (ev.meta_json or '')[:80] }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="p-2 text-gray-500">Нет событий</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

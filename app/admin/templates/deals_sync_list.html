@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Сделки (sync)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 p-6">
+  <div class="max-w-5xl mx-auto">
+    <nav class="mb-6 flex gap-4 text-sm">
+      <a href="/admin/applications" class="text-blue-600 hover:underline">Заявки</a>
+      <a href="/admin/deals" class="font-semibold text-gray-800">Сделки (sync)</a>
+      <a href="/admin/moderation" class="text-blue-600 hover:underline">Модерация</a>
+    </nav>
+    <h1 class="text-2xl font-semibold mb-4">Сделки (sync)</h1>
+    <div class="mb-4 flex gap-2">
+      <a href="/admin/deals" class="px-3 py-1 rounded {{ 'bg-gray-200' if not risk_filter else 'bg-gray-100' }}">Все</a>
+      <a href="/admin/deals?risk_level=low" class="px-3 py-1 rounded {{ 'bg-green-200' if risk_filter == 'low' else 'bg-green-100' }}">LOW</a>
+      <a href="/admin/deals?risk_level=medium" class="px-3 py-1 rounded {{ 'bg-yellow-200' if risk_filter == 'medium' else 'bg-yellow-100' }}">MEDIUM</a>
+      <a href="/admin/deals?risk_level=high" class="px-3 py-1 rounded {{ 'bg-red-200' if risk_filter == 'high' else 'bg-red-100' }}">HIGH</a>
+    </div>
+    <table class="w-full border border-gray-200 rounded overflow-hidden">
+      <thead class="bg-gray-100">
+        <tr>
+          <th class="px-4 py-2 text-left">ID</th>
+          <th class="px-4 py-2 text-left">Маршрут</th>
+          <th class="px-4 py-2 text-left">AI Risk</th>
+          <th class="px-4 py-2 text-left">Обновлено</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in deals %}
+        {% set r = review_map.get(d.id) %}
+        <tr class="border-t border-gray-200 hover:bg-gray-50">
+          <td class="px-4 py-2"><a href="/admin/deals/{{ d.id }}" class="text-blue-600 underline">#{{ d.id }}</a></td>
+          <td class="px-4 py-2">
+            {% set payload = d.payload or {} %}
+            {% set cargo = payload.get('cargoSnapshot') or {} %}
+            {{ cargo.get('from_city') or '—' }} → {{ cargo.get('to_city') or '—' }}
+          </td>
+          <td class="px-4 py-2">
+            {% if r %}
+            <span class="px-2 py-0.5 rounded text-xs font-medium
+              {% if r.risk_level == 'high' %}bg-red-200 text-red-800
+              {% elif r.risk_level == 'medium' %}bg-yellow-200 text-yellow-800
+              {% else %}bg-green-200 text-green-800{% endif %}">{{ r.risk_level or '—' }}</span>
+            {% else %}
+            <span class="text-gray-400">—</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2 text-sm text-gray-600">{{ d.updated_at.strftime('%Y-%m-%d %H:%M') if d.updated_at else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="px-4 py-8 text-center text-gray-500">Нет сделок</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

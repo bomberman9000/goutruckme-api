@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Risk System</title>
+</head>
+<body>
+    <h1>Тест системы рисков</h1>
+    <div id="results"></div>
+    
+    <script src="app/static/js/risk/types.js"></script>
+    <script src="app/static/js/risk/riskLabels.js"></script>
+    <script src="app/static/js/risk/riskRules.js"></script>
+    <script src="app/static/js/risk/calculateRisk.js"></script>
+    
+    <script>
+        setTimeout(() => {
+            const results = document.getElementById('results');
+            let html = '<h2>Проверка модулей:</h2><ul>';
+            
+            // Проверка типов
+            if (window.RiskTypes) {
+                html += '<li>✅ RiskTypes загружен</li>';
+            } else {
+                html += '<li>❌ RiskTypes не загружен</li>';
+            }
+            
+            // Проверка лейблов
+            if (window.RiskLabels) {
+                html += '<li>✅ RiskLabels загружен</li>';
+                html += '<li>  - getLevelLabel: ' + (typeof window.RiskLabels.getLevelLabel === 'function' ? '✅' : '❌') + '</li>';
+            } else {
+                html += '<li>❌ RiskLabels не загружен</li>';
+            }
+            
+            // Проверка правил
+            if (window.RiskRules) {
+                html += '<li>✅ RiskRules загружен</li>';
+                html += '<li>  - checkLowPrice: ' + (typeof window.RiskRules.checkLowPrice === 'function' ? '✅' : '❌') + '</li>';
+                html += '<li>  - checkNoContact: ' + (typeof window.RiskRules.checkNoContact === 'function' ? '✅' : '❌') + '</li>';
+            } else {
+                html += '<li>❌ RiskRules не загружен</li>';
+            }
+            
+            // Проверка функции расчёта
+            if (window.calculateCargoRisk) {
+                html += '<li>✅ calculateCargoRisk загружен</li>';
+                
+                // Тестовый расчёт
+                const testCargo = {
+                    id: 1,
+                    from_city: 'Москва',
+                    to_city: 'Казань',
+                    price: 5000,
+                    distance: 800,
+                    weight: null, // Неполные данные
+                    truck_type: null,
+                    contact_phone: null, // Нет контакта
+                    contact_telegram: null,
+                    loading_date: new Date(Date.now() - 86400000).toISOString() // Вчера
+                };
+                
+                const result = window.calculateCargoRisk(testCargo, []);
+                html += '<h2>Тестовый расчёт:</h2>';
+                html += '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
+                
+                if (result.level === 'high' && result.reasons.length >= 2) {
+                    html += '<li>✅ Тест пройден: High риск с несколькими причинами</li>';
+                } else {
+                    html += '<li>⚠️ Тест: получен ' + result.level + ' риск с ' + result.reasons.length + ' причинами</li>';
+                }
+            } else {
+                html += '<li>❌ calculateCargoRisk не загружен</li>';
+            }
+            
+            html += '</ul>';
+            results.innerHTML = html;
+        }, 500);
+    </script>
+</body>
+</html>
+
+
