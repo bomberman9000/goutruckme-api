@@ -9,7 +9,7 @@ class RegisterRequest(BaseModel):
     organization_name: str  # Название организации
     phone: str
     password: str
-    role: str = "shipper"
+    role: str = "forwarder"
     
     # Банковские реквизиты (опционально при регистрации, можно добавить позже)
     bank_name: Optional[str] = None
@@ -44,6 +44,20 @@ class RegisterRequest(BaseModel):
         if self.organization_type == 'ООО' and len(self.inn) != 10:
             raise ValueError('ИНН для ООО должен содержать 10 цифр')
         return self
+
+    @field_validator("role")
+    @classmethod
+    def normalize_role(cls, v: str) -> str:
+        role = (v or "").strip().lower()
+        aliases = {
+            "shipper": "client",
+            "expeditor": "forwarder",
+        }
+        role = aliases.get(role, role)
+        allowed = {"carrier", "client", "forwarder", "admin"}
+        if role not in allowed:
+            raise ValueError('role должен быть одним из: carrier, client, forwarder, admin')
+        return role
 
 
 class LoginRequest(BaseModel):

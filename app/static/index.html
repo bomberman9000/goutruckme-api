@@ -664,9 +664,149 @@
 
         <!-- PAGE: ANALYTICS (Аналитика) -->
         <div id="page-analytics" class="page-content hidden">
-            <div class="bg-dark-card border border-dark-border rounded-xl p-6">
-                <h2 class="text-2xl font-bold mb-6">📊 Аналитика (AI)</h2>
-                <p class="text-gray-400">Раздел в разработке...</p>
+            <div class="space-y-4">
+                <div class="bg-dark-card border border-dark-border rounded-xl p-6">
+                    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                        <div>
+                            <h2 class="text-2xl font-bold">📊 Аналитика (AI)</h2>
+                            <p class="text-sm text-gray-400 mt-1">Операционка, финансы и AI-риски по вашей роли</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span id="analyticsRoleBadge" class="hidden px-3 py-1 text-xs rounded-full border border-dark-border bg-dark text-gray-300"></span>
+                            <button onclick="setAnalyticsRange('day')" data-range="day" class="analytics-range-btn px-3 py-2 text-sm rounded-lg border border-dark-border hover:border-purple transition-all">
+                                Сегодня
+                            </button>
+                            <button onclick="setAnalyticsRange('week')" data-range="week" class="analytics-range-btn px-3 py-2 text-sm rounded-lg border border-dark-border hover:border-purple transition-all">
+                                7 дней
+                            </button>
+                            <button onclick="setAnalyticsRange('month')" data-range="month" class="analytics-range-btn px-3 py-2 text-sm rounded-lg border border-dark-border hover:border-purple transition-all">
+                                30 дней
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 flex flex-wrap gap-2">
+                        <button onclick="setAnalyticsTab('operations')" data-analytics-tab="operations" class="analytics-tab-btn px-4 py-2 rounded-lg bg-dark border border-dark-border hover:border-purple text-sm transition-all">
+                            Операционка
+                        </button>
+                        <button onclick="setAnalyticsTab('finance')" data-analytics-tab="finance" class="analytics-tab-btn px-4 py-2 rounded-lg bg-dark border border-dark-border hover:border-purple text-sm transition-all">
+                            Финансы
+                        </button>
+                        <button onclick="setAnalyticsTab('risk')" data-analytics-tab="risk" class="analytics-tab-btn px-4 py-2 rounded-lg bg-dark border border-dark-border hover:border-purple text-sm transition-all">
+                            Риски (AI)
+                        </button>
+                    </div>
+                </div>
+
+                <div id="analyticsLoading" class="bg-dark-card border border-dark-border rounded-xl p-6 text-gray-400">
+                    Загрузка аналитики...
+                </div>
+
+                <div id="analyticsError" class="hidden bg-red-500/10 border border-red-500/30 rounded-xl p-6 text-red-300">
+                    <div id="analyticsErrorText" class="mb-3">Не удалось загрузить аналитику</div>
+                    <button onclick="loadAnalytics(true)" class="px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 transition-all">
+                        Повторить
+                    </button>
+                </div>
+
+                <div id="analyticsContent" class="hidden space-y-4">
+                    <section id="analyticsPanelOperations" class="space-y-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                            <div class="bg-dark-card border border-dark-border rounded-xl p-4">
+                                <p class="text-xs text-gray-400">Новых грузов</p>
+                                <p id="analyticsKpiCargos" class="text-2xl font-bold mt-1">0</p>
+                            </div>
+                            <div class="bg-dark-card border border-dark-border rounded-xl p-4">
+                                <p class="text-xs text-gray-400">Новых откликов</p>
+                                <p id="analyticsKpiResponses" class="text-2xl font-bold mt-1">0</p>
+                            </div>
+                            <div class="bg-dark-card border border-dark-border rounded-xl p-4">
+                                <p class="text-xs text-gray-400">Создано сделок</p>
+                                <p id="analyticsKpiDealsCreated" class="text-2xl font-bold mt-1">0</p>
+                            </div>
+                            <div class="bg-dark-card border border-dark-border rounded-xl p-4">
+                                <p class="text-xs text-gray-400">Закрыто сделок</p>
+                                <p id="analyticsKpiDealsClosed" class="text-2xl font-bold mt-1">0</p>
+                            </div>
+                            <div class="bg-dark-card border border-dark-border rounded-xl p-4">
+                                <p class="text-xs text-gray-400">Конверсия</p>
+                                <p id="analyticsKpiConversion" class="text-2xl font-bold mt-1">0%</p>
+                            </div>
+                            <div class="bg-dark-card border border-dark-border rounded-xl p-4">
+                                <p class="text-xs text-gray-400">До 1-го отклика</p>
+                                <p id="analyticsKpiFirstResponse" class="text-2xl font-bold mt-1">нет данных</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section id="analyticsPanelFinance" class="hidden space-y-4">
+                        <div id="analyticsFinanceHint" class="hidden bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 text-sm text-blue-200"></div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="bg-dark-card border border-dark-border rounded-xl p-4">
+                                <p id="analyticsRateTitle" class="text-xs text-gray-400">Средняя ставка за км</p>
+                                <p id="analyticsRatePerKm" class="text-2xl font-bold mt-1">нет данных</p>
+                            </div>
+                            <div id="analyticsMarginCard" class="bg-dark-card border border-dark-border rounded-xl p-4">
+                                <p class="text-xs text-gray-400">Средняя маржа</p>
+                                <p id="analyticsMarginAvg" class="text-2xl font-bold mt-1">нет данных</p>
+                            </div>
+                        </div>
+                        <div id="analyticsFinanceTopLists" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div class="bg-dark-card border border-dark-border rounded-xl p-4">
+                                <h3 class="text-sm font-semibold mb-3">Топ клиентов</h3>
+                                <div id="analyticsTopClients" class="text-sm text-gray-300">нет данных</div>
+                            </div>
+                            <div class="bg-dark-card border border-dark-border rounded-xl p-4">
+                                <h3 class="text-sm font-semibold mb-3">Топ маршрутов по марже</h3>
+                                <div id="analyticsTopRoutes" class="text-sm text-gray-300">нет данных</div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section id="analyticsPanelRisk" class="hidden space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="bg-dark-card border border-dark-border rounded-xl p-4">
+                                <p class="text-xs text-gray-400">Низкий риск</p>
+                                <p id="analyticsRiskLow" class="text-2xl font-bold mt-1 text-green-400">0</p>
+                            </div>
+                            <div class="bg-dark-card border border-dark-border rounded-xl p-4">
+                                <p class="text-xs text-gray-400">Средний риск</p>
+                                <p id="analyticsRiskMedium" class="text-2xl font-bold mt-1 text-yellow-400">0</p>
+                            </div>
+                            <div class="bg-dark-card border border-dark-border rounded-xl p-4">
+                                <p class="text-xs text-gray-400">Высокий риск</p>
+                                <p id="analyticsRiskHigh" class="text-2xl font-bold mt-1 text-red-400">0</p>
+                            </div>
+                        </div>
+                        <div class="bg-dark-card border border-dark-border rounded-xl p-4">
+                            <h3 class="text-sm font-semibold mb-3">Топ флаги</h3>
+                            <div id="analyticsTopFlags" class="flex flex-wrap gap-2 text-sm text-gray-300">нет данных</div>
+                        </div>
+                        <div class="bg-dark-card border border-dark-border rounded-xl overflow-hidden">
+                            <div class="px-4 py-3 border-b border-dark-border">
+                                <h3 class="text-sm font-semibold">Последние рисковые элементы (high/medium)</h3>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-sm">
+                                    <thead class="bg-dark">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left text-xs uppercase text-gray-400">Тип</th>
+                                            <th class="px-4 py-3 text-left text-xs uppercase text-gray-400">ID</th>
+                                            <th class="px-4 py-3 text-left text-xs uppercase text-gray-400">Риск</th>
+                                            <th class="px-4 py-3 text-left text-xs uppercase text-gray-400">Комментарий</th>
+                                            <th class="px-4 py-3 text-left text-xs uppercase text-gray-400">Дата</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="analyticsRiskItemsBody" class="divide-y divide-dark-border">
+                                        <tr>
+                                            <td colspan="5" class="px-4 py-6 text-center text-gray-400">нет данных</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
+                </div>
             </div>
         </div>
 
@@ -1580,7 +1720,7 @@
                 </button>
                 
                 <!-- Экспедитор -->
-                <button onclick="selectRole('expeditor')" 
+                <button onclick="selectRole('forwarder')" 
                     class="role-card p-6 bg-dark border-2 border-dark-border rounded-xl hover:border-purple transition-all text-left group">
                     <div class="flex items-center justify-between mb-3">
                         <h4 class="text-lg font-semibold">Экспедитор</h4>
@@ -1592,7 +1732,7 @@
                 </button>
                 
                 <!-- Грузовладелец -->
-                <button onclick="selectRole('shipper')" 
+                <button onclick="selectRole('client')" 
                     class="role-card p-6 bg-dark border-2 border-dark-border rounded-xl hover:border-purple transition-all text-left group">
                     <div class="flex items-center justify-between mb-3">
                         <h4 class="text-lg font-semibold">Грузовладелец</h4>
@@ -1670,9 +1810,9 @@
                     <label class="text-sm text-gray-400 mb-1 block">Роль *</label>
                     <select id="reg-role" 
                         class="w-full px-3 py-2 bg-dark border border-dark-border rounded-lg focus:outline-none focus:border-purple">
-                        <option value="shipper">Грузовладелец</option>
+                        <option value="client">Грузовладелец</option>
                         <option value="carrier">Перевозчик</option>
-                        <option value="expeditor">Экспедитор</option>
+                        <option value="forwarder">Экспедитор</option>
                     </select>
                     <p class="text-xs text-gray-500 mt-1">Роль выбрана на предыдущем шаге</p>
                 </div>
@@ -1753,6 +1893,36 @@
         const API_URL = '';
         let authToken = localStorage.getItem('authToken');
         let currentUser = null;
+        const analyticsState = {
+            range: 'week',
+            tab: 'operations',
+            loading: false,
+            loaded: false,
+            role: 'forwarder',
+            roleRaw: 'forwarder',
+            error: '',
+            data: {
+                overview: null,
+                money: null,
+                risk: null,
+                dataQuality: null
+            }
+        };
+
+        const analyticsRoleLabels = {
+            carrier: 'Перевозчик',
+            client: 'Клиент',
+            forwarder: 'Экспедитор',
+            admin: 'Администратор'
+        };
+
+        function normalizeRole(role) {
+            const value = String(role || '').toLowerCase();
+            if (value === 'shipper') return 'client';
+            if (value === 'expeditor') return 'forwarder';
+            if (['carrier', 'client', 'forwarder', 'admin'].includes(value)) return value;
+            return 'forwarder';
+        }
 
         // Navigation
         function showPage(page) {
@@ -1785,6 +1955,8 @@
                 if (typeof loadClients === 'function') loadClients();
             } else if (page === 'carriers') {
                 if (typeof loadCarriers === 'function') loadCarriers();
+            } else if (page === 'analytics') {
+                loadAnalytics();
             }
         }
 
@@ -2775,6 +2947,43 @@
             }
         }
 
+        async function fetchCurrentUser(force = false) {
+            if (!authToken) {
+                currentUser = null;
+                analyticsState.role = 'forwarder';
+                analyticsState.roleRaw = 'forwarder';
+                return null;
+            }
+
+            if (currentUser && !force) {
+                return currentUser;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const me = await response.json();
+                currentUser = me;
+                analyticsState.role = normalizeRole(me.role || me.role_raw);
+                analyticsState.roleRaw = me.role_raw || analyticsState.role;
+                return me;
+            } catch (error) {
+                console.error('Failed to load current user:', error);
+                currentUser = null;
+                analyticsState.role = 'forwarder';
+                analyticsState.roleRaw = 'forwarder';
+                return null;
+            }
+        }
+
         // Login
         async function login() {
             const phone = document.getElementById('login-phone').value.trim();
@@ -2796,6 +3005,7 @@
                 if (response.ok) {
                     authToken = data.access_token;
                     localStorage.setItem('authToken', authToken);
+                    await fetchCurrentUser(true);
                     alert('✅ Вход выполнен!');
                     closeModal('login');
                     // Очищаем форму
@@ -2803,7 +3013,12 @@
                     document.getElementById('login-password').value = '';
                     // Обновляем меню
                     updateUserMenu();
-                    loadLoads();
+                    if (!document.getElementById('page-loads')?.classList.contains('hidden')) {
+                        loadLoads();
+                    }
+                    if (!document.getElementById('page-analytics')?.classList.contains('hidden')) {
+                        loadAnalytics(true);
+                    }
                 } else {
                     alert(`❌ ${data.detail || 'Ошибка входа'}`);
                 }
@@ -2831,8 +3046,347 @@
             authToken = null;
             localStorage.removeItem('authToken');
             currentUser = null;
+            analyticsState.role = 'forwarder';
+            analyticsState.roleRaw = 'forwarder';
+            analyticsState.loaded = false;
             updateUserMenu();
             alert('✅ Вы вышли из системы');
+            if (!document.getElementById('page-analytics')?.classList.contains('hidden')) {
+                loadAnalytics(true);
+            }
+        }
+
+        function analyticsRoleLabel(role) {
+            return analyticsRoleLabels[role] || 'Пользователь';
+        }
+
+        function analyticsEscapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/\"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function analyticsFormatNumber(value, digits = 0) {
+            const num = Number(value);
+            if (!Number.isFinite(num)) return '0';
+            return num.toLocaleString('ru-RU', {
+                minimumFractionDigits: digits,
+                maximumFractionDigits: digits
+            });
+        }
+
+        function analyticsFormatMoney(value, digits = 0) {
+            const num = Number(value);
+            if (!Number.isFinite(num)) return 'нет данных';
+            return `${analyticsFormatNumber(num, digits)} ₽`;
+        }
+
+        function analyticsFormatDateTime(value) {
+            if (!value) return '—';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return '—';
+            return date.toLocaleString('ru-RU', {
+                day: '2-digit',
+                month: '2-digit',
+                year: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function renderAnalyticsControls() {
+            document.querySelectorAll('.analytics-range-btn').forEach(btn => {
+                const isActive = btn.dataset.range === analyticsState.range;
+                btn.classList.toggle('bg-gradient-to-r', isActive);
+                btn.classList.toggle('from-purple', isActive);
+                btn.classList.toggle('to-blue', isActive);
+                btn.classList.toggle('border-purple', isActive);
+                btn.classList.toggle('text-white', isActive);
+            });
+
+            document.querySelectorAll('.analytics-tab-btn').forEach(btn => {
+                const isActive = btn.dataset.analyticsTab === analyticsState.tab;
+                btn.classList.toggle('bg-gradient-to-r', isActive);
+                btn.classList.toggle('from-purple', isActive);
+                btn.classList.toggle('to-blue', isActive);
+                btn.classList.toggle('border-purple', isActive);
+                btn.classList.toggle('text-white', isActive);
+            });
+
+            const roleBadge = document.getElementById('analyticsRoleBadge');
+            if (roleBadge) {
+                roleBadge.classList.remove('hidden');
+                roleBadge.textContent = `Роль: ${analyticsRoleLabel(analyticsState.role)}`;
+            }
+
+            const panelByTab = {
+                operations: 'analyticsPanelOperations',
+                finance: 'analyticsPanelFinance',
+                risk: 'analyticsPanelRisk'
+            };
+
+            Object.entries(panelByTab).forEach(([tab, panelId]) => {
+                const panel = document.getElementById(panelId);
+                if (!panel) return;
+                panel.classList.toggle('hidden', tab !== analyticsState.tab);
+            });
+        }
+
+        function setAnalyticsRange(range) {
+            if (!['day', 'week', 'month'].includes(range)) return;
+            analyticsState.range = range;
+            analyticsState.loaded = false;
+            renderAnalyticsControls();
+            loadAnalytics(true);
+        }
+
+        function setAnalyticsTab(tab) {
+            if (!['operations', 'finance', 'risk'].includes(tab)) return;
+            analyticsState.tab = tab;
+            renderAnalyticsControls();
+        }
+
+        function setAnalyticsLoading(isLoading) {
+            const loading = document.getElementById('analyticsLoading');
+            const content = document.getElementById('analyticsContent');
+            if (loading) loading.classList.toggle('hidden', !isLoading);
+            if (content && isLoading) content.classList.add('hidden');
+        }
+
+        function setAnalyticsError(message) {
+            const errorBox = document.getElementById('analyticsError');
+            const errorText = document.getElementById('analyticsErrorText');
+            if (errorText) errorText.textContent = message || 'Ошибка загрузки аналитики';
+            if (errorBox) errorBox.classList.remove('hidden');
+        }
+
+        function clearAnalyticsError() {
+            const errorBox = document.getElementById('analyticsError');
+            if (errorBox) errorBox.classList.add('hidden');
+        }
+
+        function renderAnalyticsOverview() {
+            const kpis = analyticsState.data?.overview?.kpis || {};
+            const conversion = Number(kpis.conversion);
+            const conversionPct = Number.isFinite(conversion) ? conversion * 100 : 0;
+            const ttf = kpis.time_to_first_response_min;
+
+            const setText = (id, value) => {
+                const node = document.getElementById(id);
+                if (node) node.textContent = value;
+            };
+
+            setText('analyticsKpiCargos', analyticsFormatNumber(kpis.cargos_new || 0));
+            setText('analyticsKpiResponses', analyticsFormatNumber(kpis.responses_new || 0));
+            setText('analyticsKpiDealsCreated', analyticsFormatNumber(kpis.deals_created || 0));
+            setText('analyticsKpiDealsClosed', analyticsFormatNumber(kpis.deals_closed || 0));
+            setText('analyticsKpiConversion', `${analyticsFormatNumber(conversionPct, 1)}%`);
+            setText(
+                'analyticsKpiFirstResponse',
+                Number.isFinite(Number(ttf)) ? `${analyticsFormatNumber(ttf, 1)} мин` : 'нет данных'
+            );
+        }
+
+        function renderAnalyticsFinance() {
+            const finance = analyticsState.data?.money || {};
+            const role = analyticsState.role;
+
+            const rateTitle = document.getElementById('analyticsRateTitle');
+            const ratePerKm = document.getElementById('analyticsRatePerKm');
+            const marginCard = document.getElementById('analyticsMarginCard');
+            const marginAvg = document.getElementById('analyticsMarginAvg');
+            const topLists = document.getElementById('analyticsFinanceTopLists');
+            const topClients = document.getElementById('analyticsTopClients');
+            const topRoutes = document.getElementById('analyticsTopRoutes');
+            const hint = document.getElementById('analyticsFinanceHint');
+
+            if (ratePerKm) {
+                ratePerKm.textContent = Number.isFinite(Number(finance.rate_per_km_avg))
+                    ? `${analyticsFormatNumber(finance.rate_per_km_avg, 2)} ₽/км`
+                    : 'нет данных';
+            }
+
+            if (marginAvg) {
+                marginAvg.textContent = Number.isFinite(Number(finance.margin_avg))
+                    ? analyticsFormatMoney(finance.margin_avg, 2)
+                    : 'нет данных';
+            }
+
+            if (role === 'carrier') {
+                if (hint) {
+                    hint.textContent = 'Для перевозчика доступен сокращённый финансовый блок: средняя ставка за км.';
+                    hint.classList.remove('hidden');
+                }
+                if (rateTitle) rateTitle.textContent = 'Средняя ставка за км';
+                if (marginCard) marginCard.classList.add('hidden');
+                if (topLists) topLists.classList.add('hidden');
+            } else if (role === 'client') {
+                if (hint) {
+                    hint.textContent = 'Для клиента доступен сокращённый финансовый блок: рыночная ставка.';
+                    hint.classList.remove('hidden');
+                }
+                if (rateTitle) rateTitle.textContent = 'Средняя ставка по рынку';
+                if (marginCard) marginCard.classList.add('hidden');
+                if (topLists) topLists.classList.add('hidden');
+            } else {
+                if (hint) hint.classList.add('hidden');
+                if (rateTitle) rateTitle.textContent = 'Средняя ставка за км';
+                if (marginCard) marginCard.classList.remove('hidden');
+                if (topLists) topLists.classList.remove('hidden');
+            }
+
+            const clients = Array.isArray(finance.top_clients) ? finance.top_clients : [];
+            if (topClients) {
+                topClients.innerHTML = clients.length > 0
+                    ? clients.map(item => `<div class=\"py-1\">${analyticsEscapeHtml(item.name)} — <span class=\"text-green-400\">${analyticsFormatMoney(item.revenue)}</span></div>`).join('')
+                    : 'нет данных';
+            }
+
+            const routes = Array.isArray(finance.top_routes) ? finance.top_routes : [];
+            if (topRoutes) {
+                topRoutes.innerHTML = routes.length > 0
+                    ? routes.map(item => `<div class=\"py-1\">${analyticsEscapeHtml(item.from_city)} → ${analyticsEscapeHtml(item.to_city)} — <span class=\"text-green-400\">${analyticsFormatMoney(item.margin)}</span></div>`).join('')
+                    : 'нет данных';
+            }
+        }
+
+        function renderAnalyticsRisk() {
+            const risk = analyticsState.data?.risk || {};
+            const counts = risk.counts || {};
+
+            const setText = (id, value) => {
+                const node = document.getElementById(id);
+                if (node) node.textContent = value;
+            };
+
+            setText('analyticsRiskLow', analyticsFormatNumber(counts.low || 0));
+            setText('analyticsRiskMedium', analyticsFormatNumber(counts.medium || 0));
+            setText('analyticsRiskHigh', analyticsFormatNumber(counts.high || 0));
+
+            const topFlags = document.getElementById('analyticsTopFlags');
+            const flags = Array.isArray(risk.top_flags) ? risk.top_flags : [];
+            if (topFlags) {
+                topFlags.innerHTML = flags.length > 0
+                    ? flags.map(item => `<span class=\"px-2 py-1 rounded-lg bg-dark border border-dark-border\">${analyticsEscapeHtml(item.flag)}: ${analyticsFormatNumber(item.count || 0)}</span>`).join('')
+                    : 'нет данных';
+            }
+
+            const rows = (Array.isArray(risk.items) ? risk.items : [])
+                .filter(item => ['medium', 'high'].includes(String(item.risk_level || '').toLowerCase()))
+                .slice(0, 20);
+
+            const tableBody = document.getElementById('analyticsRiskItemsBody');
+            if (tableBody) {
+                if (rows.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan=\"5\" class=\"px-4 py-6 text-center text-gray-400\">нет данных</td></tr>';
+                } else {
+                    tableBody.innerHTML = rows.map(item => {
+                        const riskLevel = String(item.risk_level || '').toLowerCase();
+                        const riskClass = riskLevel === 'high' ? 'text-red-400' : 'text-yellow-400';
+                        return `
+                            <tr>
+                                <td class=\"px-4 py-3\">${analyticsEscapeHtml(item.entity_type || '—')}</td>
+                                <td class=\"px-4 py-3\">${analyticsFormatNumber(item.entity_id || 0)}</td>
+                                <td class=\"px-4 py-3 ${riskClass}\">${analyticsEscapeHtml(riskLevel || '—')}</td>
+                                <td class=\"px-4 py-3 text-gray-300\">${analyticsEscapeHtml(item.comment || '—')}</td>
+                                <td class=\"px-4 py-3 text-gray-400\">${analyticsFormatDateTime(item.created_at)}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                }
+            }
+        }
+
+        function renderAnalytics() {
+            const content = document.getElementById('analyticsContent');
+            if (content) content.classList.remove('hidden');
+            renderAnalyticsControls();
+            renderAnalyticsOverview();
+            renderAnalyticsFinance();
+            renderAnalyticsRisk();
+        }
+
+        async function loadAnalytics(force = false) {
+            renderAnalyticsControls();
+
+            if (!authToken) {
+                setAnalyticsLoading(false);
+                setAnalyticsError('Для аналитики нужна авторизация. Войдите в аккаунт.');
+                const content = document.getElementById('analyticsContent');
+                if (content) content.classList.add('hidden');
+                return;
+            }
+
+            if (analyticsState.loading) return;
+            if (analyticsState.loaded && !force) {
+                renderAnalytics();
+                return;
+            }
+
+            await fetchCurrentUser();
+            clearAnalyticsError();
+            analyticsState.loading = true;
+            analyticsState.error = '';
+            setAnalyticsLoading(true);
+
+            const headers = { 'Authorization': `Bearer ${authToken}` };
+            const endpointMap = {
+                overview: `${API_URL}/api/analytics/overview?range=${analyticsState.range}`,
+                money: `${API_URL}/api/analytics/money?range=${analyticsState.range}`,
+                risk: `${API_URL}/api/analytics/risk?range=${analyticsState.range}`,
+                dataQuality: `${API_URL}/api/analytics/data_quality?range=${analyticsState.range}`
+            };
+
+            const tasks = Object.entries(endpointMap).map(async ([key, url]) => {
+                try {
+                    const response = await fetch(url, { headers });
+                    if (!response.ok) {
+                        let detail = `HTTP ${response.status}`;
+                        try {
+                            const body = await response.json();
+                            if (body?.detail) detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);
+                        } catch (_) {}
+                        throw new Error(detail);
+                    }
+                    const payload = await response.json();
+                    return { key, payload, error: null };
+                } catch (error) {
+                    return { key, payload: null, error: error?.message || 'Ошибка запроса' };
+                }
+            });
+
+            const results = await Promise.all(tasks);
+
+            let successCount = 0;
+            const errors = [];
+            results.forEach(result => {
+                if (result.payload) {
+                    analyticsState.data[result.key] = result.payload;
+                    successCount += 1;
+                } else {
+                    errors.push(`${result.key}: ${result.error}`);
+                }
+            });
+
+            analyticsState.loading = false;
+            setAnalyticsLoading(false);
+
+            if (successCount === 0) {
+                analyticsState.loaded = false;
+                setAnalyticsError(`Не удалось получить данные аналитики (${errors.join('; ')})`);
+                return;
+            }
+
+            analyticsState.loaded = true;
+            if (errors.length > 0) {
+                setAnalyticsError(`Часть блоков недоступна: ${errors.join('; ')}`);
+            } else {
+                clearAnalyticsError();
+            }
+            renderAnalytics();
         }
 
         // Create Load
@@ -5136,6 +5690,12 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
         document.addEventListener('DOMContentLoaded', () => {
             showPage('loads');
             updateUserMenu();
+            renderAnalyticsControls();
+            if (authToken) {
+                fetchCurrentUser().then(() => {
+                    renderAnalyticsControls();
+                });
+            }
             if (window.dealsSyncOutbox && window.dealsSyncOutbox.startSyncWorker) {
                 window.dealsSyncOutbox.startSyncWorker();
             }

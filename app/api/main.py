@@ -31,6 +31,7 @@ from app.api.routes import (
     documents_sync,
     moderation,
     vehicles,
+    analytics,
 )
 from app.admin.routes import router as admin_router
 from app.api.routes import complaints_ai
@@ -97,6 +98,7 @@ app.include_router(deals_sync.router, prefix="/api", tags=["💼 Deals Sync"])
 app.include_router(documents_sync.router, prefix="/api", tags=["📄 Documents Sync"])
 app.include_router(moderation.router, prefix="/api", tags=["🛡️ Moderation"])
 app.include_router(vehicles.router, prefix="/api", tags=["🚛 Vehicles"])
+app.include_router(analytics.router, prefix="/api", tags=["📊 Analytics"])
 
 
 # CORS: в debug разрешаем все, в остальных режимах только явный allowlist

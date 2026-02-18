@@ -1,2 +1,12 @@
 # API Routes
-from app.api.routes import auth, loads, bids, messages, rating, complaints, forum, vehicles
+from app.api.routes import (
+    analytics,
+    auth,
+    bids,
+    complaints,
+    forum,
+    loads,
+    messages,
+    rating,
+    vehicles,
+)

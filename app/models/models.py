@@ -8,9 +8,14 @@ import enum
 
 # Роли пользователей
 class UserRole(str, enum.Enum):
-    shipper = "shipper"
+    # Основные роли MVP аналитики
+    client = "client"
+    forwarder = "forwarder"
     carrier = "carrier"
     admin = "admin"
+    # Legacy-алиасы для обратной совместимости
+    shipper = "shipper"
+    expeditor = "expeditor"
 
 
 # --------------------
@@ -31,7 +36,7 @@ class User(Base):
     
     phone = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
-    role = Column(Enum(UserRole), default=UserRole.shipper)
+    role = Column(Enum(UserRole), default=UserRole.forwarder)
     
     # Банковские реквизиты для подтверждения
     bank_name = Column(String, nullable=True)

@@ -16,6 +16,20 @@ def get_db():
         db.close()
 
 
+def _normalize_role(role: str) -> str:
+    raw = role.value if hasattr(role, "value") else role
+    value = str(raw or "").strip().lower()
+    if value.startswith("userrole."):
+        value = value.split(".", 1)[1]
+    if value == "shipper":
+        return "client"
+    if value == "expeditor":
+        return "forwarder"
+    if value in {"carrier", "client", "forwarder", "admin"}:
+        return value
+    return "forwarder"
+
+
 @router.post("/register", response_model=dict)
 def register(data: RegisterRequest, db: Session = Depends(get_db)):
     """Регистрация нового пользователя по ИНН (ИП или ООО)"""
@@ -73,6 +87,18 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
     name = user.organization_name or user.fullname or user.phone
     token = create_token({"id": user.id, "phone": user.phone, "name": name})
     return {"access_token": token, "token_type": "bearer"}
+
+
+@router.get("/me", response_model=dict)
+def me(current_user: User = Depends(get_current_user)):
+    role_raw = current_user.role.value if hasattr(current_user.role, "value") else str(current_user.role)
+    return {
+        "id": current_user.id,
+        "phone": current_user.phone,
+        "organization_name": current_user.organization_name or current_user.company or current_user.fullname,
+        "role": _normalize_role(role_raw),
+        "role_raw": role_raw,
+    }
 
 
 @router.post("/confirm-payment/{user_id}")
