@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+docker-compose.yml.bak
+
+# Node
+node_modules/
+
+# IDE / tooling (не пушить в main)
+.cursor/
+.codex/

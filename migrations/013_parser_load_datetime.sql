@@ -1,0 +1,13 @@
+ALTER TABLE parser_ingest_events ADD COLUMN IF NOT EXISTS load_date VARCHAR(10);
+ALTER TABLE parser_ingest_events ADD COLUMN IF NOT EXISTS load_time VARCHAR(5);
+ALTER TABLE parser_ingest_events ADD COLUMN IF NOT EXISTS cargo_description VARCHAR(255);
+ALTER TABLE parser_ingest_events ADD COLUMN IF NOT EXISTS from_lat DOUBLE PRECISION;
+ALTER TABLE parser_ingest_events ADD COLUMN IF NOT EXISTS from_lon DOUBLE PRECISION;
+ALTER TABLE parser_ingest_events ADD COLUMN IF NOT EXISTS to_lat DOUBLE PRECISION;
+ALTER TABLE parser_ingest_events ADD COLUMN IF NOT EXISTS to_lon DOUBLE PRECISION;
+ALTER TABLE parser_ingest_events ADD COLUMN IF NOT EXISTS payment_terms VARCHAR(120);
+ALTER TABLE parser_ingest_events ADD COLUMN IF NOT EXISTS is_direct_customer BOOLEAN;
+ALTER TABLE parser_ingest_events ADD COLUMN IF NOT EXISTS dimensions VARCHAR(64);
+ALTER TABLE parser_ingest_events ADD COLUMN IF NOT EXISTS is_hot_deal BOOLEAN DEFAULT false;
+ALTER TABLE parser_ingest_events ADD COLUMN IF NOT EXISTS suggested_response TEXT;
+ALTER TABLE parser_ingest_events ADD COLUMN IF NOT EXISTS phone_blacklisted BOOLEAN DEFAULT false;

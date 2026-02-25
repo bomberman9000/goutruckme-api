@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Пользователи — Админ-панель{% endblock %}
+{% block content %}
+<div class="flex">
+    <aside class="w-64 bg-gray-800 min-h-screen p-4">
+        <div class="text-white text-xl font-bold mb-8">🚛 Logistics</div>
+        <nav>
+            <a href="/admin" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-chart-line mr-2"></i> Дашборд
+            </a>
+            <a href="/admin/users" class="block py-2 px-4 text-white bg-gray-700 rounded mb-2">
+                <i class="fas fa-users mr-2"></i> Пользователи
+            </a>
+            <a href="/admin/cargos" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-truck mr-2"></i> Грузы
+            </a>
+            <a href="/admin/reports" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-flag mr-2"></i> Жалобы
+            </a>
+            <a href="/admin/feedback" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-comment mr-2"></i> Отзывы
+            </a>
+            <a href="/admin/logout" class="block py-2 px-4 text-red-400 hover:bg-gray-700 rounded mt-8">
+                <i class="fas fa-sign-out-alt mr-2"></i> Выход
+            </a>
+        </nav>
+    </aside>
+    
+    <main class="flex-1 p-8">
+        <h1 class="text-3xl font-bold mb-8">Пользователи ({{ total }})</h1>
+        
+        <div class="bg-white rounded-lg shadow overflow-hidden">
+            <table class="w-full">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-sm font-medium text-gray-500">ID</th>
+                        <th class="px-6 py-3 text-left text-sm font-medium text-gray-500">Имя</th>
+                        <th class="px-6 py-3 text-left text-sm font-medium text-gray-500">Username</th>
+                        <th class="px-6 py-3 text-left text-sm font-medium text-gray-500">Телефон</th>
+                        <th class="px-6 py-3 text-left text-sm font-medium text-gray-500">Trust</th>
+                        <th class="px-6 py-3 text-left text-sm font-medium text-gray-500">Статус</th>
+                        <th class="px-6 py-3 text-left text-sm font-medium text-gray-500">Дата</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for user in users %}
+                    <tr class="hover:bg-gray-50 cursor-pointer" onclick="window.location='/admin/users/{{ user.id }}'">
+                        <td class="px-6 py-4 text-sm">{{ user.id }}</td>
+                        <td class="px-6 py-4 text-sm font-medium">{{ user.full_name }}</td>
+                        <td class="px-6 py-4 text-sm text-gray-500">{{ user.username or '—' }}</td>
+                        <td class="px-6 py-4 text-sm">{{ user.phone or '—' }}</td>
+                        <td class="px-6 py-4 text-sm">
+                            <span class="{% if user.trust_score >= 80 %}text-green-600{% elif user.trust_score >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}">
+                                {{ user.trust_score }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-sm">
+                            {% if user.is_banned %}
+                            <span class="bg-red-100 text-red-800 px-2 py-1 rounded text-xs">Бан</span>
+                            {% elif user.is_verified %}
+                            <span class="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">Верифицирован</span>
+                            {% else %}
+                            <span class="bg-gray-100 text-gray-800 px-2 py-1 rounded text-xs">Обычный</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-500">{{ user.created_at.strftime('%d.%m.%Y') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Pagination -->
+        <div class="mt-4 flex justify-center space-x-2">
+            {% if page > 1 %}
+            <a href="/admin/users?page={{ page - 1 }}" class="px-4 py-2 bg-white border rounded hover:bg-gray-50">←</a>
+            {% endif %}
+            <span class="px-4 py-2 bg-blue-600 text-white rounded">{{ page }}</span>
+            {% if page < total_pages %}
+            <a href="/admin/users?page={{ page + 1 }}" class="px-4 py-2 bg-white border rounded hover:bg-gray-50">→</a>
+            {% endif %}
+        </div>
+    </main>
+</div>
+{% endblock %}

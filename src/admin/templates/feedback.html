@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Отзывы — Админ-панель{% endblock %}
+{% block content %}
+<div class="flex">
+    <aside class="w-64 bg-gray-800 min-h-screen p-4">
+        <div class="text-white text-xl font-bold mb-8">🚛 Logistics</div>
+        <nav>
+            <a href="/admin" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-chart-line mr-2"></i> Дашборд
+            </a>
+            <a href="/admin/users" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-users mr-2"></i> Пользователи
+            </a>
+            <a href="/admin/cargos" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-truck mr-2"></i> Грузы
+            </a>
+            <a href="/admin/reports" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-flag mr-2"></i> Жалобы
+            </a>
+            <a href="/admin/feedback" class="block py-2 px-4 text-white bg-gray-700 rounded mb-2">
+                <i class="fas fa-comment mr-2"></i> Отзывы
+            </a>
+            <a href="/admin/logout" class="block py-2 px-4 text-red-400 hover:bg-gray-700 rounded mt-8">
+                <i class="fas fa-sign-out-alt mr-2"></i> Выход
+            </a>
+        </nav>
+    </aside>
+    
+    <main class="flex-1 p-8">
+        <h1 class="text-3xl font-bold mb-8">Отзывы пользователей</h1>
+        
+        <div class="space-y-4">
+            {% for fb in feedbacks %}
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex justify-between items-start">
+                    <span class="text-gray-500 text-sm">User ID: {{ fb.user_id }}</span>
+                    <span class="text-gray-500 text-sm">{{ fb.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
+                </div>
+                <p class="mt-2 text-gray-700">{{ fb.message }}</p>
+            </div>
+            {% else %}
+            <div class="text-gray-500 text-center py-8">Нет отзывов</div>
+            {% endfor %}
+        </div>
+    </main>
+</div>
+{% endblock %}

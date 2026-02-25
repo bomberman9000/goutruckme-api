@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ user.full_name }} — Админ-панель{% endblock %}
+{% block content %}
+<div class="flex">
+    <aside class="w-64 bg-gray-800 min-h-screen p-4">
+        <div class="text-white text-xl font-bold mb-8">🚛 Logistics</div>
+        <nav>
+            <a href="/admin" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-chart-line mr-2"></i> Дашборд
+            </a>
+            <a href="/admin/users" class="block py-2 px-4 text-white bg-gray-700 rounded mb-2">
+                <i class="fas fa-users mr-2"></i> Пользователи
+            </a>
+            <a href="/admin/cargos" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-truck mr-2"></i> Грузы
+            </a>
+            <a href="/admin/reports" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-flag mr-2"></i> Жалобы
+            </a>
+            <a href="/admin/logout" class="block py-2 px-4 text-red-400 hover:bg-gray-700 rounded mt-8">
+                <i class="fas fa-sign-out-alt mr-2"></i> Выход
+            </a>
+        </nav>
+    </aside>
+    
+    <main class="flex-1 p-8">
+        <a href="/admin/users" class="text-blue-600 hover:underline mb-4 inline-block">← Назад</a>
+        
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h1 class="text-3xl font-bold">{{ user.full_name }}</h1>
+                    <p class="text-gray-500">ID: {{ user.id }} | @{{ user.username or '—' }}</p>
+                </div>
+                <div class="space-x-2">
+                    {% if user.is_banned %}
+                    <form action="/admin/users/{{ user.id }}/unban" method="POST" class="inline">
+                        <button class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Разбанить</button>
+                    </form>
+                    {% else %}
+                    <form action="/admin/users/{{ user.id }}/ban" method="POST" class="inline">
+                        <button class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">Забанить</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-4 gap-4 mt-6">
+                <div class="bg-gray-50 p-4 rounded">
+                    <div class="text-gray-500 text-sm">Телефон</div>
+                    <div class="font-medium">{{ user.phone or '—' }}</div>
+                </div>
+                <div class="bg-gray-50 p-4 rounded">
+                    <div class="text-gray-500 text-sm">Компания</div>
+                    <div class="font-medium">{{ user.company or '—' }}</div>
+                </div>
+                <div class="bg-gray-50 p-4 rounded">
+                    <div class="text-gray-500 text-sm">Trust Score</div>
+                    <div class="font-medium {% if user.trust_score >= 80 %}text-green-600{% elif user.trust_score >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}">
+                        {{ user.trust_score }}/100
+                    </div>
+                </div>
+                <div class="bg-gray-50 p-4 rounded">
+                    <div class="text-gray-500 text-sm">Рейтинг</div>
+                    <div class="font-medium">{% if avg_rating %}⭐ {{ avg_rating }}{% else %}—{% endif %}</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-6">
+            <!-- Cargos -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-bold mb-4">Грузы ({{ cargos|length }})</h2>
+                {% for cargo in cargos %}
+                <div class="border-b py-2">
+                    <div class="font-medium">{{ cargo.from_city }} → {{ cargo.to_city }}</div>
+                    <div class="text-sm text-gray-500">{{ cargo.weight }}т, {{ "{:,}".format(cargo.price) }} ₽</div>
+                    {% if bot_username %}
+                    <a href="https://t.me/{{ bot_username }}?start=cargo_{{ cargo.id }}" class="text-xs text-blue-600 hover:underline" target="_blank">открыть в боте</a>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="text-gray-500">Нет грузов</div>
+                {% endfor %}
+            </div>
+            
+            <!-- Reports -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-bold mb-4">Жалобы на пользователя ({{ reports|length }})</h2>
+                {% for report in reports %}
+                <div class="border-b py-2">
+                    <div class="font-medium text-red-600">{{ report.report_type.value }}</div>
+                    <div class="text-sm text-gray-500">{{ report.description[:100] }}...</div>
+                </div>
+                {% else %}
+                <div class="text-gray-500">Нет жалоб</div>
+                {% endfor %}
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}

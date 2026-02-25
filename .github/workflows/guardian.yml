@@ -1,0 +1,60 @@
+name: guardian
+on:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  fix:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f pyproject.toml ]; then pip install -e .; fi
+          pip install pytest ruff requests
+
+      - name: Run Guardian (attempt fix)
+        env:
+          GUARDIAN_LLM_PROVIDER: ${{ secrets.GUARDIAN_LLM_PROVIDER }}
+          GUARDIAN_LLM_BASE_URL: ${{ secrets.GUARDIAN_LLM_BASE_URL }}
+          GUARDIAN_LLM_API_KEY: ${{ secrets.GUARDIAN_LLM_API_KEY }}
+          GUARDIAN_LLM_MODEL: ${{ secrets.GUARDIAN_LLM_MODEL }}
+        run: |
+          python tools/guardian/main.py --mode=ci-failure
+
+      - name: Configure git identity
+        run: |
+          git config user.name "guardian-bot"
+          git config user.email "guardian-bot@users.noreply.github.com"
+
+      - name: Create PR if changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git diff --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          BRANCH="guardian/$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "Guardian: attempt CI fix"
+          git push origin "$BRANCH"
+          gh pr create --title "Guardian: attempt CI fix" --body "Auto-generated fix attempt. Please review. CI should validate." --base main

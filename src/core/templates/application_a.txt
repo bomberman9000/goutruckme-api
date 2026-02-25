@@ -1,0 +1,33 @@
+Договор - заявка № {{ deal.app_id or '—' }} (Заявка А)
+
+Дата погрузки: {{ deal.load_date|default_dash }}
+Адрес погрузки: {{ deal.load_address|default_dash }}
+Контакт погрузки: {{ deal.load_contact_name|default_dash }} {{ deal.load_contact_phone }}
+Адрес выгрузки: {{ deal.unload_address|default_dash }}
+Контакт выгрузки: {{ deal.unload_contact_name|default_dash }} {{ deal.unload_contact_phone }}
+Груз: {{ deal.cargo_name|default_dash }}, {{ deal.cargo_weight_kg or '—' }} кг
+Стоимость (клиент): {{ deal.client_price|default_dash }} руб. {{ deal.payment_vat_text|default_dash }}
+Условия оплаты: {{ deal.payment_terms|default_dash }}
+Плательщик: {{ deal.payer_company_name|default_dash }}
+
+РЕКВИЗИТЫ СТОРОН
+
+[[PARTIES_START]]
+Экспедитор:
+Название: {{ forwarder.company.name|default_dash }}
+ИНН/КПП/ОГРН: {{ forwarder.company.inn|default_dash }} / {{ forwarder.company.kpp|default_dash }} / {{ forwarder.company.ogrn|default_dash }}
+Адрес: {{ forwarder.company.legal_address|default_dash }}
+Банк: {{ forwarder.bank.name|default_dash }}, БИК {{ forwarder.bank.bik|default_dash }}, р/с {{ forwarder.bank.account|default_dash }}, к/с {{ forwarder.bank.corr_account|default_dash }}
+Контакт: {{ forwarder.contact.name|default_dash }}, {{ forwarder.contact.phone|default_dash }}, {{ forwarder.contact.email|default_dash }}
+
+Клиент:
+Название: {{ client.company.name|default_dash }}
+ИНН/КПП/ОГРН: {{ client.company.inn|default_dash }} / {{ client.company.kpp|default_dash }} / {{ client.company.ogrn|default_dash }}
+Адрес: {{ client.company.legal_address|default_dash }}
+Банк: {{ client.bank.name|default_dash }}, БИК {{ client.bank.bik|default_dash }}, р/с {{ client.bank.account|default_dash }}, к/с {{ client.bank.corr_account|default_dash }}
+Контакт: {{ client.contact.name|default_dash }}, {{ client.contact.phone|default_dash }}, {{ client.contact.email|default_dash }}
+[[PARTIES_END]]
+
+ПОДПИСИ
+
+{{ signatures_block }}

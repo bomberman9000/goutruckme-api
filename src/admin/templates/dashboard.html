@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Дашборд — Админ-панель{% endblock %}
+{% block content %}
+<div class="flex">
+    <!-- Sidebar -->
+    <aside class="w-64 bg-gray-800 min-h-screen p-4">
+        <div class="text-white text-xl font-bold mb-8">🚛 Logistics</div>
+        <nav>
+            <a href="/admin" class="block py-2 px-4 text-white bg-gray-700 rounded mb-2">
+                <i class="fas fa-chart-line mr-2"></i> Дашборд
+            </a>
+            <a href="/admin/users" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-users mr-2"></i> Пользователи
+            </a>
+            <a href="/admin/cargos" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-truck mr-2"></i> Грузы
+            </a>
+            <a href="/admin/reports" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-flag mr-2"></i> Жалобы
+            </a>
+            <a href="/admin/feedback" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-comment mr-2"></i> Отзывы
+            </a>
+            <a href="/admin/logout" class="block py-2 px-4 text-red-400 hover:bg-gray-700 rounded mt-8">
+                <i class="fas fa-sign-out-alt mr-2"></i> Выход
+            </a>
+        </nav>
+    </aside>
+    
+    <!-- Main -->
+    <main class="flex-1 p-8">
+        <h1 class="text-3xl font-bold mb-8">Дашборд</h1>
+        
+        <!-- Stats -->
+        <div class="grid grid-cols-4 gap-6 mb-8">
+            <div class="bg-white p-6 rounded-lg shadow">
+                <div class="text-gray-500 text-sm">Пользователей</div>
+                <div class="text-3xl font-bold">{{ stats.users }}</div>
+                <div class="text-green-500 text-sm">+{{ stats.new_users }} за неделю</div>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow">
+                <div class="text-gray-500 text-sm">Всего грузов</div>
+                <div class="text-3xl font-bold">{{ stats.cargos }}</div>
+                <div class="text-green-500 text-sm">+{{ stats.new_cargos }} за неделю</div>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow">
+                <div class="text-gray-500 text-sm">Активных грузов</div>
+                <div class="text-3xl font-bold text-blue-600">{{ stats.active_cargos }}</div>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow">
+                <div class="text-gray-500 text-sm">Жалоб на рассмотрении</div>
+                <div class="text-3xl font-bold text-red-600">{{ stats.reports }}</div>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-2 gap-6">
+            <!-- Revenue -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h2 class="text-xl font-bold mb-4">💰 Оборот</h2>
+                <div class="text-4xl font-bold text-green-600">{{ "{:,}".format(stats.revenue) }} ₽</div>
+                <div class="text-gray-500">Завершённые грузы</div>
+            </div>
+            
+            <!-- Recent Cargos -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h2 class="text-xl font-bold mb-4">📦 Последние грузы</h2>
+                <div class="space-y-3">
+                    {% for cargo in recent_cargos %}
+                    <div class="flex justify-between items-center border-b pb-2">
+                        <div>
+                            <span class="font-medium">{{ cargo.from_city }} → {{ cargo.to_city }}</span>
+                            <span class="text-gray-500 text-sm ml-2">{{ cargo.weight }}т</span>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-blue-600 font-medium">{{ "{:,}".format(cargo.price) }} ₽</div>
+                            {% if bot_username %}
+                            <a href="https://t.me/{{ bot_username }}?start=cargo_{{ cargo.id }}" class="text-xs text-blue-600 hover:underline" target="_blank">открыть в боте</a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}

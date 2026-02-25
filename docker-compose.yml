@@ -1,0 +1,121 @@
+services:
+  bot:
+    build: .
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-}
+      GRUZPOTOK_API_INTERNAL_URL: ${GRUZPOTOK_API_INTERNAL_URL:-http://gruzpotok-api:8000}
+      GRUZPOTOK_SYNC_PATH: ${GRUZPOTOK_SYNC_PATH:-/internal/sync}
+      GRUZPOTOK_CREATE_MAGIC_LINK_PATH: ${GRUZPOTOK_CREATE_MAGIC_LINK_PATH:-/internal/auth/create-login-token}
+    depends_on:
+      - redis
+      - postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      backend-network:
+        aliases:
+          - tg-bot
+    restart: unless-stopped
+
+  parser-bot:
+    build: .
+    command: ["python", "-m", "src.parser_bot.ingestor"]
+    profiles: ["parser", "parser-v2"]
+    env_file:
+      - .env
+    environment:
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-}
+      PARSER_ENABLED: ${PARSER_ENABLED:-false}
+      PARSER_TG_API_ID: ${PARSER_TG_API_ID:-}
+      PARSER_TG_API_HASH: ${PARSER_TG_API_HASH:-}
+      PARSER_TG_STRING_SESSION: ${PARSER_TG_STRING_SESSION:-}
+      PARSER_TG_SESSION_NAME: ${PARSER_TG_SESSION_NAME:-/app/.parser/parser-bot}
+      PARSER_CHAT_IDS: ${PARSER_CHAT_IDS:-}
+      PARSER_SOURCE_NAME: ${PARSER_SOURCE_NAME:-tg-parser-bot}
+      PARSER_STREAM_NAME: ${PARSER_STREAM_NAME:-logistics_stream}
+      PARSER_STREAM_MAXLEN: ${PARSER_STREAM_MAXLEN:-200000}
+    depends_on:
+      - redis
+    volumes:
+      - parser_sessions:/app/.parser
+    networks:
+      - backend-network
+    restart: on-failure
+
+  parser-worker:
+    build: .
+    command: ["python", "-m", "src.parser_bot.worker"]
+    profiles: ["parser", "parser-v2"]
+    env_file:
+      - .env
+    environment:
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-}
+      GRUZPOTOK_API_INTERNAL_URL: ${GRUZPOTOK_API_INTERNAL_URL:-http://gruzpotok-api:8000}
+      GRUZPOTOK_SYNC_PATH: ${GRUZPOTOK_SYNC_PATH:-/internal/sync}
+      PARSER_ENABLED: ${PARSER_ENABLED:-false}
+      PARSER_KEYWORDS: ${PARSER_KEYWORDS:-груз,погрузка,выгрузка,тент,реф,ндс,ставка,догруз,фрахт}
+      PARSER_DEDUPE_TTL_SEC: ${PARSER_DEDUPE_TTL_SEC:-7200}
+      PARSER_SOURCE_NAME: ${PARSER_SOURCE_NAME:-tg-parser-bot}
+      PARSER_DEFAULT_USER_ID: ${PARSER_DEFAULT_USER_ID:-}
+      PARSER_HTTP_TIMEOUT: ${PARSER_HTTP_TIMEOUT:-10}
+      PARSER_STREAM_NAME: ${PARSER_STREAM_NAME:-logistics_stream}
+      PARSER_STREAM_MAXLEN: ${PARSER_STREAM_MAXLEN:-200000}
+      PARSER_STREAM_GROUP: ${PARSER_STREAM_GROUP:-parser_workers}
+      PARSER_STREAM_BLOCK_MS: ${PARSER_STREAM_BLOCK_MS:-5000}
+      PARSER_STREAM_BATCH: ${PARSER_STREAM_BATCH:-100}
+      PARSER_STREAM_CLAIM_IDLE_MS: ${PARSER_STREAM_CLAIM_IDLE_MS:-60000}
+      PARSER_WORKER_NAME: ${PARSER_WORKER_NAME:-worker-1}
+      PARSER_WORKER_MAX_RETRIES: ${PARSER_WORKER_MAX_RETRIES:-3}
+      PARSER_SCORE_MIN_TRUST: ${PARSER_SCORE_MIN_TRUST:-40}
+      PARSER_SCORING_ENABLE_AI: ${PARSER_SCORING_ENABLE_AI:-false}
+      PARSER_SCORING_AI_MODEL: ${PARSER_SCORING_AI_MODEL:-}
+      PARSER_SCORING_TIMEOUT_SEC: ${PARSER_SCORING_TIMEOUT_SEC:-8}
+      DADATA_API_URL: ${DADATA_API_URL:-https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/party}
+      DADATA_API_TOKEN: ${DADATA_API_TOKEN:-}
+    depends_on:
+      - redis
+    networks:
+      - backend-network
+    restart: on-failure
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bot
+      POSTGRES_PASSWORD: botpass
+      POSTGRES_DB: botdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend-network
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  postgres_data:
+  parser_sessions:
+
+networks:
+  backend-network:
+    external: true
+    name: backend-network

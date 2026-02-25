@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Грузы</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --bg: var(--tg-theme-bg-color, #ffffff);
+            --text: var(--tg-theme-text-color, #000000);
+            --hint: var(--tg-theme-hint-color, #999999);
+            --link: var(--tg-theme-link-color, #2481cc);
+            --btn: var(--tg-theme-button-color, #2481cc);
+            --btn-text: var(--tg-theme-button-text-color, #ffffff);
+            --secondary-bg: var(--tg-theme-secondary-bg-color, #f0f0f0);
+        }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+        .tg-btn {
+            background: var(--btn);
+            color: var(--btn-text);
+        }
+        .tg-btn:active { opacity: 0.8; }
+        .tg-secondary { background: var(--secondary-bg); }
+        .tg-hint { color: var(--hint); }
+        .tg-link { color: var(--link); }
+        .card {
+            background: var(--secondary-bg);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        .card:active { transform: scale(0.98); }
+        .filter-input {
+            background: var(--secondary-bg);
+            color: var(--text);
+            border: none;
+            border-radius: 10px;
+            padding: 10px 14px;
+            width: 100%;
+            outline: none;
+            font-size: 15px;
+        }
+        .filter-input::placeholder { color: var(--hint); }
+        .stars { letter-spacing: 1px; }
+        .screen { display: none; }
+        .screen.active { display: block; }
+        .tab-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--bg);
+            border-top: 1px solid var(--secondary-bg);
+            display: flex;
+            padding: 8px 0;
+            padding-bottom: max(8px, env(safe-area-inset-bottom));
+            z-index: 100;
+        }
+        .tab-item {
+            flex: 1;
+            text-align: center;
+            font-size: 11px;
+            color: var(--hint);
+            cursor: pointer;
+            padding: 4px 0;
+        }
+        .tab-item.active { color: var(--link); }
+        .tab-icon { font-size: 22px; display: block; margin-bottom: 2px; }
+        .badge {
+            display: inline-block;
+            background: #ef4444;
+            color: white;
+            font-size: 10px;
+            padding: 1px 5px;
+            border-radius: 8px;
+            margin-left: 4px;
+            vertical-align: top;
+        }
+        .skeleton {
+            background: linear-gradient(90deg, var(--secondary-bg) 25%, var(--bg) 50%, var(--secondary-bg) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 8px;
+            height: 80px;
+            margin-bottom: 10px;
+        }
+        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+    </style>
+</head>
+<body>
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+        <div class="tab-item active" onclick="showScreen('list')">
+            <span class="tab-icon">📦</span>Грузы
+        </div>
+        <div class="tab-item" onclick="showScreen('search')">
+            <span class="tab-icon">🔍</span>Поиск
+        </div>
+        <div class="tab-item" onclick="showScreen('profile')">
+            <span class="tab-icon">👤</span>Профиль
+        </div>
+    </div>
+
+    <div style="padding-bottom: 80px;">
+
+    <!-- CARGO LIST SCREEN -->
+    <div id="screen-list" class="screen active">
+        <div style="padding: 16px;">
+            <h1 style="font-size: 22px; font-weight: 700; margin: 0 0 14px 0;">📦 Грузы</h1>
+            <div id="cargo-list"></div>
+            <div id="cargo-loading">
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+                <div class="skeleton"></div>
+            </div>
+            <div id="cargo-empty" style="display:none; text-align:center; padding:40px 0;">
+                <div style="font-size:48px; margin-bottom:12px;">📭</div>
+                <div class="tg-hint">Нет активных грузов</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SEARCH SCREEN -->
+    <div id="screen-search" class="screen">
+        <div style="padding: 16px;">
+            <h1 style="font-size: 22px; font-weight: 700; margin: 0 0 14px 0;">🔍 Поиск</h1>
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;">
+                <input id="filter-from" class="filter-input" placeholder="Откуда" autocomplete="off">
+                <input id="filter-to" class="filter-input" placeholder="Куда" autocomplete="off">
+                <div style="display: flex; gap: 10px;">
+                    <input id="filter-weight-min" class="filter-input" placeholder="Вес от, т" type="number" step="0.1">
+                    <input id="filter-weight-max" class="filter-input" placeholder="Вес до, т" type="number" step="0.1">
+                </div>
+                <button onclick="doSearch()" class="tg-btn" style="padding: 12px; border-radius: 10px; border: none; font-size: 16px; font-weight: 600; cursor: pointer;">
+                    Найти
+                </button>
+            </div>
+            <div id="search-results"></div>
+            <div id="search-empty" style="display:none; text-align:center; padding:30px 0;">
+                <div class="tg-hint">Введите параметры и нажмите «Найти»</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CARGO DETAIL SCREEN -->
+    <div id="screen-detail" class="screen">
+        <div style="padding: 16px;">
+            <div style="margin-bottom: 12px;">
+                <span onclick="goBack()" class="tg-link" style="cursor:pointer; font-size: 15px;">← Назад</span>
+            </div>
+            <div id="detail-content"></div>
+        </div>
+    </div>
+
+    <!-- PROFILE SCREEN -->
+    <div id="screen-profile" class="screen">
+        <div style="padding: 16px;">
+            <h1 style="font-size: 22px; font-weight: 700; margin: 0 0 14px 0;">👤 Профиль</h1>
+            <div id="profile-content">
+                <div class="skeleton"></div>
+            </div>
+        </div>
+    </div>
+
+    </div>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+const initData = tg.initData || '';
+const API = '/api/webapp';
+let prevScreen = 'list';
+
+// --- Navigation ---
+function showScreen(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + name).classList.add('active');
+    document.querySelectorAll('.tab-item').forEach((t, i) => {
+        t.classList.toggle('active', ['list','search','profile'][i] === name);
+    });
+    if (name === 'profile') loadProfile();
+    if (name === 'list' && document.getElementById('cargo-list').innerHTML === '') loadCargos();
+}
+
+function goBack() {
+    showScreen(prevScreen);
+}
+
+// --- API helpers ---
+async function apiFetch(url, opts = {}) {
+    const headers = opts.headers || {};
+    if (initData) headers['X-Telegram-Init-Data'] = initData;
+    const resp = await fetch(url, { ...opts, headers });
+    if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || 'Request failed');
+    }
+    return resp.json();
+}
+
+// --- Cargo List ---
+async function loadCargos(params = {}) {
+    const list = document.getElementById('cargo-list');
+    const loading = document.getElementById('cargo-loading');
+    const empty = document.getElementById('cargo-empty');
+    loading.style.display = 'block';
+    empty.style.display = 'none';
+    list.innerHTML = '';
+
+    try {
+        const qs = new URLSearchParams();
+        if (params.from_city) qs.set('from_city', params.from_city);
+        if (params.to_city) qs.set('to_city', params.to_city);
+        if (params.min_weight) qs.set('min_weight', params.min_weight);
+        if (params.max_weight) qs.set('max_weight', params.max_weight);
+
+        const data = await apiFetch(API + '/cargos?' + qs.toString());
+        loading.style.display = 'none';
+
+        if (!data.cargos.length) {
+            empty.style.display = 'block';
+            return;
+        }
+
+        data.cargos.forEach(c => {
+            list.innerHTML += renderCargoCard(c);
+        });
+    } catch (e) {
+        loading.style.display = 'none';
+        list.innerHTML = '<div class="tg-hint" style="text-align:center;padding:20px;">Ошибка загрузки</div>';
+    }
+}
+
+function renderCargoCard(c) {
+    return `
+    <div class="card" onclick="openCargo(${c.id})">
+        <div style="display:flex; justify-content:space-between; align-items:start;">
+            <div>
+                <div style="font-weight:600; font-size:15px;">📍 ${c.from_city} → ${c.to_city}</div>
+                <div class="tg-hint" style="font-size:13px; margin-top:4px;">
+                    ${c.cargo_type} · ${c.weight} т
+                    ${c.load_time ? ' · ' + c.load_time : ''}
+                </div>
+            </div>
+            <div style="text-align:right;">
+                <div style="font-weight:700; font-size:16px;">${formatPrice(c.price)} ₽</div>
+                <div class="tg-hint" style="font-size:12px;">${c.load_date}</div>
+            </div>
+        </div>
+        ${c.comment ? '<div class="tg-hint" style="font-size:13px; margin-top:6px;">💬 ' + c.comment.substring(0, 60) + '</div>' : ''}
+    </div>`;
+}
+
+function formatPrice(n) {
+    return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+// --- Cargo Detail ---
+async function openCargo(id) {
+    prevScreen = document.querySelector('.screen.active').id.replace('screen-', '');
+    showScreenRaw('detail');
+    const content = document.getElementById('detail-content');
+    content.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
+
+    try {
+        const c = await apiFetch(API + '/cargo/' + id);
+        let stars = '';
+        if (c.company && c.company.rating !== null) {
+            const r = c.company.rating;
+            stars = '⭐'.repeat(r) + '☆'.repeat(10 - r) + ` (${r}/10)`;
+        }
+
+        let html = `
+        <div style="margin-bottom: 20px;">
+            <h2 style="font-size: 20px; font-weight: 700; margin: 0 0 4px 0;">📦 Груз #${c.id}</h2>
+            <div class="tg-hint" style="font-size: 13px;">Создан: ${c.created_at.substring(0,10)}</div>
+        </div>
+
+        <div class="tg-secondary" style="border-radius:12px; padding:14px; margin-bottom:12px;">
+            <div style="font-size: 17px; font-weight: 600; margin-bottom: 8px;">📍 ${c.from_city} → ${c.to_city}</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:14px;">
+                <div>📦 ${c.cargo_type}</div>
+                <div>⚖️ ${c.weight} т${c.volume ? ' / ' + c.volume + ' м³' : ''}</div>
+                <div>💰 <b>${formatPrice(c.price)} ₽</b></div>
+                <div>📅 ${c.load_date}${c.load_time ? ' ' + c.load_time : ''}</div>
+            </div>
+            ${c.comment ? '<div style="margin-top:8px; font-size:14px;" class="tg-hint">💬 ' + c.comment + '</div>' : ''}
+        </div>
+
+        <div class="tg-secondary" style="border-radius:12px; padding:14px; margin-bottom:12px;">
+            <div style="font-weight:600; margin-bottom:6px;">👤 Заказчик</div>
+            <div style="font-size:14px;">${c.owner.name}</div>`;
+
+        if (c.company) {
+            html += `
+            <div style="font-size:14px; margin-top:4px;">🏢 ${c.company.name || 'Компания'}</div>
+            <div style="font-size:14px; margin-top:4px;" class="stars">📊 ${stars}</div>`;
+            if (c.company.rating < 4) {
+                html += '<div style="color:#ef4444; font-size:13px; margin-top:4px;">⚠️ Низкий рейтинг</div>';
+            }
+            if (c.company.open_claims > 0) {
+                html += `<div style="color:#ef4444; font-size:13px; margin-top:2px;">🚨 Открытых претензий: ${c.company.open_claims}</div>`;
+            }
+        } else {
+            html += '<div class="tg-hint" style="font-size:13px; margin-top:4px;">Компания не зарегистрирована</div>';
+        }
+
+        html += `
+            <div class="tg-hint" style="font-size:13px; margin-top:4px;">Откликов: ${c.responses_count}</div>
+        </div>`;
+
+        html += `
+        <button id="btn-respond" onclick="respondCargo(${c.id})" class="tg-btn" style="width:100%; padding:14px; border-radius:12px; border:none; font-size:16px; font-weight:600; cursor:pointer;">
+            📨 Откликнуться
+        </button>`;
+
+        content.innerHTML = html;
+    } catch (e) {
+        content.innerHTML = '<div class="tg-hint" style="text-align:center; padding:20px;">Ошибка загрузки</div>';
+    }
+}
+
+function showScreenRaw(name) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + name).classList.add('active');
+}
+
+async function respondCargo(id) {
+    const btn = document.getElementById('btn-respond');
+    btn.disabled = true;
+    btn.textContent = '⏳ Отправка...';
+
+    try {
+        await apiFetch(API + '/respond/' + id, { method: 'POST' });
+        btn.textContent = '✅ Отклик отправлен';
+        btn.style.opacity = '0.7';
+        tg.HapticFeedback.notificationOccurred('success');
+    } catch (e) {
+        btn.textContent = e.message || 'Ошибка';
+        btn.disabled = false;
+        tg.HapticFeedback.notificationOccurred('error');
+        setTimeout(() => { btn.textContent = '📨 Откликнуться'; }, 2000);
+    }
+}
+
+// --- Search ---
+async function doSearch() {
+    const from = document.getElementById('filter-from').value.trim();
+    const to = document.getElementById('filter-to').value.trim();
+    const wMin = document.getElementById('filter-weight-min').value;
+    const wMax = document.getElementById('filter-weight-max').value;
+    const results = document.getElementById('search-results');
+    const empty = document.getElementById('search-empty');
+    empty.style.display = 'none';
+    results.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
+
+    try {
+        const qs = new URLSearchParams();
+        if (from) qs.set('from_city', from);
+        if (to) qs.set('to_city', to);
+        if (wMin) qs.set('min_weight', wMin);
+        if (wMax) qs.set('max_weight', wMax);
+
+        const data = await apiFetch(API + '/cargos?' + qs.toString());
+
+        if (!data.cargos.length) {
+            results.innerHTML = '';
+            empty.style.display = 'block';
+            empty.querySelector('.tg-hint').textContent = 'Ничего не найдено';
+            return;
+        }
+
+        results.innerHTML = `<div class="tg-hint" style="margin-bottom:10px; font-size:13px;">Найдено: ${data.count}</div>`;
+        data.cargos.forEach(c => {
+            results.innerHTML += renderCargoCard(c);
+        });
+    } catch (e) {
+        results.innerHTML = '<div class="tg-hint" style="text-align:center;">Ошибка поиска</div>';
+    }
+}
+
+// --- Profile ---
+async function loadProfile() {
+    const content = document.getElementById('profile-content');
+    if (!initData) {
+        content.innerHTML = '<div class="tg-hint" style="text-align:center; padding:30px;">Откройте через Telegram</div>';
+        return;
+    }
+    content.innerHTML = '<div class="skeleton"></div>';
+
+    try {
+        const data = await apiFetch(API + '/profile');
+
+        let html = `
+        <div class="tg-secondary" style="border-radius:12px; padding:14px; margin-bottom:12px;">
+            <div style="font-weight:600; font-size:16px;">${data.user.name}</div>
+            ${data.user.username ? '<div class="tg-hint" style="font-size:13px;">@' + data.user.username + '</div>' : ''}
+            ${data.user.phone ? '<div style="font-size:14px; margin-top:4px;">📞 ' + data.user.phone + '</div>' : ''}
+            <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
+                ${data.user.is_verified ? '<span style="font-size:12px; background:#22c55e; color:white; padding:2px 8px; border-radius:6px;">✅ Верифицирован</span>' : ''}
+                ${data.user.is_carrier ? '<span style="font-size:12px; background:var(--btn); color:var(--btn-text); padding:2px 8px; border-radius:6px;">🚛 Перевозчик</span>' : ''}
+            </div>
+        </div>`;
+
+        if (data.company) {
+            const r = data.company.rating;
+            const stars = '⭐'.repeat(r) + '☆'.repeat(10 - r);
+            html += `
+            <div class="tg-secondary" style="border-radius:12px; padding:14px; margin-bottom:12px;">
+                <div style="font-weight:600;">🏢 ${data.company.name || 'Компания'}</div>
+                ${data.company.inn ? '<div class="tg-hint" style="font-size:13px;">ИНН: ' + data.company.inn + '</div>' : ''}
+                <div style="margin-top:4px;" class="stars">${stars} (${r}/10)</div>
+            </div>`;
+        }
+
+        if (data.cargos.length) {
+            html += '<div style="font-weight:600; margin:14px 0 8px 0;">📦 Мои грузы</div>';
+            data.cargos.forEach(c => {
+                const statusIcons = {new:'🆕',in_progress:'🚚',completed:'✅',cancelled:'❌',archived:'🗄',active:'✅'};
+                html += `
+                <div class="card" onclick="openCargo(${c.id})">
+                    <div style="display:flex; justify-content:space-between;">
+                        <div>
+                            <div style="font-weight:600; font-size:14px;">${c.from_city} → ${c.to_city}</div>
+                            <div class="tg-hint" style="font-size:12px;">${c.weight} т · ${c.load_date}</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div style="font-weight:600;">${formatPrice(c.price)} ₽</div>
+                            <div style="font-size:12px;">${statusIcons[c.status] || ''} ${c.status}</div>
+                        </div>
+                    </div>
+                </div>`;
+            });
+        } else {
+            html += '<div class="tg-hint" style="text-align:center; padding:20px;">Грузов нет</div>';
+        }
+
+        content.innerHTML = html;
+    } catch (e) {
+        content.innerHTML = '<div class="tg-hint" style="text-align:center; padding:20px;">Ошибка загрузки</div>';
+    }
+}
+
+// --- Init ---
+loadCargos();
+</script>
+</body>
+</html>

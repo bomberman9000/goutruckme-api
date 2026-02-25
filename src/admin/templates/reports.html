@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Жалобы — Админ-панель{% endblock %}
+{% block content %}
+<div class="flex">
+    <aside class="w-64 bg-gray-800 min-h-screen p-4">
+        <div class="text-white text-xl font-bold mb-8">🚛 Logistics</div>
+        <nav>
+            <a href="/admin" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-chart-line mr-2"></i> Дашборд
+            </a>
+            <a href="/admin/users" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-users mr-2"></i> Пользователи
+            </a>
+            <a href="/admin/cargos" class="block py-2 px-4 text-gray-300 hover:bg-gray-700 rounded mb-2">
+                <i class="fas fa-truck mr-2"></i> Грузы
+            </a>
+            <a href="/admin/reports" class="block py-2 px-4 text-white bg-gray-700 rounded mb-2">
+                <i class="fas fa-flag mr-2"></i> Жалобы
+            </a>
+            <a href="/admin/logout" class="block py-2 px-4 text-red-400 hover:bg-gray-700 rounded mt-8">
+                <i class="fas fa-sign-out-alt mr-2"></i> Выход
+            </a>
+        </nav>
+    </aside>
+    
+    <main class="flex-1 p-8">
+        <h1 class="text-3xl font-bold mb-8">Жалобы</h1>
+        
+        <div class="space-y-4">
+            {% for report in reports %}
+            <div class="bg-white rounded-lg shadow p-6 {% if not report.is_reviewed %}border-l-4 border-red-500{% endif %}">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <span class="{% if report.report_type.value == 'fraud' %}bg-red-100 text-red-800{% elif report.report_type.value == 'spam' %}bg-yellow-100 text-yellow-800{% else %}bg-gray-100 text-gray-800{% endif %} px-2 py-1 rounded text-xs font-medium">
+                            {{ report.report_type.value }}
+                        </span>
+                        <span class="text-gray-500 text-sm ml-2">{{ report.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
+                    </div>
+                    {% if not report.is_reviewed %}
+                    <form action="/admin/reports/{{ report.id }}/review" method="POST">
+                        <button class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">✓ Рассмотрено</button>
+                    </form>
+                    {% else %}
+                    <span class="text-green-600 text-sm">✓ Рассмотрено</span>
+                    {% endif %}
+                </div>
+                <div class="mt-3">
+                    <p class="text-gray-700">{{ report.description }}</p>
+                </div>
+                {% if report.cargo_id %}
+                <div class="mt-3 text-sm text-gray-500">
+                    Груз:
+                    {% if bot_username %}
+                    <a href="https://t.me/{{ bot_username }}?start=cargo_{{ report.cargo_id }}" class="text-blue-600 hover:underline" target="_blank">#{{ report.cargo_id }}</a>
+                    {% else %}
+                    #{{ report.cargo_id }}
+                    {% endif %}
+                </div>
+                {% endif %}
+                <div class="mt-3 text-sm text-gray-500">
+                    От: <a href="/admin/users/{{ report.from_user_id }}" class="text-blue-600 hover:underline">{{ users.get(report.from_user_id).full_name if users.get(report.from_user_id) else report.from_user_id }}</a>
+                    → На: <a href="/admin/users/{{ report.to_user_id }}" class="text-blue-600 hover:underline">{{ users.get(report.to_user_id).full_name if users.get(report.to_user_id) else report.to_user_id }}</a>
+                </div>
+            </div>
+            {% else %}
+            <div class="text-gray-500 text-center py-8">Нет жалоб</div>
+            {% endfor %}
+        </div>
+    </main>
+</div>
+{% endblock %}

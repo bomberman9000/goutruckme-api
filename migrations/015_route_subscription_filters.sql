@@ -1,0 +1,4 @@
+ALTER TABLE route_subscriptions ADD COLUMN IF NOT EXISTS body_type VARCHAR(64);
+ALTER TABLE route_subscriptions ADD COLUMN IF NOT EXISTS min_rate INTEGER;
+ALTER TABLE route_subscriptions ADD COLUMN IF NOT EXISTS max_weight DOUBLE PRECISION;
+ALTER TABLE route_subscriptions ADD COLUMN IF NOT EXISTS region VARCHAR(64);
