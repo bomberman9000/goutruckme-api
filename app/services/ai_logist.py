@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
+from app.matching.scorer import evaluate_trust
 
 
 class TruckType(str, Enum):
@@ -333,6 +334,22 @@ class AILogist:
             else:
                 score -= 10
                 reasons.append(f"⚠️ Низкий рейтинг: {rating}")
+
+            carrier_trust_score = owner.get("trust_score", 50) if isinstance(owner, dict) else 50
+            carrier_flags_high = owner.get("trust_flags_high", 0) if isinstance(owner, dict) else 0
+            client_trust_score = load.get("client_trust_score", 50)
+            client_flags_high = load.get("client_flags_high", 0)
+
+            trust_eval = evaluate_trust(
+                carrier_trust_score=carrier_trust_score,
+                client_trust_score=client_trust_score,
+                base_risk="low",
+                carrier_flags_high=int(carrier_flags_high or 0),
+                client_flags_high=int(client_flags_high or 0),
+            )
+            score += trust_eval["trust_influence"]
+            if trust_eval.get("trust_explain"):
+                reasons.append(trust_eval["trust_explain"])
             
             # Добавляем в результаты
             matches.append({
@@ -345,7 +362,14 @@ class AILogist:
                 "owner_phone": owner.get("phone", "") if isinstance(owner, dict) else "",
                 "rating": rating,
                 "match_score": score,
-                "reasons": reasons
+                "reasons": reasons,
+                "carrier_trust_score": trust_eval["carrier_trust_score"],
+                "client_trust_score": trust_eval["client_trust_score"],
+                "trust_stars": trust_eval["trust_stars"],
+                "trust_score_avg": trust_eval["trust_score_avg"],
+                "trust_influence": trust_eval["trust_influence"],
+                "low_trust_penalty_applied": trust_eval["low_trust_penalty_applied"],
+                "risk_level": trust_eval["risk_level"],
             })
         
         # Сортируем по score
@@ -413,7 +437,21 @@ class AILogist:
             
             # Общий score
             rating = carrier.get("rating", 4.0) if isinstance(carrier, dict) else 4.0
-            total_score = price_score + (rating * 10)
+            carrier_trust_score = carrier.get("trust_score", 50) if isinstance(carrier, dict) else 50
+            carrier_flags_high = carrier.get("trust_flags_high", 0) if isinstance(carrier, dict) else 0
+            client_trust_score = load.get("client_trust_score", 50)
+            client_flags_high = load.get("client_flags_high", 0)
+
+            base_risk = "medium" if price_diff >= 25 else "low"
+            trust_eval = evaluate_trust(
+                carrier_trust_score=carrier_trust_score,
+                client_trust_score=client_trust_score,
+                base_risk=base_risk,
+                carrier_flags_high=int(carrier_flags_high or 0),
+                client_flags_high=int(client_flags_high or 0),
+            )
+
+            total_score = price_score + (rating * 10) + (trust_eval["trust_influence"] * 2)
             
             analyzed_bids.append({
                 "bid_id": bid.get("id"),
@@ -425,7 +463,14 @@ class AILogist:
                 "carrier_rating": rating,
                 "comment": bid.get("comment", ""),
                 "total_score": total_score,
-                "recommendation": "Рекомендуем" if total_score >= 40 else "Можно рассмотреть" if total_score >= 20 else "Не рекомендуем"
+                "recommendation": "Рекомендуем" if total_score >= 40 else "Можно рассмотреть" if total_score >= 20 else "Не рекомендуем",
+                "carrier_trust_score": trust_eval["carrier_trust_score"],
+                "client_trust_score": trust_eval["client_trust_score"],
+                "trust_stars": trust_eval["trust_stars"],
+                "trust_influence": trust_eval["trust_influence"],
+                "low_trust_penalty_applied": trust_eval["low_trust_penalty_applied"],
+                "trust_explain": trust_eval["trust_explain"],
+                "risk_level": trust_eval["risk_level"],
             })
         
         # Сортируем по score
@@ -585,7 +630,5 @@ class AILogist:
 
 # Singleton instance
 ai_logist = AILogist()
-
-
 
 

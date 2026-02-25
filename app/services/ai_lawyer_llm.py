@@ -55,7 +55,7 @@ class AILawyerLLM:
     GIGACHAT_KEY = os.getenv("GIGACHAT_KEY", "")
     
     # Системный промпт для юриста
-    SYSTEM_PROMPT = """Ты — AI-юрист платформы грузоперевозок GouTruckMe.
+    SYSTEM_PROMPT = """Ты — AI-юрист платформы грузоперевозок ГрузПоток.
 
 Твоя задача — анализировать заявки на перевозку грузов и выявлять:
 1. Юридические риски
@@ -700,4 +700,3 @@ class AILawyerLLM:
 
 # Singleton instance
 ai_lawyer_llm = AILawyerLLM()
-

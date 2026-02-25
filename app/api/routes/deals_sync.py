@@ -5,16 +5,88 @@ API синхронизации сделок с фронта (localStorage → с
 Защита: X-Client-Key (или Authorization Bearer).
 """
 
+import logging
 from datetime import datetime
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
 
+logger = logging.getLogger(__name__)
+
 from app.db.database import get_db
-from app.models.models import DealSync
+from app.models.models import DealSync, Load
+from app.trust.service import recalc_company_trust
 
 router = APIRouter()
+
+
+def _safe_int(value) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_company_ids_from_payload(payload: dict | None, db: Session) -> set[int]:
+    if not isinstance(payload, dict):
+        return set()
+
+    ids: set[int] = set()
+    for key in (
+        "user_id",
+        "userId",
+        "shipper_id",
+        "shipperId",
+        "client_id",
+        "clientId",
+        "carrier_id",
+        "carrierId",
+        "counterparty_id",
+        "counterpartyId",
+        "owner_id",
+        "ownerId",
+    ):
+        maybe_id = _safe_int(payload.get(key))
+        if maybe_id is not None:
+            ids.add(maybe_id)
+
+    for key in ("shipper", "client", "carrier", "counterparty", "owner", "user"):
+        nested = payload.get(key)
+        if isinstance(nested, dict):
+            for nested_key in ("id", "user_id", "userId"):
+                maybe_id = _safe_int(nested.get(nested_key))
+                if maybe_id is not None:
+                    ids.add(maybe_id)
+
+    cargo_id = None
+    for key in ("cargo_id", "cargoId", "load_id", "loadId"):
+        maybe_id = _safe_int(payload.get(key))
+        if maybe_id is not None:
+            cargo_id = maybe_id
+            break
+
+    if cargo_id is None and isinstance(payload.get("cargoSnapshot"), dict):
+        cargo_id = _safe_int(payload["cargoSnapshot"].get("id"))
+
+    if cargo_id is not None:
+        owner_id = db.query(Load.user_id).filter(Load.id == cargo_id).scalar()
+        owner_id = _safe_int(owner_id)
+        if owner_id is not None:
+            ids.add(owner_id)
+
+    return ids
+
+
+def _recalc_trust_safely(db: Session, payload: dict | None) -> None:
+    company_ids = _extract_company_ids_from_payload(payload, db)
+    for company_id in company_ids:
+        try:
+            recalc_company_trust(db, int(company_id))
+        except Exception as e:
+            logger.warning("recalc_company_trust failed for company_id=%s: %s", company_id, e)
 
 
 def verify_client_sync_key(
@@ -85,6 +157,7 @@ def create_deal_sync(
     from app.moderation.service import run_deal_review_background, set_review_pending
     set_review_pending(db, "deal", server_id)
     background_tasks.add_task(run_deal_review_background, server_id)
+    _recalc_trust_safely(db, body.payload)
     return {
         "server_id": server_id,
         "updated_at": out_row.updated_at.isoformat() if getattr(out_row, "updated_at", None) else "",
@@ -110,6 +183,7 @@ def update_deal_sync(
     from app.moderation.service import run_deal_review_background, set_review_pending
     set_review_pending(db, "deal", server_id)
     background_tasks.add_task(run_deal_review_background, server_id)
+    _recalc_trust_safely(db, body.payload)
     return {
         "server_id": row.id,
         "updated_at": row.updated_at.isoformat() if row.updated_at else "",

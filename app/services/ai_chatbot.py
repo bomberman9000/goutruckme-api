@@ -89,7 +89,7 @@ class AIChatbot:
     
     # Шаблоны сообщений
     TEMPLATES = {
-        "greeting": "Здравствуйте! Я — AI-диспетчер GouTruckMe. 🚛",
+        "greeting": "Добро пожаловать в ГрузПоток! Я — AI-диспетчер платформы. 🚛",
         
         "load_offer": """🚛 НОВАЯ ЗАЯВКА
 
@@ -707,7 +707,6 @@ class AIChatbot:
 
 # Singleton instance
 ai_chatbot = AIChatbot()
-
 
 
 

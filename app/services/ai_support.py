@@ -51,7 +51,7 @@ class AISupport:
         if any(greet in message_lower for greet in self.GREETINGS):
             return {
                 "type": "greeting",
-                "message": "Здравствуйте! Я ИИ-помощник GouTruckMe. Чем могу помочь?",
+                "message": "Здравствуйте! Я ИИ-помощник ГрузПоток. Чем могу помочь?",
                 "suggestions": ["Как создать заявку?", "Как сделать ставку?", "Как работает оплата?"]
             }
         
@@ -110,7 +110,7 @@ class AISupport:
     def get_help_menu(self) -> dict:
         """Получить меню помощи."""
         return {
-            "title": "Справочный центр GouTruckMe",
+            "title": "Справочный центр ГрузПоток",
             "sections": [
                 {
                     "name": "Начало работы",
@@ -131,7 +131,6 @@ class AISupport:
 
 # Singleton instance
 ai_support = AISupport()
-
 
 
 

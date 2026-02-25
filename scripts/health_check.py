@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-🔍 GouTruckMe - Health Check Script
+🔍 ГрузПоток - Health Check Script
 Проверяет работоспособность всех компонентов системы
 """
 import sys
@@ -116,7 +116,7 @@ def check_api_server(port=8080):
 def main():
     """Основная функция проверки."""
     print("=" * 60)
-    print("🔍 GouTruckMe - Health Check")
+    print("🔍 ГрузПоток - Health Check")
     print("=" * 60)
     
     results = []

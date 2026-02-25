@@ -4,6 +4,7 @@ AI Диспетчер - автоматический подбор машин и 
 from datetime import datetime
 from typing import List, Optional
 from app.models.models import Load, Truck, User, Bid
+from app.services.cargo_status import is_active_status
 
 
 class AIDispatcher:
@@ -169,7 +170,7 @@ class AIDispatcher:
         available_trucks = [t for t in trucks if t.status == "free"]
         
         for load in loads:
-            if load.status != "open":
+            if not is_active_status(load.status):
                 continue
             
             matches = self.find_matching_trucks(load, available_trucks)
@@ -237,7 +238,6 @@ class AIDispatcher:
 
 # Singleton instance
 ai_dispatcher = AIDispatcher()
-
 
 
 

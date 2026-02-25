@@ -43,6 +43,18 @@ def upsert_review(
     row.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(row)
+
+    # Обновляем trust-агрегаты компаний, связанных с сущностью модерации.
+    try:
+        from app.trust.service import get_related_company_ids_for_review, recalc_company_trust
+
+        company_ids = get_related_company_ids_for_review(db, entity_type, entity_id)
+        for company_id in company_ids:
+            recalc_company_trust(db, int(company_id))
+    except Exception:
+        # Модерация остаётся успешной даже если trust-пересчёт временно недоступен.
+        pass
+
     return row
 
 

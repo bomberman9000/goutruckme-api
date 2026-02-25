@@ -5,7 +5,7 @@ from fastmcp import FastMCP
 # твои реальные движки
 from app.moderation.engine import review_deal, review_document
 
-mcp = FastMCP("goutruckme-mcp")
+mcp = FastMCP("gruzpotok-mcp")
 
 
 @mcp.tool()

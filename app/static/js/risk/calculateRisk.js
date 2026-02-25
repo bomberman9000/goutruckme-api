@@ -18,10 +18,6 @@ function calculateCargoRisk(cargo, context = []) {
         reasons.push('NO_CONTACT');
     }
     
-    if (window.RiskRules.checkPastDate(cargo)) {
-        reasons.push('PAST_DATE');
-    }
-    
     if (window.RiskRules.checkIncompleteData(cargo)) {
         reasons.push('INCOMPLETE_DATA');
     }
@@ -61,4 +57,3 @@ function calculateCargoRisk(cargo, context = []) {
 if (typeof window !== 'undefined') {
     window.calculateCargoRisk = calculateCargoRisk;
 }
-

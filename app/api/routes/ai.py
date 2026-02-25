@@ -9,6 +9,7 @@ from app.services.ai_dispatcher import ai_dispatcher
 from app.services.ai_driver import ai_driver
 from app.services.ai_analytics import ai_analytics
 from app.services.ai_verification import ai_verification
+from app.services.cargo_status import apply_cargo_status_filter, expire_outdated_cargos
 
 router = APIRouter()
 
@@ -146,7 +147,8 @@ def check_rate(load_id: int, proposed_rate: float, db: Session = Depends(get_db)
 @router.post("/dispatcher/distribute")
 def auto_distribute(db: Session = Depends(get_db)):
     """Автоматическое распределение заявок по машинам."""
-    loads = db.query(Load).filter(Load.status == "open").all()
+    expire_outdated_cargos(db)
+    loads = apply_cargo_status_filter(db.query(Load), "active").all()
     trucks = db.query(Truck).filter(Truck.status == "free").all()
     return ai_dispatcher.auto_distribute_loads(loads, trucks)
 

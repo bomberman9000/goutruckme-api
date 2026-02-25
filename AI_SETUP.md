@@ -1,4 +1,4 @@
-# 🤖 Настройка Искусственного Интеллекта для GouTruckMe
+# 🤖 Настройка Искусственного Интеллекта для ГрузПоток
 
 ## 📋 Что нужно для работы ИИ
 
@@ -89,11 +89,11 @@ GIGACHAT_KEY=your-gigachat-key
 
 ## 📝 Создание .env файла
 
-Создайте файл `.env` в корне проекта (`goutruckme/.env`):
+Создайте файл `.env` в корне проекта (`gruzpotok/.env`):
 
 ```bash
 # База данных
-DATABASE_URL=sqlite:///./goutruckme.db
+DATABASE_URL=sqlite:///./gruzpotok.db
 
 # Безопасность
 SECRET_KEY=your-secret-key-change-in-production

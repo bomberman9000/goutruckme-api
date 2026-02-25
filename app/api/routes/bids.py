@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from jose import jwt
 from app.db.database import SessionLocal
-from app.models.models import Bid, Load
+from app.models.models import Bid, CargoStatus, Load
 from app.core.security import SECRET_KEY, ALGORITHM
+from app.trust.service import recalc_company_trust
 
 router = APIRouter()
 
@@ -66,9 +67,15 @@ def accept_bid(bid_id: int, db: Session = Depends(get_db)):
     if not load:
         return {"error": "Load not found"}
     
-    load.status = "covered"
+    load.status = CargoStatus.closed.value
 
     db.commit()
+
+    try:
+        recalc_company_trust(db, int(load.user_id))
+        recalc_company_trust(db, int(bid.carrier_id))
+    except Exception:
+        pass
     
     # Начисление баллов за успешную сделку
     try:

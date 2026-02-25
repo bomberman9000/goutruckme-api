@@ -2,17 +2,17 @@
 
 ## Скрипт
 - **Файл:** `deploy.sh` (в корне проекта)
-- **На сервере:** один раз положить в `/opt/goutruckme` (git pull или rsync), дальше — одна команда.
+- **На сервере:** один раз положить в `/opt/gruzpotok` (git pull или rsync), дальше — одна команда.
 
 ## Запуск
 ```bash
-cd /opt/goutruckme
+cd /opt/gruzpotok
 bash deploy.sh
 ```
 
 Или, если сделали `chmod +x deploy.sh`:
 ```bash
-cd /opt/goutruckme
+cd /opt/gruzpotok
 ./deploy.sh
 ```
 

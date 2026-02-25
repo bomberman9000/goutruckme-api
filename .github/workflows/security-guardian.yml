@@ -1,0 +1,68 @@
+name: security-guardian
+on:
+  schedule:
+    - cron: "0 3 * * *"   # ежедневно 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install scanners
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit bandit semgrep
+          GITLEAKS_VERSION="8.18.4"
+          curl -sSL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tar.gz
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Gitleaks (secrets)
+        run: |
+          gitleaks detect --no-git -v --report-format json --report-path gitleaks.json || true
+
+      - name: pip-audit (deps)
+        run: |
+          if [ -f requirements.txt ]; then pip-audit -r requirements.txt -f json -o pip_audit.json || true; else echo "[]" > pip_audit.json; fi
+
+      - name: Bandit (python)
+        run: |
+          bandit -r . -f json -o bandit.json || true
+
+      - name: Semgrep (SAST)
+        run: |
+          semgrep scan --config auto --json -o semgrep.json || true
+
+      - name: Configure git identity
+        run: |
+          git config user.name "security-guardian-bot"
+          git config user.email "security-guardian-bot@users.noreply.github.com"
+
+      - name: Remediate + PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python tools/security_guardian/main.py --mode=scan --inputs gitleaks.json pip_audit.json bandit.json semgrep.json
+
+          if git diff --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          BRANCH="security-guardian/$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "Security Guardian: automated remediation"
+          git push origin "$BRANCH"
+          gh pr create --title "Security Guardian: automated remediation" --body "Automated remediation attempt. Review required. See attached scan summaries in PR description." --base main

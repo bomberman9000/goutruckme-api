@@ -56,21 +56,6 @@ function checkNoContact(cargo) {
 }
 
 /**
- * Проверка: дата в прошлом
- * @param {Object} cargo - Груз
- * @returns {boolean} - true если дата погрузки уже прошла
- */
-function checkPastDate(cargo) {
-    if (!cargo.loading_date) return false;
-    
-    const loadingDate = new Date(cargo.loading_date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    return loadingDate < today;
-}
-
-/**
  * Проверка: неполные данные
  * @param {Object} cargo - Груз
  * @returns {boolean} - true если отсутствует вес или тип машины
@@ -86,9 +71,7 @@ if (typeof window !== 'undefined') {
     window.RiskRules = {
         checkLowPrice,
         checkNoContact,
-        checkPastDate,
         checkIncompleteData
     };
 }
-
 

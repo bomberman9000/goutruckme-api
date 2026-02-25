@@ -8,7 +8,9 @@ from pydantic import BaseModel
 from typing import Optional, List
 from app.db.database import SessionLocal
 from app.models.models import Load, Truck, Bid, User
+from app.services.cargo_status import apply_cargo_status_filter, expire_outdated_cargos
 from app.services.ai_logist import ai_logist
+from app.trust.service import get_company_trust_snapshot
 
 router = APIRouter()
 
@@ -19,6 +21,12 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _trust_snapshot_for(db: Session, user_id: Optional[int]) -> dict:
+    if not user_id:
+        return get_company_trust_snapshot(db, None)
+    return get_company_trust_snapshot(db, int(user_id))
 
 
 # ============ SCHEMAS ============
@@ -110,6 +118,7 @@ def find_trucks(request: FindTrucksRequest, db: Session = Depends(get_db)):
     trucks = []
     for truck in trucks_db:
         owner = db.query(User).filter(User.id == truck.user_id).first()
+        trust = _trust_snapshot_for(db, owner.id if owner else None)
         trucks.append({
             "id": truck.id,
             "type": truck.type,
@@ -121,7 +130,10 @@ def find_trucks(request: FindTrucksRequest, db: Session = Depends(get_db)):
                 "id": owner.id,
                 "fullname": owner.fullname,
                 "phone": owner.phone,
-                "rating": owner.rating
+                "rating": owner.rating,
+                "trust_score": trust.get("trust_score", 50),
+                "trust_stars": trust.get("stars", 3),
+                "trust_flags_high": (trust.get("signals") or {}).get("flags_high", 0),
             } if owner else {}
         })
     
@@ -130,7 +142,9 @@ def find_trucks(request: FindTrucksRequest, db: Session = Depends(get_db)):
         "to_city": request.to_city,
         "weight": request.weight,
         "volume": request.volume,
-        "price": request.price
+        "price": request.price,
+        "client_trust_score": 50,
+        "client_flags_high": 0,
     }
     
     result = ai_logist.find_trucks(load, trucks)
@@ -151,6 +165,7 @@ def find_trucks_for_load(load_id: int, db: Session = Depends(get_db)):
     trucks = []
     for truck in trucks_db:
         owner = db.query(User).filter(User.id == truck.user_id).first()
+        trust = _trust_snapshot_for(db, owner.id if owner else None)
         trucks.append({
             "id": truck.id,
             "type": truck.type,
@@ -162,9 +177,14 @@ def find_trucks_for_load(load_id: int, db: Session = Depends(get_db)):
                 "id": owner.id,
                 "fullname": owner.fullname,
                 "phone": owner.phone,
-                "rating": owner.rating
+                "rating": owner.rating,
+                "trust_score": trust.get("trust_score", 50),
+                "trust_stars": trust.get("stars", 3),
+                "trust_flags_high": (trust.get("signals") or {}).get("flags_high", 0),
             } if owner else {}
         })
+
+    client_trust = _trust_snapshot_for(db, load_db.user_id)
     
     load = {
         "id": load_db.id,
@@ -172,7 +192,9 @@ def find_trucks_for_load(load_id: int, db: Session = Depends(get_db)):
         "to_city": load_db.to_city,
         "weight": load_db.weight,
         "volume": load_db.volume,
-        "price": load_db.price
+        "price": load_db.price,
+        "client_trust_score": client_trust.get("trust_score", 50),
+        "client_flags_high": (client_trust.get("signals") or {}).get("flags_high", 0),
     }
     
     result = ai_logist.find_trucks(load, trucks)
@@ -194,8 +216,10 @@ def compare_bids(load_id: int, db: Session = Depends(get_db)):
     bids_db = db.query(Bid).filter(Bid.load_id == load_id).all()
     
     bids = []
+    client_trust = _trust_snapshot_for(db, load_db.user_id)
     for bid in bids_db:
         carrier = db.query(User).filter(User.id == bid.carrier_id).first()
+        trust = _trust_snapshot_for(db, carrier.id if carrier else None)
         bids.append({
             "id": bid.id,
             "price": bid.price,
@@ -205,7 +229,10 @@ def compare_bids(load_id: int, db: Session = Depends(get_db)):
             "carrier": {
                 "id": carrier.id,
                 "fullname": carrier.fullname,
-                "rating": carrier.rating
+                "rating": carrier.rating,
+                "trust_score": trust.get("trust_score", 50),
+                "trust_stars": trust.get("stars", 3),
+                "trust_flags_high": (trust.get("signals") or {}).get("flags_high", 0),
             } if carrier else {}
         })
     
@@ -213,7 +240,9 @@ def compare_bids(load_id: int, db: Session = Depends(get_db)):
         "from_city": load_db.from_city,
         "to_city": load_db.to_city,
         "weight": load_db.weight,
-        "truck_type": "10т"
+        "truck_type": "10т",
+        "client_trust_score": client_trust.get("trust_score", 50),
+        "client_flags_high": (client_trust.get("signals") or {}).get("flags_high", 0),
     }
     
     result = ai_logist.compare_bids(bids, load)
@@ -249,8 +278,9 @@ def auto_dispatch(db: Session = Depends(get_db)):
     """
     🤖 Автоматическое распределение заявок по машинам.
     """
-    # Получаем открытые заявки
-    loads_db = db.query(Load).filter(Load.status == "open").all()
+    # Получаем только актуальные заявки.
+    expire_outdated_cargos(db)
+    loads_db = apply_cargo_status_filter(db.query(Load), "active").all()
     loads = [{
         "id": l.id,
         "from_city": l.from_city,
@@ -325,6 +355,7 @@ def get_logist_status():
             "Поиск и подбор машин",
             "Сравнение ставок",
             "ТОП-3 предложений",
+            "Trust score в матчинге",
             "Авто-распределение",
             "Генерация сообщений для водителей",
             "Аналитика по маршрутам"
@@ -341,7 +372,3 @@ def get_logist_status():
             "GET /logist/quick-price": "Быстрый расчёт"
         }
     }
-
-
-
-

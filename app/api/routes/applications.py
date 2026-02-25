@@ -1,6 +1,7 @@
 """
 API для работы с заявками (applications/документами).
 """
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -13,8 +14,22 @@ from sqlalchemy.orm import Session
 from app.core.security import get_current_user
 from app.db.database import get_db
 from app.models.models import User, Deal, Document
+from app.trust.service import recalc_company_trust
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _recalc_trust_safely(db: Session, *company_ids: int) -> None:
+    seen: set[int] = set()
+    for company_id in company_ids:
+        if not company_id or company_id in seen:
+            continue
+        seen.add(company_id)
+        try:
+            recalc_company_trust(db, int(company_id))
+        except Exception as e:
+            logger.warning("recalc_company_trust failed for company_id=%s: %s", company_id, e)
 
 
 # ============================================
@@ -137,6 +152,7 @@ async def sign_application(
 
     db.commit()
     db.refresh(deal)
+    _recalc_trust_safely(db, deal.shipper_id, deal.carrier_id)
 
     try:
         from app.services.bot_webhooks import notify_application_signed
@@ -145,8 +161,8 @@ async def sign_application(
             asyncio.create_task(
                 notify_application_signed(app_id, deal.id, current_user.telegram_id)
             )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Telegram notification failed for app_id=%s: %s", app_id, e)
 
     return {
         "success": True,

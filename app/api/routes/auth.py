@@ -1,9 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
+
 from app.db.database import SessionLocal
 from app.models.models import User, UserRole
 from app.core.security import hash_password, verify_password, create_token, get_current_user
 from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse
+from app.services.login_tokens import verify_login_token
+from app.services.sync_warmup import get_warmup_context
 
 router = APIRouter()
 
@@ -28,6 +34,17 @@ def _normalize_role(role: str) -> str:
     if value in {"carrier", "client", "forwarder", "admin"}:
         return value
     return "forwarder"
+
+
+def _normalize_magic_redirect_path(raw_value: str | None) -> str:
+    value = (raw_value or "").strip()
+    if not value:
+        return "/dashboard"
+    if not value.startswith("/"):
+        return "/dashboard"
+    if value.startswith("//"):
+        return "/dashboard"
+    return value
 
 
 @router.post("/register", response_model=dict)
@@ -138,3 +155,99 @@ def confirm_payment(
         "verified": True,
         "message": "Аккаунт подтвержден! Полный доступ активирован."
     }
+
+
+def _build_autologin_response(
+    *,
+    access_token: str,
+    redirect_path: str,
+    search_id: str | None,
+    warmup_payload: dict | None,
+) -> HTMLResponse:
+    html = f"""<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Вход в ГрузПоток</title>
+</head>
+<body>
+<script>
+  (function () {{
+    try {{
+      localStorage.setItem("authToken", {json.dumps(access_token)});
+      if ({json.dumps(search_id)} !== null) {{
+        localStorage.setItem("gruzpotok_search_id", String({json.dumps(search_id)}));
+      }}
+      if ({json.dumps(warmup_payload)} !== null) {{
+        localStorage.setItem("gruzpotok_search_warmup", JSON.stringify({json.dumps(warmup_payload)}));
+      }}
+    }} catch (e) {{}}
+    window.location.replace({json.dumps(redirect_path)});
+  }})();
+</script>
+Выполняем вход...
+</body>
+</html>"""
+    response = HTMLResponse(content=html, headers={"Cache-Control": "no-store, max-age=0"})
+    response.set_cookie(
+        key="auth_token",
+        value=access_token,
+        httponly=True,
+        samesite="lax",
+        max_age=86400,
+        path="/",
+    )
+    return response
+
+
+@router.get("/telegram-autologin", response_class=HTMLResponse)
+@router.get("/magic", response_class=HTMLResponse)
+def telegram_autologin(
+    token: str = Query(..., min_length=16),
+    db: Session = Depends(get_db),
+):
+    """
+    Автологин из Telegram magic link:
+    - верифицирует временный login token из internal слоя
+    - ставит JWT cookie
+    - редиректит на dashboard.
+    """
+    payload = verify_login_token(token, consume=True)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Невалидный или просроченный токен")
+
+    user = db.query(User).filter(User.id == int(payload.user_id)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    if user.telegram_id and int(user.telegram_id) != int(payload.telegram_user_id):
+        raise HTTPException(status_code=409, detail="Telegram аккаунт уже привязан к другому пользователю")
+
+    if not user.telegram_id:
+        user.telegram_id = int(payload.telegram_user_id)
+        db.commit()
+
+    name = user.organization_name or user.fullname or user.phone
+    access_token = create_token({"id": int(user.id), "phone": user.phone, "name": name})
+
+    redirect_path = _normalize_magic_redirect_path(payload.redirect_path)
+    search_id = payload.search_id
+    warmup_payload = None
+    if search_id:
+        cached = get_warmup_context(str(search_id))
+        if cached:
+            warmup_payload = {
+                "search_id": cached.get("search_id"),
+                "from_city": cached.get("from_city"),
+                "to_city": cached.get("to_city"),
+                "query": cached.get("query"),
+                "recommendations": cached.get("recommendations") or [],
+            }
+
+    return _build_autologin_response(
+        access_token=access_token,
+        redirect_path=redirect_path,
+        search_id=search_id,
+        warmup_payload=warmup_payload,
+    )

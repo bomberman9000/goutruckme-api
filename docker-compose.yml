@@ -1,32 +1,50 @@
 services:
   api:
     build: .
-    container_name: goutruckme-api
+    container_name: gruzpotok-api
     restart: always
     ports:
       - "8000:8000"
     depends_on:
       - db
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/goutruckme
+      DATABASE_URL: postgresql://postgres:Sofia6662@db:5432/gruzpotok
       BUILD_SHA: ${BUILD_SHA:-local}
       BUILD_TIME: ${BUILD_TIME:-}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change_me_internal_token}
+      TG_BOT_URL: ${TG_BOT_URL:-http://tg-bot:8001}
+      TG_BOT_INTERNAL_URL: ${TG_BOT_INTERNAL_URL:-http://tg-bot:8001}
+      TG_BOT_INTERNAL_EVENT_PATH: ${TG_BOT_INTERNAL_EVENT_PATH:-/internal/event}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://144.31.64.130:8000}
+      LOGIN_TOKEN_TTL_SECONDS: ${LOGIN_TOKEN_TTL_SECONDS:-300}
+      MAGIC_LINK_TTL_SECONDS: ${MAGIC_LINK_TTL_SECONDS:-300}
+      SYNC_WARMUP_TTL_SEC: ${SYNC_WARMUP_TTL_SEC:-600}
     volumes:
       - .:/app
+    networks:
+      backend-network:
+        aliases:
+          - gruzpotok-api
 
   db:
     image: postgres:15
-    container_name: goutruckme-db
+    container_name: gruzpotok-db
     restart: always
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: goutruckme
+      POSTGRES_PASSWORD: Sofia6662
+      POSTGRES_DB: gruzpotok
     ports:
       - "5433:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    networks:
+      - backend-network
 
 volumes:
   db_data:
 
+networks:
+  backend-network:
+    external: true
+    name: backend-network

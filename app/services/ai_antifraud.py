@@ -322,27 +322,7 @@ class AIAntifraud:
                 details={"description_length": len(description) if description else 0}
             ))
         
-        # 7. Странные сроки (погрузка в прошлом)
-        if loading_date:
-            try:
-                if isinstance(loading_date, str):
-                    load_dt = datetime.fromisoformat(loading_date.replace('Z', ''))
-                else:
-                    load_dt = loading_date
-                
-                if load_dt < datetime.now() - timedelta(days=1):
-                    alerts.append(RiskAlert(
-                        category=RiskCategory.LOGICAL,
-                        risk_type="past_date",
-                        severity="high",
-                        message="⚠️ Дата погрузки в прошлом",
-                        score=25,
-                        details={"loading_date": str(loading_date)}
-                    ))
-            except:
-                pass
-        
-        # 8. Подозрительный текст
+        # 7. Подозрительный текст
         text_alerts = self._analyze_text(description)
         alerts.extend(text_alerts)
         

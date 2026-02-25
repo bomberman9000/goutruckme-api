@@ -61,7 +61,7 @@ def health():
 
     return {
         "status": status,
-        "message": "GouTruckMe API работает",
+        "message": "ГрузПоток API работает",
         "db": db,
         "migrations": migrations,
         "build": build,

@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Подписание договора-заявки</title>
+  <style>
+    :root {
+      --bg: #0a1020;
+      --card: #111a33;
+      --line: #273354;
+      --text: #e8eefc;
+      --muted: #99a7cb;
+      --accent: #6ea8fe;
+      --ok: #1f8f5f;
+      --warn: #c88a1f;
+      --err: #b84242;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: radial-gradient(circle at top right, #1e2a4a 0%, var(--bg) 45%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 18px 14px 28px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-size: 20px;
+      margin: 0 0 6px;
+    }
+    .muted { color: var(--muted); font-size: 14px; }
+    .banner {
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 14px;
+      margin-bottom: 12px;
+      border: 1px solid transparent;
+      display: none;
+    }
+    .banner.show { display: block; }
+    .banner.info { background: rgba(71, 120, 212, 0.18); border-color: rgba(110, 168, 254, 0.45); }
+    .banner.ok { background: rgba(31, 143, 95, 0.2); border-color: rgba(31, 143, 95, 0.45); }
+    .banner.err { background: rgba(184, 66, 66, 0.22); border-color: rgba(184, 66, 66, 0.5); }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .step {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--muted);
+      border-radius: 10px;
+      padding: 8px;
+      text-align: center;
+      font-size: 12px;
+    }
+    .step.active { border-color: var(--accent); color: #cfe2ff; background: rgba(110, 168, 254, 0.16); }
+    .step.done { border-color: rgba(31, 143, 95, 0.55); color: #b9efd8; background: rgba(31, 143, 95, 0.18); }
+    .title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .kv {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px;
+      font-size: 13px;
+    }
+    .kv .k { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    label { font-size: 13px; color: var(--muted); }
+    input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #0a1330;
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 15px;
+    }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    button {
+      border: 1px solid var(--line);
+      color: var(--text);
+      background: #162244;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button.primary {
+      background: linear-gradient(120deg, #3f6cd8, #5e84ee);
+      border-color: #5e84ee;
+    }
+    button.ok {
+      background: linear-gradient(120deg, #1f8f5f, #2ea56f);
+      border-color: #2ea56f;
+    }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .hidden { display: none !important; }
+    canvas {
+      width: 100%;
+      height: 220px;
+      background: #fff;
+      border-radius: 10px;
+      border: 1px dashed #8293c8;
+      touch-action: none;
+    }
+    .success {
+      border: 1px solid rgba(31, 143, 95, 0.45);
+      background: rgba(31, 143, 95, 0.2);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    a.btn-link {
+      display: inline-block;
+      margin-top: 8px;
+      text-decoration: none;
+      color: white;
+      background: #1f8f5f;
+      border: 1px solid #2ea56f;
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 14px;
+    }
+    @media (max-width: 640px) {
+      .grid { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Подписание договора-заявки</h1>
+      <div class="muted">Подписание доступно без авторизации по защищенной ссылке.</div>
+    </div>
+
+    <div id="banner" class="banner info"></div>
+
+    <div class="steps">
+      <div id="s1" class="step active">1. Просмотр</div>
+      <div id="s2" class="step">2. SMS код</div>
+      <div id="s3" class="step">3. Подпись</div>
+      <div id="s4" class="step">4. Завершение</div>
+    </div>
+
+    <div id="step1" class="card">
+      <div class="title">Шаг 1. Просмотр заявки</div>
+      <div id="docMeta" class="grid"></div>
+      <div class="row" style="margin-top: 10px;">
+        <button id="goStep2" class="primary">Подписать</button>
+      </div>
+    </div>
+
+    <div id="step2" class="card hidden">
+      <div class="title">Шаг 2. Подтверждение по SMS</div>
+      <div class="field">
+        <label for="phoneInput">Телефон</label>
+        <input id="phoneInput" placeholder="+7XXXXXXXXXX" />
+      </div>
+      <div class="row">
+        <button id="sendOtpBtn" class="primary">Получить код</button>
+        <button id="verifyOtpBtn">Подтвердить код</button>
+      </div>
+      <div class="field" style="margin-top: 10px;">
+        <label for="otpInput">Код из SMS</label>
+        <input id="otpInput" inputmode="numeric" maxlength="6" placeholder="123456" />
+      </div>
+      <div id="otpHint" class="muted"></div>
+    </div>
+
+    <div id="step3" class="card hidden">
+      <div class="title">Шаг 3. Рисованная подпись</div>
+      <canvas id="signatureCanvas"></canvas>
+      <div class="row" style="margin-top: 10px;">
+        <button id="clearCanvasBtn">Очистить</button>
+        <button id="saveSignBtn" class="primary">Готово</button>
+      </div>
+    </div>
+
+    <div id="step4" class="card hidden">
+      <div class="title">Шаг 4. Завершение подписания</div>
+      <button id="finalizeBtn" class="ok">Завершить подписание</button>
+      <div id="successBox" class="success hidden" style="margin-top: 12px;">
+        <div>Документ подписан.</div>
+        <a id="pdfLink" class="btn-link" href="#" target="_blank" rel="noopener">Скачать PDF</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const token = decodeURIComponent((location.pathname.split("/").filter(Boolean)[1] || "").trim());
+    const api = (path, options = {}) => fetch(path, options).then(async (resp) => {
+      const ct = resp.headers.get("content-type") || "";
+      let body = null;
+      if (ct.includes("application/json")) {
+        body = await resp.json();
+      } else {
+        body = await resp.text();
+      }
+      if (!resp.ok) {
+        const detail = body && typeof body === "object" && body.detail
+          ? String(body.detail)
+          : `Ошибка (${resp.status})`;
+        throw new Error(detail);
+      }
+      return body;
+    });
+
+    const state = {
+      session: null,
+      document: null,
+      otpVerified: false,
+      signatureSaved: false,
+      cooldownSec: 0,
+      cooldownTimer: null,
+    };
+
+    const els = {
+      banner: document.getElementById("banner"),
+      docMeta: document.getElementById("docMeta"),
+      goStep2: document.getElementById("goStep2"),
+      step1: document.getElementById("step1"),
+      step2: document.getElementById("step2"),
+      step3: document.getElementById("step3"),
+      step4: document.getElementById("step4"),
+      s1: document.getElementById("s1"),
+      s2: document.getElementById("s2"),
+      s3: document.getElementById("s3"),
+      s4: document.getElementById("s4"),
+      phoneInput: document.getElementById("phoneInput"),
+      sendOtpBtn: document.getElementById("sendOtpBtn"),
+      verifyOtpBtn: document.getElementById("verifyOtpBtn"),
+      otpInput: document.getElementById("otpInput"),
+      otpHint: document.getElementById("otpHint"),
+      canvas: document.getElementById("signatureCanvas"),
+      clearCanvasBtn: document.getElementById("clearCanvasBtn"),
+      saveSignBtn: document.getElementById("saveSignBtn"),
+      finalizeBtn: document.getElementById("finalizeBtn"),
+      successBox: document.getElementById("successBox"),
+      pdfLink: document.getElementById("pdfLink"),
+    };
+
+    function showBanner(message, tone = "info") {
+      els.banner.className = `banner show ${tone}`;
+      els.banner.textContent = message;
+    }
+
+    function markStep(active) {
+      const steps = [
+        ["s1", 1], ["s2", 2], ["s3", 3], ["s4", 4]
+      ];
+      steps.forEach(([id, index]) => {
+        els[id].classList.remove("active", "done");
+        if (index < active) els[id].classList.add("done");
+        else if (index === active) els[id].classList.add("active");
+      });
+    }
+
+    function switchStep(step) {
+      els.step1.classList.toggle("hidden", step !== 1);
+      els.step2.classList.toggle("hidden", step !== 2);
+      els.step3.classList.toggle("hidden", step !== 3);
+      els.step4.classList.toggle("hidden", step !== 4);
+      markStep(step);
+    }
+
+    function safeValue(value) {
+      if (value === null || value === undefined || value === "") return "—";
+      if (typeof value === "object") return JSON.stringify(value);
+      return String(value);
+    }
+
+    function renderDocument() {
+      const doc = state.document || {};
+      const payload = doc.payload || {};
+      const items = [
+        ["Документ", `#${safeValue(doc.id)}`],
+        ["Тип", safeValue(doc.doc_type)],
+        ["Статус", safeValue(doc.status)],
+        ["Компания-инициатор", safeValue(doc.company_from && doc.company_from.name)],
+        ["Контрагент", safeValue(doc.company_to && doc.company_to.name)],
+      ];
+
+      Object.entries(payload).slice(0, 10).forEach(([k, v]) => {
+        items.push([k, safeValue(v)]);
+      });
+
+      els.docMeta.innerHTML = items.map(([k, v]) => (
+        `<div class="kv"><div class="k">${k}</div><div>${v}</div></div>`
+      )).join("");
+    }
+
+    function parseCooldownFromError(errText) {
+      const m = String(errText || "").match(/(\d+)\s*сек/);
+      if (!m) return 0;
+      const n = Number(m[1]);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function startCooldown(sec) {
+      state.cooldownSec = Math.max(0, Number(sec) || 0);
+      if (state.cooldownTimer) clearInterval(state.cooldownTimer);
+
+      const updateText = () => {
+        if (state.cooldownSec > 0) {
+          els.sendOtpBtn.disabled = true;
+          els.otpHint.textContent = `Повторная отправка через ${state.cooldownSec} сек.`;
+          state.cooldownSec -= 1;
+          return;
+        }
+        els.sendOtpBtn.disabled = false;
+        els.otpHint.textContent = "Можно запросить код повторно.";
+        clearInterval(state.cooldownTimer);
+        state.cooldownTimer = null;
+      };
+
+      updateText();
+      state.cooldownTimer = setInterval(updateText, 1000);
+    }
+
+    function setupCanvas() {
+      const canvas = els.canvas;
+      const ctx = canvas.getContext("2d");
+      const ratio = Math.max(window.devicePixelRatio || 1, 1);
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.floor(rect.width * ratio);
+      canvas.height = Math.floor(rect.height * ratio);
+      ctx.scale(ratio, ratio);
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "#14203f";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, rect.width, rect.height);
+
+      let drawing = false;
+      function getPos(e) {
+        const r = canvas.getBoundingClientRect();
+        if (e.touches && e.touches.length > 0) {
+          return { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top };
+        }
+        return { x: e.clientX - r.left, y: e.clientY - r.top };
+      }
+
+      function start(e) {
+        drawing = true;
+        const p = getPos(e);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+      }
+      function move(e) {
+        if (!drawing) return;
+        e.preventDefault();
+        const p = getPos(e);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+      }
+      function end() {
+        drawing = false;
+      }
+
+      canvas.addEventListener("mousedown", start);
+      canvas.addEventListener("mousemove", move);
+      window.addEventListener("mouseup", end);
+
+      canvas.addEventListener("touchstart", start, { passive: false });
+      canvas.addEventListener("touchmove", move, { passive: false });
+      canvas.addEventListener("touchend", end);
+
+      els.clearCanvasBtn.onclick = () => {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, rect.width, rect.height);
+      };
+    }
+
+    async function loadDocument() {
+      if (!token) {
+        showBanner("Некорректная ссылка подписи.", "err");
+        return;
+      }
+      try {
+        const data = await api(`/api/public/sign/${token}/document`);
+        state.document = data.document;
+        state.session = data.session;
+        renderDocument();
+
+        if (state.session && state.session.signed_at) {
+          switchStep(4);
+          els.successBox.classList.remove("hidden");
+          els.pdfLink.href = `/api/public/sign/${token}/pdf`;
+          showBanner("Документ уже подписан. PDF доступен для скачивания.", "ok");
+          return;
+        }
+        showBanner("Проверьте данные заявки и перейдите к подписанию.", "info");
+      } catch (err) {
+        const msg = String(err.message || "Не удалось загрузить документ");
+        if (msg.includes("Ссылка истекла")) {
+          showBanner("Ссылка истекла, запросите новую.", "err");
+        } else {
+          showBanner(msg, "err");
+        }
+      }
+    }
+
+    els.goStep2.onclick = () => {
+      switchStep(2);
+      if (state.document && state.document.company_to && state.document.company_to.phone) {
+        els.phoneInput.value = state.document.company_to.phone;
+      }
+    };
+
+    els.sendOtpBtn.onclick = async () => {
+      try {
+        const phone = (els.phoneInput.value || "").trim();
+        const data = await api(`/api/public/sign/${token}/otp/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone }),
+        });
+        showBanner("SMS-код отправлен.", "ok");
+        startCooldown(Number(data.cooldown_sec || 60));
+      } catch (err) {
+        const msg = String(err.message || "Ошибка отправки OTP");
+        const cooldown = parseCooldownFromError(msg);
+        if (cooldown > 0) startCooldown(cooldown);
+        showBanner(msg, "err");
+      }
+    };
+
+    els.verifyOtpBtn.onclick = async () => {
+      try {
+        const otp = (els.otpInput.value || "").trim();
+        await api(`/api/public/sign/${token}/otp/verify`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ otp }),
+        });
+        state.otpVerified = true;
+        switchStep(3);
+        showBanner("Телефон подтвержден. Нарисуйте подпись.", "ok");
+      } catch (err) {
+        showBanner(String(err.message || "Ошибка проверки OTP"), "err");
+      }
+    };
+
+    els.saveSignBtn.onclick = async () => {
+      try {
+        if (!state.otpVerified) {
+          showBanner("Сначала подтвердите OTP-код.", "err");
+          return;
+        }
+        const png = els.canvas.toDataURL("image/png");
+        await api(`/api/public/sign/${token}/signature`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            signature_base64_png: png,
+            meta: {
+              width: els.canvas.width,
+              height: els.canvas.height,
+            },
+          }),
+        });
+        state.signatureSaved = true;
+        switchStep(4);
+        showBanner("Подпись сохранена. Завершите подписание.", "ok");
+      } catch (err) {
+        showBanner(String(err.message || "Ошибка сохранения подписи"), "err");
+      }
+    };
+
+    els.finalizeBtn.onclick = async () => {
+      try {
+        if (!state.signatureSaved) {
+          showBanner("Сначала сохраните подпись.", "err");
+          return;
+        }
+        const data = await api(`/api/public/sign/${token}/finalize`, {
+          method: "POST",
+        });
+        els.pdfLink.href = data.pdf_url || `/api/public/sign/${token}/pdf`;
+        els.successBox.classList.remove("hidden");
+        showBanner("Подписание завершено. PDF готов.", "ok");
+      } catch (err) {
+        showBanner(String(err.message || "Ошибка финализации"), "err");
+      }
+    };
+
+    setupCanvas();
+    loadDocument();
+  </script>
+</body>
+</html>

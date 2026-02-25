@@ -268,7 +268,7 @@ class AIDocuments:
             
             # Метаданные
             "created_at": datetime.now().isoformat(),
-            "created_by": "AI-Documents GouTruckMe"
+            "created_by": "AI-Documents ГрузПоток"
         }
         
         # Сохраняем
@@ -973,7 +973,6 @@ class AIDocuments:
 
 # Singleton instance
 ai_documents = AIDocuments()
-
 
 
 

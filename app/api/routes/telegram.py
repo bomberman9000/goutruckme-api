@@ -51,7 +51,7 @@ async def link_telegram(data: LinkRequest, db: Session = Depends(get_db)):
         "success": True,
         "user_id": user.id,
         "access_token": token,
-        "message": f"Привет, {user.organization_name or user.fullname}!"
+        "message": f"Добро пожаловать в ГрузПоток, {user.organization_name or user.fullname}!"
     }
 
 

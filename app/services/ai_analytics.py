@@ -15,7 +15,7 @@ class AIAnalytics:
         
         total_loads = len(loads)
         completed_loads = len([l for l in loads if l.status == "closed"])
-        open_loads = len([l for l in loads if l.status == "open"])
+        open_loads = len([l for l in loads if str(getattr(l, "status", "")).lower() in {"active", "open"}])
         
         total_revenue = sum(l.price for l in loads if l.status == "closed")
         avg_price = total_revenue / completed_loads if completed_loads > 0 else 0
@@ -203,7 +203,6 @@ class AIAnalytics:
 
 # Singleton instance  
 ai_analytics = AIAnalytics()
-
 
 
 

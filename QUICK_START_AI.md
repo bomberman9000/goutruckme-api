@@ -20,7 +20,7 @@
 ### 1. Создайте файл `.env`
 
 ```bash
-cd /Users/mac/Projects/atinew/goutruckme
+cd /Users/mac/Projects/atinew/gruzpotok
 touch .env
 ```
 

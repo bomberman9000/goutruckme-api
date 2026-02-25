@@ -5,7 +5,7 @@
  */
 
 /**
- * @typedef {"LOW_PRICE" | "NO_CONTACT" | "PAST_DATE" | "INCOMPLETE_DATA"} RiskReason
+ * @typedef {"LOW_PRICE" | "NO_CONTACT" | "INCOMPLETE_DATA"} RiskReason
  */
 
 /**
@@ -38,10 +38,8 @@ if (typeof window !== 'undefined') {
         RiskReason: {
             LOW_PRICE: 'LOW_PRICE',
             NO_CONTACT: 'NO_CONTACT',
-            PAST_DATE: 'PAST_DATE',
             INCOMPLETE_DATA: 'INCOMPLETE_DATA'
         }
     };
 }
-
 

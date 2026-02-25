@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-🧪 Скрипт для тестирования ИИ-модулей GouTruckMe
+🧪 Скрипт для тестирования ИИ-модулей ГрузПоток
 
 Использование:
     python test_ai.py
@@ -118,7 +118,7 @@ def test_quick_check():
 
 
 if __name__ == "__main__":
-    print("\n🚀 Запуск тестов ИИ-модулей GouTruckMe\n")
+    print("\n🚀 Запуск тестов ИИ-модулей ГрузПоток\n")
     
     success = True
     success &= run_ai_lawyer_test()

@@ -7,6 +7,14 @@ from sqlalchemy.orm import Session
 from app.core.security import get_current_user
 from app.db.database import get_db
 from app.models.models import User, Load, Deal
+from app.services.cargo_status import (
+    apply_cargo_status_filter,
+    cargo_loading_date,
+    expire_outdated_cargos,
+    is_active_status,
+    normalize_cargo_status,
+)
+from app.trust.service import recalc_company_trust
 
 router = APIRouter()
 
@@ -18,14 +26,16 @@ async def get_loads(
     db: Session = Depends(get_db)
 ):
     """Список грузов."""
-    loads_list = db.query(Load).order_by(Load.created_at.desc()).limit(limit).all()
+    expire_outdated_cargos(db)
+    loads_list = apply_cargo_status_filter(db.query(Load), "active").order_by(Load.created_at.desc()).limit(limit).all()
     return [
         {
             "id": item.id,
             "from_city": item.from_city,
             "to_city": item.to_city,
             "price": item.price,
-            "loading_date": item.created_at.isoformat() if item.created_at else None,
+            "status": normalize_cargo_status(item.status),
+            "loading_date": cargo_loading_date(item).isoformat() if cargo_loading_date(item) else None,
         }
         for item in loads_list
     ]
@@ -38,6 +48,7 @@ async def get_load_detail(
     db: Session = Depends(get_db)
 ):
     """Детали груза."""
+    expire_outdated_cargos(db)
     load = db.query(Load).filter(Load.id == load_id).first()
     if not load:
         raise HTTPException(status_code=404, detail="Груз не найден")
@@ -49,8 +60,9 @@ async def get_load_detail(
         "price": load.price,
         "weight": load.weight,
         "truck_type": None,
+        "status": normalize_cargo_status(load.status),
         "loading_date": (
-            load.created_at.isoformat() if load.created_at else None
+            cargo_loading_date(load).isoformat() if cargo_loading_date(load) else None
         ),
         "contact_phone": None,
         "description": None,
@@ -64,9 +76,12 @@ async def take_load(
     db: Session = Depends(get_db)
 ):
     """Взять груз (создать сделку)."""
+    expire_outdated_cargos(db)
     load = db.query(Load).filter(Load.id == load_id).first()
     if not load:
         raise HTTPException(status_code=404, detail="Груз не найден")
+    if not is_active_status(load.status):
+        raise HTTPException(status_code=409, detail="Груз недоступен")
 
     deal = Deal(
         cargo_id=load_id,
@@ -77,6 +92,12 @@ async def take_load(
     db.add(deal)
     db.commit()
     db.refresh(deal)
+
+    try:
+        recalc_company_trust(db, int(load.user_id))
+        recalc_company_trust(db, int(current_user.id))
+    except Exception:
+        pass
 
     return {
         "success": True,

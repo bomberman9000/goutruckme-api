@@ -7,6 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.models import Load, User, Vehicle
+from app.services.cargo_status import apply_cargo_status_filter
 
 
 _GLOBAL_REGION_MARKERS = {"рф", "россия", "российская федерация", "all", "any"}
@@ -28,8 +29,8 @@ def estimate_market_rate(
         .filter(Vehicle.status == "active")
         .filter(Vehicle.rate_per_km.isnot(None))
         .filter(Vehicle.body_type == body_type)
-        .filter(Vehicle.capacity_tons >= min_capacity)
-        .filter(Vehicle.capacity_tons <= max_capacity)
+        .filter(func.coalesce(Vehicle.payload_tons, Vehicle.capacity_tons) >= min_capacity)
+        .filter(func.coalesce(Vehicle.payload_tons, Vehicle.capacity_tons) <= max_capacity)
         .scalar()
     )
     return float(avg_rate) if avg_rate is not None else None
@@ -64,8 +65,7 @@ def count_matching_loads(
     location_region: Optional[str],
     available_from: date,
 ) -> int:
-    # В текущей модели груза нет отдельной даты погрузки, поэтому
-    # для MVP используем простой критерий: машина доступна не в будущем.
+    # Если машина станет доступна в будущем, matching не считаем.
     if available_from > date.today():
         return 0
 
@@ -74,10 +74,12 @@ def count_matching_loads(
     global_region = city in _GLOBAL_REGION_MARKERS or region in _GLOBAL_REGION_MARKERS
     geo_tokens = {token for token in (city, region) if token}
 
-    loads = db.query(Load).filter(Load.status == "open").all()
+    loads = apply_cargo_status_filter(db.query(Load), "active").all()
     matched = 0
     for load in loads:
-        weight = float(load.weight or 0.0)
+        if load.loading_date and load.loading_date < available_from:
+            continue
+        weight = float(load.weight_t if load.weight_t is not None else (load.weight or 0.0))
         if capacity_tons < weight:
             continue
 

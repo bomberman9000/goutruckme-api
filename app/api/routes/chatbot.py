@@ -41,7 +41,7 @@ async def chat_with_gpt(request: ChatMessage):
         client = OpenAI(api_key=api_key)
         
         # Системный промпт для контекста грузоперевозок
-        system_prompt = """Ты — AI-помощник платформы GouTruckMe, умной биржи грузоперевозок.
+        system_prompt = """Ты — AI-помощник платформы ГрузПоток, умной биржи грузоперевозок.
 
 Твоя задача — помогать пользователям с вопросами о:
 - Грузоперевозках
@@ -407,7 +407,8 @@ def get_chatbot_status():
     📊 Статус AI-Чатбота.
     """
     return {
-        "service": "AI-Chatbot",
+        "service": "ГрузПоток Бот",
+        "description": "Добро пожаловать в ГрузПоток. Автоматический диспетчер для грузоперевозок.",
         "version": "1.0.0",
         "status": "active",
         "stats": {
@@ -442,6 +443,5 @@ def get_chatbot_status():
             "GET /chatbot/conversation/{id}": "💬 История диалога"
         }
     }
-
 
 

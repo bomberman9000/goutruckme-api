@@ -110,7 +110,7 @@ app/static/js/risk/
 
 1. **Запустите сервер:**
    ```bash
-   cd /Users/mac/Projects/atinew/goutruckme
+   cd /Users/mac/Projects/atinew/gruzpotok
    source venv/bin/activate
    uvicorn app.api.main:app --host 0.0.0.0 --port 8080 --reload
    ```

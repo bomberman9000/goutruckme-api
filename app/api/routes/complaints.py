@@ -1,19 +1,43 @@
 """
 ⚠️ API для системы претензий и жалоб
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from app.db.database import SessionLocal
+
+logger = logging.getLogger(__name__)
 from app.models.models import Complaint, User, Load
 from app.services.rating_system import rating_system
 from app.services.ai_lawyer_llm import ai_lawyer_llm
+from app.trust.service import recalc_company_trust
 from app.core.security import SECRET_KEY, ALGORITHM
 from jose import jwt
 
 router = APIRouter()
+
+
+def _recalc_trust_safely(db: Session, *company_ids: int) -> None:
+    seen: set[int] = set()
+    for company_id in company_ids:
+        if not company_id or company_id in seen:
+            continue
+        seen.add(company_id)
+        try:
+            recalc_company_trust(db, int(company_id))
+        except Exception as e:
+            logger.warning("recalc_company_trust failed for company_id=%s: %s", company_id, e)
+
+
+def _normalize_role(role) -> str:
+    raw = role.value if hasattr(role, "value") else role
+    value = str(raw or "").strip().lower()
+    if value.startswith("userrole."):
+        value = value.split(".", 1)[1]
+    return value
 
 
 def get_db():
@@ -141,6 +165,8 @@ def create_complaint(
     except Exception as e:
         # Не критично, если AI анализ не удался
         pass
+
+    _recalc_trust_safely(db, complaint.defendant_id, complainant_id)
     
     return {
         "success": True,
@@ -257,7 +283,7 @@ def resolve_complaint(
         raise HTTPException(status_code=401, detail="Необходима авторизация")
     
     admin = db.query(User).filter(User.id == admin_id).first()
-    if not admin or admin.role != "admin":
+    if not admin or _normalize_role(admin.role) != "admin":
         raise HTTPException(status_code=403, detail="Только для администраторов")
     
     complaint = db.query(Complaint).filter(Complaint.id == complaint_id).first()
@@ -272,10 +298,11 @@ def resolve_complaint(
     if response.status == "resolved":
         try:
             rating_system.on_complaint(db, complaint.defendant_id, complaint.complaint_type)
-        except:
-            pass
+        except Exception as e:
+            logger.warning("rating_system.on_complaint failed: %s", e)
     
     db.commit()
+    _recalc_trust_safely(db, complaint.defendant_id, complaint.complainant_id)
     
     return {
         "success": True,
@@ -345,4 +372,3 @@ def get_complaint_ai_analysis(complaint_id: int, db: Session = Depends(get_db)):
         "ai_analysis": ai_analysis,
         "recommendation": ai_analysis.get("auto_action", "review")
     }
-

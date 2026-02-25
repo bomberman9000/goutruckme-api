@@ -34,7 +34,7 @@
 - ✅ **ACCESS_TOKEN_EXPIRE_MINUTES:** 1440
 
 ### База данных:
-- ✅ **DATABASE_URL:** `sqlite:///./goutruckme.db`
+- ✅ **DATABASE_URL:** `sqlite:///./gruzpotok.db`
 - ✅ **Тип:** SQLite (для разработки)
 
 ### AI/LLM:

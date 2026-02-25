@@ -26,7 +26,7 @@ TELEGRAM_BOT_TOKEN=
 
 1. **Миграция**
    ```bash
-   cd goutruckme && source venv/bin/activate && alembic upgrade head
+   cd gruzpotok && source venv/bin/activate && alembic upgrade head
    ```
    Или таблица создаётся при старте через `init_db()` (в т.ч. `moderation_review`).
 

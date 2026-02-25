@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-command deploy: pull → build → up → migrate → restart → smoke
-# Запуск на сервере: cd /opt/goutruckme && bash deploy.sh
+# Запуск на сервере: cd /opt/gruzpotok && bash deploy.sh
 
 set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -47,7 +47,7 @@ fi
 
 # --- 6. Smoke: ix_audit_events_entity ---
 LOG "6. Smoke: index ix_audit_events_entity..."
-IDX="$(docker compose exec -T db sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U postgres -d goutruckme -t -A -c "SELECT 1 FROM pg_indexes WHERE tablename='"'"'audit_events'"'"' AND indexname='"'"'ix_audit_events_entity'"'"';" 2>/dev/null' | tr -d '\r' || true)"
+IDX="$(docker compose exec -T db sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U postgres -d gruzpotok -t -A -c "SELECT 1 FROM pg_indexes WHERE tablename='"'"'audit_events'"'"' AND indexname='"'"'ix_audit_events_entity'"'"';" 2>/dev/null' | tr -d '\r' || true)"
 if [ "$IDX" = "1" ]; then
   OK "ix_audit_events_entity exists"
 else

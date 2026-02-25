@@ -35,11 +35,6 @@ const RISK_LABELS = {
             description: 'Не указан телефон или Telegram',
             warning: true
         },
-        PAST_DATE: {
-            label: 'Дата в прошлом',
-            description: 'Дата погрузки уже прошла',
-            warning: true
-        },
         INCOMPLETE_DATA: {
             label: 'Неполные данные',
             description: 'Отсутствует вес или тип машины',
@@ -97,5 +92,4 @@ if (typeof window !== 'undefined') {
         formatRiskTooltip
     };
 }
-
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Проверки Bot API на сервере. Запуск: cd /opt/goutruckme && bash scripts/check_bot_api.sh
+# Проверки Bot API на сервере. Запуск: cd /opt/gruzpotok && bash scripts/check_bot_api.sh
 
 set -e
 cd "$(dirname "$0")/.."
@@ -28,7 +28,7 @@ echo ""
 
 echo "========== 3) Колонки telegram_* в users =========="
 docker compose exec -T db sh -lc '
-PGPASSWORD="$POSTGRES_PASSWORD" psql -U postgres -d goutruckme -c "\d users" | sed -n "1,160p"
+PGPASSWORD="$POSTGRES_PASSWORD" psql -U postgres -d gruzpotok -c "\d users" | sed -n "1,160p"
 ' || echo "Если ошибка — проверь, что контейнер db запущен и пароль верный."
 echo ""
 

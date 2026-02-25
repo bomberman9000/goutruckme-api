@@ -8,6 +8,14 @@ from sqlalchemy.orm import Session
 from app.core.security import create_access_token, get_current_user, verify_password
 from app.db.database import get_db
 from app.models.models import User, Load, Deal
+from app.services.cargo_status import (
+    apply_cargo_status_filter,
+    cargo_loading_date,
+    expire_outdated_cargos,
+    is_active_status,
+    normalize_cargo_status,
+)
+from app.trust.service import recalc_company_trust
 
 router = APIRouter()
 
@@ -38,7 +46,7 @@ async def link_telegram(data: LinkRequest, db: Session = Depends(get_db)):
     return {
         "success": True,
         "access_token": token,
-        "message": f"Привет, {user.organization_name or user.fullname}!"
+        "message": f"Добро пожаловать в ГрузПоток, {user.organization_name or user.fullname}!"
     }
 
 
@@ -49,14 +57,16 @@ async def get_loads(
     db: Session = Depends(get_db),
 ):
     """Список грузов."""
-    loads = db.query(Load).order_by(Load.created_at.desc()).limit(limit).all()
+    expire_outdated_cargos(db)
+    loads = apply_cargo_status_filter(db.query(Load), "active").order_by(Load.created_at.desc()).limit(limit).all()
     return [
         {
             "id": l.id,
             "from_city": l.from_city,
             "to_city": l.to_city,
             "price": l.price,
-            "loading_date": l.created_at.isoformat() if l.created_at else None,
+            "status": normalize_cargo_status(l.status),
+            "loading_date": cargo_loading_date(l).isoformat() if cargo_loading_date(l) else None,
         }
         for l in loads
     ]
@@ -69,6 +79,7 @@ async def get_load(
     db: Session = Depends(get_db),
 ):
     """Детали груза."""
+    expire_outdated_cargos(db)
     load = db.query(Load).filter(Load.id == load_id).first()
     if not load:
         raise HTTPException(status_code=404, detail="Не найдено")
@@ -79,7 +90,8 @@ async def get_load(
         "price": load.price,
         "weight": load.weight,
         "truck_type": None,
-        "loading_date": load.created_at.isoformat() if load.created_at else None,
+        "status": normalize_cargo_status(load.status),
+        "loading_date": cargo_loading_date(load).isoformat() if cargo_loading_date(load) else None,
         "contact_phone": None,
         "description": None,
     }
@@ -92,9 +104,12 @@ async def take_load(
     db: Session = Depends(get_db),
 ):
     """Взять груз (создать сделку)."""
+    expire_outdated_cargos(db)
     load = db.query(Load).filter(Load.id == load_id).first()
     if not load:
         raise HTTPException(status_code=404, detail="Не найдено")
+    if not is_active_status(load.status):
+        raise HTTPException(status_code=409, detail="Груз недоступен")
 
     deal = Deal(
         cargo_id=load_id,
@@ -106,5 +121,11 @@ async def take_load(
     db.add(deal)
     db.commit()
     db.refresh(deal)
+
+    try:
+        recalc_company_trust(db, int(load.user_id))
+        recalc_company_trust(db, int(current_user.id))
+    except Exception:
+        pass
 
     return {"success": True, "deal_id": deal.id, "message": "Взято!"}
