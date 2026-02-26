@@ -95,6 +95,10 @@ class TestLlmResultToParsed:
         assert _llm_result_to_parsed({"from_city": "Москва"}, "test", keywords=KEYWORDS) is None
         assert _llm_result_to_parsed({}, "test", keywords=KEYWORDS) is None
 
+    def test_placeholder_route_returns_none(self):
+        data = {"from_city": "Нет данных", "to_city": "ЭТрН"}
+        assert _llm_result_to_parsed(data, "test", keywords=KEYWORDS) is None
+
     def test_body_type_aliases(self):
         data = {"from_city": "A", "to_city": "B", "body_type": "площадка"}
         parsed = _llm_result_to_parsed(data, "груз A-B площадка", keywords=KEYWORDS)

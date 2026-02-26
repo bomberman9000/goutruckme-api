@@ -365,8 +365,20 @@ def _extract_json(text: str) -> dict | None:
 def _llm_result_to_parsed(
     data: dict, raw_text: str, *, keywords: Iterable[str]
 ) -> ParsedCargo | None:
-    from_city = (data.get("from_city") or "").strip()
-    to_city = (data.get("to_city") or "").strip()
+    from_city = _normalize_city(str(data.get("from_city") or "").strip())
+    to_city = _normalize_city(str(data.get("to_city") or "").strip())
+    invalid_city_markers = {
+        "нет данных",
+        "не указано",
+        "неизвестно",
+        "unknown",
+        "n/a",
+        "none",
+        "умная логистика",
+        "этрн",
+    }
+    if from_city.lower() in invalid_city_markers or to_city.lower() in invalid_city_markers:
+        return None
     if not from_city or not to_city:
         return None
 
@@ -418,6 +430,9 @@ def _llm_result_to_parsed(
 
     text_lc = raw_text.lower()
     matched_keywords = _extract_matched_keywords(text_lc, keywords)
+
+    if from_city == to_city and rate is None and weight is None:
+        return None
 
     return ParsedCargo(
         from_city=from_city,
