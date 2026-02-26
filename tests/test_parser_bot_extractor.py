@@ -18,6 +18,22 @@ def test_parse_cargo_message_success():
     assert parsed.inn == "7701234567"
 
 
+def test_parse_route_with_city_hyphen_name():
+    text = "Нужен реф Санкт-Петербург - Навои, 22т, 500000, тел +79990001122"
+    parsed = parse_cargo_message(text, keywords=["реф"])
+    assert parsed is not None
+    assert parsed.from_city == "Санкт-Петербург"
+    assert parsed.to_city == "Навои"
+
+
+def test_parse_compact_route_without_spaces():
+    text = "Тент Москва-Ташкент 20т 120к +79991112233"
+    parsed = parse_cargo_message(text, keywords=["тент"])
+    assert parsed is not None
+    assert parsed.from_city == "Москва"
+    assert parsed.to_city == "Ташкент"
+
+
 def test_parse_cargo_message_requires_route_and_keyword():
     assert parse_cargo_message("Просто привет, без маршрута", keywords=["тент"]) is None
     assert parse_cargo_message("Мск - Казань без ключевых слов", keywords=["реф"]) is None

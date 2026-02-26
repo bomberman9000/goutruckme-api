@@ -13,7 +13,11 @@ logger = logging.getLogger(__name__)
 PHONE_RE = re.compile(r"(?:\+7|7|8)\D{0,3}\d{3}\D{0,3}\d{3}\D{0,3}\d{2}\D{0,3}\d{2}")
 INN_RE = re.compile(r"\b\d{10}(?:\d{2})?\b")
 ROUTE_RE = re.compile(
-    r"(?P<from>[A-Za-zА-Яа-яЁё.\- ]{2,40}?)\s*(?:->|→|—|–|-)\s*(?P<to>[A-Za-zА-Яа-яЁё.\- ]{2,40})",
+    r"(?P<from>[A-Za-zА-Яа-яЁё.\- ]{2,40}?)\s*(?:->|→|—|–|\s-\s)\s*(?P<to>[A-Za-zА-Яа-яЁё.\- ]{2,40})",
+    re.IGNORECASE,
+)
+ROUTE_COMPACT_RE = re.compile(
+    r"\b(?P<from>[A-Za-zА-Яа-яЁё]{3,20})-(?P<to>[A-Za-zА-Яа-яЁё]{3,20})\b",
     re.IGNORECASE,
 )
 WEIGHT_RE = re.compile(r"(?P<weight>\d{1,2}(?:[.,]\d+)?)\s*т(?:онн|онны|онна)?\b", re.IGNORECASE)
@@ -288,13 +292,20 @@ def _parse_body_type(text_lc: str) -> str | None:
 
 def _parse_route(text: str) -> tuple[str, str] | tuple[None, None]:
     route = ROUTE_RE.search(text)
-    if not route:
-        return None, None
-    from_city = _normalize_city(route.group("from"))
-    to_city = _normalize_city(route.group("to"))
-    if not from_city or not to_city:
-        return None, None
-    return from_city, to_city
+    if route:
+        from_city = _normalize_city(route.group("from"))
+        to_city = _normalize_city(route.group("to"))
+        if from_city and to_city:
+            return from_city, to_city
+
+    compact = ROUTE_COMPACT_RE.search(text)
+    if compact:
+        from_city = _normalize_city(compact.group("from"))
+        to_city = _normalize_city(compact.group("to"))
+        if from_city and to_city:
+            return from_city, to_city
+
+    return None, None
 
 
 def _extract_matched_keywords(text_lc: str, keywords: Iterable[str]) -> list[str]:

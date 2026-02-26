@@ -161,6 +161,8 @@ async def _fill_rate_from_reference(parsed: ParsedCargo) -> bool:
                 ParserIngestEvent.from_city == parsed.from_city,
                 ParserIngestEvent.to_city == parsed.to_city,
                 ParserIngestEvent.rate_rub.isnot(None),
+                ParserIngestEvent.from_lat.isnot(None),
+                ParserIngestEvent.to_lat.isnot(None),
                 ParserIngestEvent.created_at >= cutoff,
             )
             .order_by(ParserIngestEvent.created_at.desc())
@@ -178,6 +180,8 @@ async def _fill_rate_from_reference(parsed: ParsedCargo) -> bool:
                     ParserIngestEvent.from_city == parsed.to_city,
                     ParserIngestEvent.to_city == parsed.from_city,
                     ParserIngestEvent.rate_rub.isnot(None),
+                    ParserIngestEvent.from_lat.isnot(None),
+                    ParserIngestEvent.to_lat.isnot(None),
                     ParserIngestEvent.created_at >= cutoff,
                 )
                 .order_by(ParserIngestEvent.created_at.desc())
@@ -185,21 +189,6 @@ async def _fill_rate_from_reference(parsed: ParsedCargo) -> bool:
             )
             reverse_rates = [int(v) for v in (await session.execute(reverse_stmt)).scalars().all() if v]
             rates.extend(reverse_rates)
-
-        if len(rates) < min_samples:
-            global_stmt = (
-                select(ParserIngestEvent.rate_rub)
-                .where(
-                    ParserIngestEvent.source == source_name,
-                    ParserIngestEvent.status == "synced",
-                    ParserIngestEvent.is_spam.is_(False),
-                    ParserIngestEvent.rate_rub.isnot(None),
-                    ParserIngestEvent.created_at >= cutoff,
-                )
-                .order_by(ParserIngestEvent.created_at.desc())
-                .limit(300)
-            )
-            rates = [int(v) for v in (await session.execute(global_stmt)).scalars().all() if v]
 
     if len(rates) < min_samples:
         return False
@@ -359,6 +348,20 @@ async def _process_message(
             await _save_ingest_event(
                 message=message,
                 parsed=None,
+                trust=None,
+                is_spam=False,
+                status="ignored",
+            )
+            return
+
+        has_min_signal = any(
+            value not in (None, "", 0, 0.0)
+            for value in (parsed.rate_rub, parsed.weight_t, parsed.phone, parsed.inn)
+        )
+        if not has_min_signal:
+            await _save_ingest_event(
+                message=message,
+                parsed=parsed,
                 trust=None,
                 is_spam=False,
                 status="ignored",
