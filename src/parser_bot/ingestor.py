@@ -43,8 +43,14 @@ def _build_session() -> StringSession | str:
     return settings.parser_tg_session_name
 
 
-def _build_source_name(event: events.NewMessage.Event) -> str:
+async def _build_source_name(event: events.NewMessage.Event) -> str:
     chat = getattr(event, "chat", None)
+    if chat is None:
+        try:
+            chat = await event.get_chat()
+        except Exception:
+            chat = None
+
     username = (getattr(chat, "username", None) or "").strip().lower() if chat else ""
     if username:
         return f"tg:{username}"
@@ -54,6 +60,9 @@ def _build_source_name(event: events.NewMessage.Event) -> str:
         slug = re.sub(r"[^a-z0-9а-яё]+", "-", title).strip("-")
         if slug:
             return f"tg:{slug[:50]}"
+
+    if event.chat_id:
+        return f"tg:chat_{event.chat_id}"
 
     return settings.parser_source_name
 
@@ -72,7 +81,7 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
                 raw_text=text[:4000],
                 chat_id=str(event.chat_id or "unknown"),
                 message_id=int(event.id),
-                source=_build_source_name(event),
+                source=await _build_source_name(event),
                 received_at=int(time.time()),
             )
             logger.debug("stream enqueue id=%s chat=%s message=%s", entry_id, event.chat_id, event.id)

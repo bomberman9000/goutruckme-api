@@ -168,6 +168,39 @@ async def _fill_rate_from_reference(parsed: ParsedCargo) -> bool:
         )
         rates = [int(v) for v in (await session.execute(rates_stmt)).scalars().all() if v]
 
+        if len(rates) < min_samples:
+            reverse_stmt = (
+                select(ParserIngestEvent.rate_rub)
+                .where(
+                    ParserIngestEvent.source == source_name,
+                    ParserIngestEvent.status == "synced",
+                    ParserIngestEvent.is_spam.is_(False),
+                    ParserIngestEvent.from_city == parsed.to_city,
+                    ParserIngestEvent.to_city == parsed.from_city,
+                    ParserIngestEvent.rate_rub.isnot(None),
+                    ParserIngestEvent.created_at >= cutoff,
+                )
+                .order_by(ParserIngestEvent.created_at.desc())
+                .limit(120)
+            )
+            reverse_rates = [int(v) for v in (await session.execute(reverse_stmt)).scalars().all() if v]
+            rates.extend(reverse_rates)
+
+        if len(rates) < min_samples:
+            global_stmt = (
+                select(ParserIngestEvent.rate_rub)
+                .where(
+                    ParserIngestEvent.source == source_name,
+                    ParserIngestEvent.status == "synced",
+                    ParserIngestEvent.is_spam.is_(False),
+                    ParserIngestEvent.rate_rub.isnot(None),
+                    ParserIngestEvent.created_at >= cutoff,
+                )
+                .order_by(ParserIngestEvent.created_at.desc())
+                .limit(300)
+            )
+            rates = [int(v) for v in (await session.execute(global_stmt)).scalars().all() if v]
+
     if len(rates) < min_samples:
         return False
 
