@@ -20,7 +20,7 @@
 ### 1. Создайте файл `.env`
 
 ```bash
-cd /Users/mac/Projects/atinew/gruzpotok
+cd /path/to/gruzpotok
 touch .env
 ```
 
@@ -41,7 +41,9 @@ OPENAI_API_KEY=sk-your-key-here
 ```bash
 # Остановите текущий сервер (Ctrl+C)
 # Запустите снова
-uvicorn app.api.main:app --host 0.0.0.0 --port 8080 --reload
+bash start_server.sh
+# или напрямую:
+python3 -m uvicorn app.api.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
 ---

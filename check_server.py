@@ -146,7 +146,8 @@ try:
         print(f"   ℹ️  Зарегистрированы: {', '.join(bot_paths)}")
 
     print("\n✅ Все проверки пройдены! Сервер должен работать.")
-    print("\nЗапуск: uvicorn app.api.main:app --host 0.0.0.0 --port 8080 --reload")
+    print("\nЗапуск: bash start_server.sh")
+    print("Или напрямую: python3 -m uvicorn app.api.main:app --host 0.0.0.0 --port 8080 --reload")
     
 except Exception as e:
     print(f"\n❌ ОШИБКА: {e}")

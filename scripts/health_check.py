@@ -110,7 +110,8 @@ def check_api_server(port=8080):
             print(f"⚠️  {name}: {e}")
     
     print(f"\n❌ API сервер не отвечает ни на один эндпоинт")
-    print(f"💡 Запустите сервер: uvicorn app.api.main:app --host 0.0.0.0 --port {port} --reload")
+    print("💡 Запустите сервер: bash start_server.sh")
+    print(f"   Или напрямую: python3 -m uvicorn app.api.main:app --host 0.0.0.0 --port {port} --reload")
     return False
 
 def main():
