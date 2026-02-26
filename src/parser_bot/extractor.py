@@ -73,6 +73,12 @@ CITY_ALIASES = {
     "нн": "Нижний Новгород",
 }
 
+CITY_ALIAS_INDEX: dict[str, set[str]] = {}
+for _alias, _city in CITY_ALIASES.items():
+    _city_key = _city.lower()
+    CITY_ALIAS_INDEX.setdefault(_city_key, set()).add(_alias.lower())
+    CITY_ALIAS_INDEX[_city_key].add(_city_key)
+
 _LLM_SYSTEM_PROMPT = """\
 Ты — парсер сообщений о грузоперевозках. Работаешь как опытный диспетчер: \
 понимаешь сленг, исправляешь опечатки, вычисляешь даты.
@@ -381,6 +387,17 @@ def _llm_result_to_parsed(
         return None
     if not from_city or not to_city:
         return None
+
+    # Guardrail: if the message has no explicit route separator, verify both
+    # cities are still present in the raw text (full name or known alias).
+    if ROUTE_RE.search(raw_text) is None:
+        text_lc = raw_text.lower().replace("ё", "е")
+        from_markers = CITY_ALIAS_INDEX.get(from_city.lower(), {from_city.lower()})
+        to_markers = CITY_ALIAS_INDEX.get(to_city.lower(), {to_city.lower()})
+        if not any(marker in text_lc for marker in from_markers):
+            return None
+        if not any(marker in text_lc for marker in to_markers):
+            return None
 
     body_type = (data.get("body_type") or "").strip().lower() or None
     if body_type:
