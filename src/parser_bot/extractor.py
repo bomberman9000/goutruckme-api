@@ -22,7 +22,7 @@ ROUTE_COMPACT_RE = re.compile(
 )
 WEIGHT_RE = re.compile(r"(?P<weight>\d{1,2}(?:[.,]\d+)?)\s*т(?:онн|онны|онна)?\b", re.IGNORECASE)
 PRICE_RE = re.compile(
-    r"(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{2,8}(?:[.,]\d+)?)\s*(?P<suffix>к|k|тыс|тыс\.|млн|мил|₽|р|руб(?:лей)?)\b",
+    r"(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{2,8}(?:[.,]\d+)?)\s*(?P<suffix>к|k|тыс|тыс\.|млн|мил|₽|р|руб(?:лей)?|\$|usd|дол(?:лар(?:ов|а)?)?)",
     re.IGNORECASE,
 )
 PRICE_BY_KEYWORD_RE = re.compile(
@@ -227,6 +227,8 @@ def _normalize_inn(value: str) -> str | None:
 
 
 def _parse_price(text: str) -> int | None:
+    usd_to_rub = 100
+
     def _parse_amount(raw: str, *, suffix: str = "") -> int | None:
         token = (raw or "").strip().replace("\xa0", " ")
         if not token:
@@ -238,6 +240,8 @@ def _parse_price(text: str) -> int | None:
             multiplier = 1000
         elif suffix_norm in {"млн", "мил"}:
             multiplier = 1_000_000
+        elif suffix_norm in {"$", "usd", "дол", "доллар", "доллара", "долларов"}:
+            multiplier = usd_to_rub
 
         compact = token.replace(" ", "")
         if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", compact):

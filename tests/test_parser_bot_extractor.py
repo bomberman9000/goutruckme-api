@@ -53,6 +53,13 @@ def test_parse_price_without_suffix_with_nds():
     assert parsed.rate_rub == 135000
 
 
+def test_parse_price_in_usd_suffix():
+    text = "Тент Самара - Ташкент, 20т, 1800$, тел +79991112233"
+    parsed = parse_cargo_message(text, keywords=["тент"])
+    assert parsed is not None
+    assert parsed.rate_rub == 180000
+
+
 def test_build_dedupe_key_is_stable_for_same_route_and_phone():
     parsed = parse_cargo_message(
         "Тент СПБ - МСК, 20т, 80к, 8 999 000 11 22",
