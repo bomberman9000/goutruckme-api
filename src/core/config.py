@@ -88,6 +88,9 @@ class Settings(BaseSettings):
 
     # Parser LLM extractor
     parser_use_llm: bool = False
+    parser_price_source_chat: str = ""
+    parser_price_reference_days: int = 14
+    parser_price_reference_min_samples: int = 2
 
     # Parser scoring
     parser_score_min_trust: int = 40

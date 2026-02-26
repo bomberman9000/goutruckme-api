@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 
 import redis.asyncio as redis
@@ -42,6 +43,21 @@ def _build_session() -> StringSession | str:
     return settings.parser_tg_session_name
 
 
+def _build_source_name(event: events.NewMessage.Event) -> str:
+    chat = getattr(event, "chat", None)
+    username = (getattr(chat, "username", None) or "").strip().lower() if chat else ""
+    if username:
+        return f"tg:{username}"
+
+    title = (getattr(chat, "title", None) or "").strip().lower() if chat else ""
+    if title:
+        slug = re.sub(r"[^a-z0-9а-яё]+", "-", title).strip("-")
+        if slug:
+            return f"tg:{slug[:50]}"
+
+    return settings.parser_source_name
+
+
 async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> None:
     client = TelegramClient(_build_session(), settings.parser_tg_api_id, settings.parser_tg_api_hash)
 
@@ -56,7 +72,7 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
                 raw_text=text[:4000],
                 chat_id=str(event.chat_id or "unknown"),
                 message_id=int(event.id),
-                source=settings.parser_source_name,
+                source=_build_source_name(event),
                 received_at=int(time.time()),
             )
             logger.debug("stream enqueue id=%s chat=%s message=%s", entry_id, event.chat_id, event.id)

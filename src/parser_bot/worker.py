@@ -3,12 +3,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import statistics
 import time
 import uuid
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
 import redis.asyncio as redis
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.core.config import settings
@@ -55,6 +58,8 @@ def _build_sync_payload(
     *,
     trust: ScoreResult | None,
 ) -> dict[str, Any]:
+    source_name = (message.source or settings.parser_source_name).strip() or settings.parser_source_name
+
     order: dict[str, Any] = {
         "from_city": parsed.from_city,
         "to_city": parsed.to_city,
@@ -86,7 +91,7 @@ def _build_sync_payload(
         order["phone"] = parsed.phone
     if parsed.suggested_response:
         order["suggested_response"] = parsed.suggested_response
-    order["source"] = settings.parser_source_name
+    order["source"] = source_name
 
     metadata = {
         "chat_id": message.chat_id,
@@ -116,11 +121,94 @@ def _build_sync_payload(
     return {
         "event_id": f"parser-{uuid.uuid4().hex}",
         "event_type": "order.created",
-        "source": settings.parser_source_name,
+        "source": source_name,
         "user_id": int(settings.parser_default_user_id) if settings.parser_default_user_id else None,
         "metadata": metadata,
         "order": order,
     }
+
+
+def _normalize_source_name(value: str) -> str:
+    raw = (value or "").strip().lower()
+    if not raw:
+        return ""
+    if raw.startswith("@"):
+        raw = raw[1:]
+    if raw.startswith("tg:"):
+        return raw
+    return f"tg:{raw}"
+
+
+async def _fill_rate_from_reference(parsed: ParsedCargo) -> bool:
+    if parsed.rate_rub:
+        return True
+
+    source_name = _normalize_source_name(settings.parser_price_source_chat)
+    if not source_name:
+        return False
+
+    lookback_days = max(1, int(settings.parser_price_reference_days))
+    min_samples = max(1, int(settings.parser_price_reference_min_samples))
+    cutoff = datetime.utcnow() - timedelta(days=lookback_days)
+
+    async with async_session() as session:
+        rates_stmt = (
+            select(ParserIngestEvent.rate_rub)
+            .where(
+                ParserIngestEvent.source == source_name,
+                ParserIngestEvent.status == "synced",
+                ParserIngestEvent.is_spam.is_(False),
+                ParserIngestEvent.from_city == parsed.from_city,
+                ParserIngestEvent.to_city == parsed.to_city,
+                ParserIngestEvent.rate_rub.isnot(None),
+                ParserIngestEvent.created_at >= cutoff,
+            )
+            .order_by(ParserIngestEvent.created_at.desc())
+            .limit(120)
+        )
+        rates = [int(v) for v in (await session.execute(rates_stmt)).scalars().all() if v]
+
+    if len(rates) < min_samples:
+        return False
+
+    parsed.rate_rub = int(round(statistics.median(rates)))
+    logger.info(
+        "rate fallback from source=%s route=%s->%s rate=%s samples=%s",
+        source_name,
+        parsed.from_city,
+        parsed.to_city,
+        parsed.rate_rub,
+        len(rates),
+    )
+    return True
+
+
+def _fill_rate_by_distance(parsed: ParsedCargo) -> bool:
+    if parsed.rate_rub:
+        return True
+    try:
+        from src.core.geo import city_coords, haversine_km
+
+        fc = city_coords(parsed.from_city)
+        tc = city_coords(parsed.to_city)
+        if not fc or not tc:
+            return False
+        distance_km = haversine_km(fc[0], fc[1], tc[0], tc[1])
+        if distance_km < 10:
+            return False
+
+        weight = parsed.weight_t if parsed.weight_t and parsed.weight_t > 0 else 20.0
+        avg_rate_per_km = 35 + min(weight, 20.0) * 0.5
+        parsed.rate_rub = int(distance_km * avg_rate_per_km)
+        logger.info(
+            "rate estimated by distance route=%s->%s rate=%s",
+            parsed.from_city,
+            parsed.to_city,
+            parsed.rate_rub,
+        )
+        return True
+    except Exception:
+        return False
 
 
 def _is_spam(trust: ScoreResult | None) -> bool:
@@ -243,6 +331,11 @@ async def _process_message(
                 status="ignored",
             )
             return
+
+        if not parsed.rate_rub:
+            await _fill_rate_from_reference(parsed)
+            if not parsed.rate_rub:
+                _fill_rate_by_distance(parsed)
 
         dedupe_key = build_dedupe_key(parsed, chat_id=message.chat_id, fallback_id=fallback_id)
         is_new = await stream.redis.set(dedupe_key, "1", ex=dedupe_ttl, nx=True)

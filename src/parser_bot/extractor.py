@@ -18,7 +18,15 @@ ROUTE_RE = re.compile(
 )
 WEIGHT_RE = re.compile(r"(?P<weight>\d{1,2}(?:[.,]\d+)?)\s*т(?:онн|онны|онна)?\b", re.IGNORECASE)
 PRICE_RE = re.compile(
-    r"(?P<price>\d{2,8}(?:[.,]\d+)?)\s*(?P<suffix>к|k|тыс|тыс\.|₽|р|руб(?:лей)?)\b",
+    r"(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{2,8}(?:[.,]\d+)?)\s*(?P<suffix>к|k|тыс|тыс\.|млн|мил|₽|р|руб(?:лей)?)\b",
+    re.IGNORECASE,
+)
+PRICE_BY_KEYWORD_RE = re.compile(
+    r"(?:фрахт|ставка|цена|оплата)\s*[:=]?\s*(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{5,9}(?:[.,]\d+)?)",
+    re.IGNORECASE,
+)
+PRICE_BY_NDS_RE = re.compile(
+    r"(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{5,9}(?:[.,]\d+)?)\s*(?:с|без)\s*ндс",
     re.IGNORECASE,
 )
 
@@ -209,14 +217,53 @@ def _normalize_inn(value: str) -> str | None:
 
 
 def _parse_price(text: str) -> int | None:
+    def _parse_amount(raw: str, *, suffix: str = "") -> int | None:
+        token = (raw or "").strip().replace("\xa0", " ")
+        if not token:
+            return None
+
+        multiplier = 1
+        suffix_norm = (suffix or "").strip().lower()
+        if suffix_norm in {"к", "k", "тыс", "тыс."}:
+            multiplier = 1000
+        elif suffix_norm in {"млн", "мил"}:
+            multiplier = 1_000_000
+
+        compact = token.replace(" ", "")
+        if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", compact):
+            digits = re.sub(r"\D", "", compact)
+            return int(digits) * multiplier if digits else None
+
+        numeric = re.sub(r"[^0-9.,]", "", compact)
+        if not numeric:
+            return None
+
+        if numeric.count(".") + numeric.count(",") > 1:
+            digits = re.sub(r"\D", "", numeric)
+            return int(digits) * multiplier if digits else None
+
+        value = float(numeric.replace(",", "."))
+        return int(round(value * multiplier))
+
     match = PRICE_RE.search(text)
-    if not match:
-        return None
-    value = float(match.group("price").replace(",", "."))
-    suffix = (match.group("suffix") or "").lower()
-    if suffix in {"к", "k", "тыс", "тыс."}:
-        value *= 1000
-    return int(round(value))
+    if match:
+        parsed = _parse_amount(match.group("price"), suffix=match.group("suffix") or "")
+        if parsed:
+            return parsed
+
+    keyword_match = PRICE_BY_KEYWORD_RE.search(text)
+    if keyword_match:
+        parsed = _parse_amount(keyword_match.group("price"))
+        if parsed:
+            return parsed
+
+    nds_match = PRICE_BY_NDS_RE.search(text)
+    if nds_match:
+        parsed = _parse_amount(nds_match.group("price"))
+        if parsed:
+            return parsed
+
+    return None
 
 
 def _parse_weight(text: str) -> float | None:
@@ -501,8 +548,8 @@ async def parse_cargo_message_llm(
     This saves 3-5x on API costs by filtering chat noise.
 
     Supports two LLM providers:
-    - **Groq** (default): set ``GROQ_API_KEY``.
-    - **OpenAI**: set ``OPENAI_API_KEY`` (uses ``OPENAI_MODEL``,
+    - **Groq** (preferred): set ``GROQ_API_KEY``.
+    - **OpenAI** fallback: set ``OPENAI_API_KEY`` (uses ``OPENAI_MODEL``,
       default ``gpt-4o-mini``).
 
     Falls back to the regex-based ``parse_cargo_message`` when no API
@@ -527,7 +574,12 @@ async def parse_cargo_message_llm(
     try:
         system_prompt = _build_llm_system_prompt()
 
-        if has_openai:
+        if has_groq:
+            llm_output = await _call_groq(
+                system_prompt, clean_text, settings.groq_api_key
+            )
+            provider = "groq/llama-3.1-8b-instant"
+        else:
             openai_model = getattr(settings, "openai_model", None) or "gpt-4o-mini"
             llm_output = await _call_openai(
                 system_prompt,
@@ -536,11 +588,6 @@ async def parse_cargo_message_llm(
                 openai_model,
             )
             provider = f"openai/{openai_model}"
-        else:
-            llm_output = await _call_groq(
-                system_prompt, clean_text, settings.groq_api_key
-            )
-            provider = "groq/llama-3.1-8b-instant"
 
         logger.info("LLM extractor [%s] raw: %s", provider, llm_output)
 
