@@ -705,6 +705,7 @@ _INVALID_GEO_TOKEN_RE = re.compile(
 )
 
 _MIN_CARGO_TEXT_LEN = 15
+_ZERO_WIDTH_RE = re.compile(r"[\u200b\u200c\u200d\ufeff]")
 
 
 def looks_like_cargo(text: str) -> bool:
@@ -721,6 +722,39 @@ def looks_like_cargo(text: str) -> bool:
 
 def contains_invalid_geo_token(text: str) -> bool:
     return bool(_INVALID_GEO_TOKEN_RE.search(text or ""))
+
+
+def split_cargo_message_blocks(text: str) -> list[str]:
+    clean_text = _ZERO_WIDTH_RE.sub("", (text or "")).strip()
+    if not clean_text:
+        return []
+
+    lines = [line.strip() for line in clean_text.splitlines() if line.strip()]
+    if len(lines) <= 1:
+        return [clean_text]
+
+    blocks: list[str] = []
+    current: list[str] = []
+    current_has_route = False
+
+    for line in lines:
+        line_has_route = _parse_route(line)[0] is not None
+        if current and line_has_route and current_has_route:
+            blocks.append("\n".join(current).strip())
+            current = [line]
+            current_has_route = True
+            continue
+
+        current.append(line)
+        current_has_route = current_has_route or line_has_route
+
+    if current:
+        blocks.append("\n".join(current).strip())
+
+    normalized_blocks = [block for block in blocks if block]
+    if len(normalized_blocks) <= 1:
+        return [clean_text]
+    return normalized_blocks
 
 
 async def parse_cargo_message_llm(

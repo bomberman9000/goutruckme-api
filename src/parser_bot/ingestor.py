@@ -14,6 +14,7 @@ from telethon.sessions import StringSession
 from telethon.tl.types import User
 
 from src.core.config import settings
+from src.parser_bot.extractor import split_cargo_message_blocks
 from src.parser_bot.stream import RedisLogisticsStream
 
 
@@ -119,15 +120,29 @@ async def _enqueue_message(
     chat_id: int | str,
     message_id: int,
     source: str,
-) -> None:
-    entry_id = await stream.add_raw_message(
-        raw_text=raw_text[:4000],
-        chat_id=str(chat_id or "unknown"),
-        message_id=int(message_id),
-        source=source,
-        received_at=int(time.time()),
-    )
-    logger.info("stream enqueue id=%s chat=%s message=%s", entry_id, chat_id, message_id)
+) -> int:
+    blocks = split_cargo_message_blocks(raw_text)
+    total = 0
+
+    for idx, block in enumerate(blocks):
+        entry_id = await stream.add_raw_message(
+            raw_text=block[:4000],
+            chat_id=str(chat_id or "unknown"),
+            message_id=int(message_id),
+            source=source,
+            received_at=int(time.time()),
+        )
+        total += 1
+        logger.info(
+            "stream enqueue id=%s chat=%s message=%s part=%s/%s",
+            entry_id,
+            chat_id,
+            message_id,
+            idx + 1,
+            len(blocks),
+        )
+
+    return total
 
 
 async def _startup_backfill(
@@ -158,15 +173,15 @@ async def _startup_backfill(
                 continue
             if message.date is None or message.date < since:
                 continue
-            await _enqueue_message(
+            queued_now = await _enqueue_message(
                 stream,
                 raw_text=message.message,
                 chat_id=peer_id,
                 message_id=int(message.id),
                 source=source,
             )
-            queued += 1
-            total += 1
+            queued += queued_now
+            total += queued_now
 
         logger.info(
             "startup backfill chat=%s source=%s queued=%s limit=%s window=%sm",

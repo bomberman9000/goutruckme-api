@@ -2,6 +2,7 @@ from src.parser_bot.extractor import (
     build_dedupe_key,
     contains_invalid_geo_token,
     parse_cargo_message,
+    split_cargo_message_blocks,
 )
 
 
@@ -132,6 +133,33 @@ def test_parse_cargo_message_parses_uzbek_suffix_route():
     assert parsed.from_city == "Джизак"
     assert parsed.to_city == "Кашкадарья"
     assert parsed.weight_t == 25.0
+
+
+def test_split_cargo_message_blocks_splits_multiload_posts():
+    text = (
+        "Москва - Ташкент\n"
+        "20т\n"
+        "\n"
+        "Пермь - Ташкент\n"
+        "22т\n"
+    )
+    blocks = split_cargo_message_blocks(text)
+
+    assert len(blocks) == 2
+    assert "Москва - Ташкент" in blocks[0]
+    assert "Пермь - Ташкент" in blocks[1]
+
+
+def test_split_cargo_message_blocks_keeps_single_route_with_details():
+    text = (
+        "Москва - Ташкент\n"
+        "20т\n"
+        "Тент\n"
+        "Оплата нал\n"
+    )
+    blocks = split_cargo_message_blocks(text)
+
+    assert blocks == [text.strip()]
 
 
 def test_parse_cargo_message_skips_invalid_geo_blacklist_route():
