@@ -120,6 +120,23 @@ def _apply_parser_filters(query, *, status: str | None, source: str | None):
     return query
 
 
+def _time_window_start(window: str | None) -> datetime | None:
+    if window == "1h":
+        return datetime.utcnow() - timedelta(hours=1)
+    if window == "24h":
+        return datetime.utcnow() - timedelta(hours=24)
+    if window == "7d":
+        return datetime.utcnow() - timedelta(days=7)
+    return None
+
+
+def _apply_time_window(query, *, window: str | None):
+    since = _time_window_start(window)
+    if since is not None:
+        query = query.where(ParserIngestEvent.created_at >= since)
+    return query
+
+
 async def _retry_sync_event(client: httpx.AsyncClient, event: ParserIngestEvent) -> None:
     if not event.from_city or not event.to_city:
         event.status = "manual_review"
@@ -393,14 +410,27 @@ async def parser_events(
     page: int = 1,
     status: str | None = None,
     source: str | None = None,
+    window: str | None = "24h",
 ):
     limit = 25
     offset = (page - 1) * limit
     parser_metrics = await watchdog.collect_parser_metrics()
 
     async with async_session() as session:
+        base_filters = _apply_time_window(
+            _apply_parser_filters(
+                select(ParserIngestEvent),
+                status=None,
+                source=source,
+            ),
+            window=window,
+        )
+
         counts_rows = await session.execute(
-            select(ParserIngestEvent.status, func.count())
+            base_filters.with_only_columns(
+                ParserIngestEvent.status,
+                func.count(),
+            )
             .group_by(ParserIngestEvent.status)
             .order_by(ParserIngestEvent.status)
         )
@@ -409,6 +439,23 @@ async def parser_events(
             for row in counts_rows.all()
         }
 
+        reasons_rows = await session.execute(
+            base_filters
+            .where(ParserIngestEvent.error.is_not(None))
+            .with_only_columns(
+                ParserIngestEvent.error,
+                func.count(),
+            )
+            .group_by(ParserIngestEvent.error)
+            .order_by(func.count().desc(), ParserIngestEvent.error)
+            .limit(8)
+        )
+        top_errors = [
+            {"reason": row[0], "count": row[1]}
+            for row in reasons_rows.all()
+            if row[0]
+        ]
+
         sources_rows = await session.execute(
             select(ParserIngestEvent.source)
             .distinct()
@@ -416,15 +463,21 @@ async def parser_events(
         )
         sources = [row[0] for row in sources_rows.all() if row[0]]
 
-        query = _apply_parser_filters(
-            select(ParserIngestEvent),
-            status=status,
-            source=source,
+        query = _apply_time_window(
+            _apply_parser_filters(
+                select(ParserIngestEvent),
+                status=status,
+                source=source,
+            ),
+            window=window,
         )
-        count_query = _apply_parser_filters(
-            select(func.count()).select_from(ParserIngestEvent),
-            status=status,
-            source=source,
+        count_query = _apply_time_window(
+            _apply_parser_filters(
+                select(func.count()).select_from(ParserIngestEvent),
+                status=status,
+                source=source,
+            ),
+            window=window,
         )
 
         total = await session.scalar(count_query)
@@ -446,8 +499,10 @@ async def parser_events(
         "status_counts": status_counts,
         "current_status": status,
         "current_source": source,
+        "current_window": window or "all",
         "sources": sources,
         "parser_metrics": parser_metrics,
+        "top_errors": top_errors,
     })
 
 
@@ -456,6 +511,7 @@ async def bulk_retry_parser_sync(
     admin: dict = Depends(get_current_admin),
     status: str = Form("sync_failed"),
     source: str | None = Form(None),
+    window: str | None = Form("24h"),
 ):
     allowed = {"sync_failed", "error", "retry_queued"}
     if status not in allowed:
@@ -464,12 +520,17 @@ async def bulk_retry_parser_sync(
     async with async_session() as session:
         rows = (
             await session.execute(
-                _apply_parser_filters(
-                    select(ParserIngestEvent).where(ParserIngestEvent.status == status),
-                    status=None,
-                    source=source,
-                ).order_by(desc(ParserIngestEvent.created_at)).limit(100)
+                _apply_time_window(
+                    _apply_parser_filters(
+                        select(ParserIngestEvent).where(ParserIngestEvent.status == status),
+                        status=None,
+                        source=source,
+                    ),
+                    window=window,
+                ),
             )
+            .order_by(desc(ParserIngestEvent.created_at))
+            .limit(100)
         ).scalars().all()
 
         async with httpx.AsyncClient(timeout=max(3, int(settings.parser_http_timeout))) as client:
@@ -479,12 +540,14 @@ async def bulk_retry_parser_sync(
         await session.commit()
 
     redirect_url = "/admin/parser"
-    if status or source:
+    if status or source or window:
         params = []
         if status:
             params.append(f"status={status}")
         if source:
             params.append(f"source={source}")
+        if window:
+            params.append(f"window={window}")
         redirect_url = f"{redirect_url}?{'&'.join(params)}"
     return RedirectResponse(url=redirect_url, status_code=302)
 
@@ -494,16 +557,22 @@ async def bulk_ignore_parser_events(
     admin: dict = Depends(get_current_admin),
     status: str = Form("error"),
     source: str | None = Form(None),
+    window: str | None = Form("24h"),
 ):
     async with async_session() as session:
         rows = (
             await session.execute(
-                _apply_parser_filters(
-                    select(ParserIngestEvent).where(ParserIngestEvent.status == status),
-                    status=None,
-                    source=source,
-                ).order_by(desc(ParserIngestEvent.created_at)).limit(200)
+                _apply_time_window(
+                    _apply_parser_filters(
+                        select(ParserIngestEvent).where(ParserIngestEvent.status == status),
+                        status=None,
+                        source=source,
+                    ),
+                    window=window,
+                ),
             )
+            .order_by(desc(ParserIngestEvent.created_at))
+            .limit(200)
         ).scalars().all()
 
         for event in rows:
@@ -512,12 +581,14 @@ async def bulk_ignore_parser_events(
         await session.commit()
 
     redirect_url = "/admin/parser"
-    if status or source:
+    if status or source or window:
         params = []
         if status:
             params.append(f"status={status}")
         if source:
             params.append(f"source={source}")
+        if window:
+            params.append(f"window={window}")
         redirect_url = f"{redirect_url}?{'&'.join(params)}"
     return RedirectResponse(url=redirect_url, status_code=302)
 
