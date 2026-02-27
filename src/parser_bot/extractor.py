@@ -66,15 +66,35 @@ CITY_STOP_WORDS = {
     "контейнер",
     "борт",
     "трал",
+    "догруз",
+    "растаможка",
+    "растоможка",
+    "таможня",
+    "перецепка",
+    "перегруз",
 }
 
 CITY_ALIASES = {
     "мск": "Москва",
     "москва": "Москва",
     "спб": "Санкт-Петербург",
+    "санкт петербург": "Санкт-Петербург",
+    "санкт-петербург": "Санкт-Петербург",
     "питер": "Санкт-Петербург",
     "екб": "Екатеринбург",
     "нн": "Нижний Новгород",
+    "йошкар ола": "Йошкар-Ола",
+    "йошкар-ола": "Йошкар-Ола",
+    "ростов на дону": "Ростов-на-Дону",
+    "ростов-на-дону": "Ростов-на-Дону",
+    "ташкен": "Ташкент",
+    "ташкенд": "Ташкент",
+    "сырдаря": "Сырдарья",
+    "фергана": "Фергана",
+    "fargona": "Farg'ona",
+    "farg'ona": "Farg'ona",
+    "fargʻona": "Farg'ona",
+    "farg’ona": "Farg'ona",
 }
 
 CITY_ALIAS_INDEX: dict[str, set[str]] = {}
@@ -203,8 +223,15 @@ def _normalize_city(value: str) -> str:
     if not raw:
         return ""
     lookup = raw.lower().strip(".")
-    if lookup in CITY_ALIASES:
-        return CITY_ALIASES[lookup]
+    lookup = lookup.replace("ʻ", "'").replace("’", "'").replace("`", "'")
+    lookup_variants = {
+        lookup,
+        lookup.replace("-", " "),
+        lookup.replace(" ", "-"),
+    }
+    for variant in lookup_variants:
+        if variant in CITY_ALIASES:
+            return CITY_ALIASES[variant]
     return raw.title()
 
 
@@ -304,6 +331,10 @@ def _parse_route(text: str) -> tuple[str, str] | tuple[None, None]:
 
     compact = ROUTE_COMPACT_RE.search(text)
     if compact:
+        compact_token = f"{compact.group('from')}-{compact.group('to')}"
+        compact_lookup = compact_token.lower().replace("ʻ", "'").replace("’", "'").replace("`", "'")
+        if compact_lookup in CITY_ALIASES or compact_lookup.replace("-", " ") in CITY_ALIASES:
+            return None, None
         from_city = _normalize_city(compact.group("from"))
         to_city = _normalize_city(compact.group("to"))
         if from_city and to_city:

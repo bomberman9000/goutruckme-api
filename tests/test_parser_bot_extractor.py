@@ -51,6 +51,27 @@ def test_parse_cargo_message_uses_cargo_signals_without_keyword_match():
     assert parsed.matched_keywords == ["auto"]
 
 
+def test_parse_cargo_message_normalizes_common_city_typos():
+    text = "Тент Екатеринбург - Ташкен, 20т, 100к"
+    parsed = parse_cargo_message(text, keywords=["тент"])
+
+    assert parsed is not None
+    assert parsed.from_city == "Екатеринбург"
+    assert parsed.to_city == "Ташкент"
+
+
+def test_parse_cargo_message_skips_non_city_stopword_route():
+    text = "Растаможка - Ташкент, 20т, 310000"
+    parsed = parse_cargo_message(text, keywords=["тент"])
+    assert parsed is None
+
+
+def test_parse_cargo_message_does_not_treat_single_hyphenated_city_as_route():
+    text = "Йошкар-Ола 20т 120к +79990001122"
+    parsed = parse_cargo_message(text, keywords=["тент"])
+    assert parsed is None
+
+
 def test_parse_price_from_keyword_with_thousand_separators():
     text = "Тент Москва - Самара, фрахт 6.500.000, тел +7 999 1112233"
     parsed = parse_cargo_message(text, keywords=["тент", "фрахт"])
@@ -77,7 +98,7 @@ def test_parse_route_with_apostrophe_city_names():
     parsed = parse_cargo_message(text, keywords=["реф"])
     assert parsed is not None
     assert parsed.from_city == "Toshkent"
-    assert parsed.to_city == "Farg'Ona"
+    assert parsed.to_city == "Farg'ona"
     assert parsed.matched_keywords == ["auto"]
 
 
