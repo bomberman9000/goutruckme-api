@@ -162,6 +162,22 @@ def test_split_cargo_message_blocks_keeps_single_route_with_details():
     assert blocks == [text.strip()]
 
 
+def test_split_cargo_message_blocks_expands_stacked_city_lists():
+    text = (
+        "🇷🇺 МОСКВА ЕГОРЬЕВСК\n"
+        "🇺🇿 ТОШКЕНТ\n"
+        "🇺🇿 ВОДИЙ\n"
+        "🚛 Тент Фура\n"
+        "📞 +998917431571\n"
+    )
+    blocks = split_cargo_message_blocks(text)
+
+    assert len(blocks) == 2
+    assert blocks[0].startswith("Егорьевск - Ташкент")
+    assert blocks[1].startswith("Егорьевск - Водий")
+    assert "Тент Фура" in blocks[0]
+
+
 def test_parse_cargo_message_skips_invalid_geo_blacklist_route():
     assert parse_cargo_message("Оплата - Ташкент, 20т, 100к", keywords=["тент"]) is None
     assert parse_cargo_message("Оптала - Ташкент, 20т, 100к", keywords=["тент"]) is None

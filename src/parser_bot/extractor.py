@@ -110,6 +110,58 @@ CITY_INVALID_EXACT = {
     "naqd",
 }
 
+_STACKED_ROUTE_KEEP_MULTIWORD_KEYS = {
+    "санкт петербург",
+    "нижний новгород",
+    "ростов на дону",
+    "йошкар ола",
+}
+
+_STACKED_ROUTE_PREFIX_TOKENS = {
+    "узб",
+    "узбекистан",
+    "россия",
+    "рф",
+    "рб",
+    "беларусь",
+    "белоруссия",
+    "казахстан",
+    "кыргызстан",
+    "киргизия",
+    "uzb",
+    "uz",
+    "ru",
+    "kg",
+    "kz",
+    "by",
+}
+
+_STACKED_ROUTE_STOP_TOKENS = {
+    "тент",
+    "реф",
+    "фура",
+    "tent",
+    "ref",
+    "fura",
+    "yuk",
+    "yoki",
+    "груз",
+    "машина",
+    "мдф",
+    "дсп",
+    "аванс",
+    "оплата",
+    "нал",
+    "нахт",
+    "naqd",
+    "nakd",
+    "тонна",
+    "тонн",
+    "тона",
+    "tona",
+    "ton",
+}
+
 CITY_ALIASES = {
     "мск": "Москва",
     "москва": "Москва",
@@ -126,12 +178,19 @@ CITY_ALIASES = {
     "ростов-на-дону": "Ростов-на-Дону",
     "ташкен": "Ташкент",
     "ташкенд": "Ташкент",
+    "тошкент": "Ташкент",
     "toshkent": "Ташкент",
     "сырдаря": "Сырдарья",
+    "сирдарё": "Сырдарья",
     "бухоро": "Бухара",
     "самарқанд": "Самарканд",
     "самарканд": "Самарканд",
     "samarqand": "Самарканд",
+    "жиззах": "Джизак",
+    "карши": "Карши",
+    "нукус": "Нукус",
+    "водий": "Водий",
+    "хоразм": "Хорезм",
     "фаргона": "Фергана",
     "фарғона": "Фергана",
     "фергана": "Фергана",
@@ -724,6 +783,46 @@ def contains_invalid_geo_token(text: str) -> bool:
     return bool(_INVALID_GEO_TOKEN_RE.search(text or ""))
 
 
+def _extract_standalone_city(line: str) -> str | None:
+    candidate = _ZERO_WIDTH_RE.sub("", (line or "")).strip()
+    if not candidate:
+        return None
+
+    if _parse_route(candidate)[0]:
+        return None
+
+    candidate = re.sub(r"[\U0001F1E6-\U0001F1FF]", "", candidate)
+    candidate = re.sub(r"[^0-9A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ'’ʻ`\-\s]", " ", candidate)
+    candidate = re.sub(r"\s+", " ", candidate).strip()
+    if not candidate or re.search(r"\d", candidate):
+        return None
+
+    words = [word for word in candidate.split() if word]
+    while words and words[0].lower() in _STACKED_ROUTE_PREFIX_TOKENS:
+        words.pop(0)
+    if not words:
+        return None
+    if any(word.lower() in _STACKED_ROUTE_STOP_TOKENS for word in words):
+        return None
+
+    joined = " ".join(words)
+    joined_key = _city_key(joined)
+    if joined_key in _STACKED_ROUTE_KEEP_MULTIWORD_KEYS or joined_key in CITY_ALIASES:
+        city = _normalize_city(joined)
+    elif len(words) >= 3:
+        last_two = " ".join(words[-2:])
+        last_two_key = _city_key(last_two)
+        city = _normalize_city(last_two) if last_two_key in CITY_ALIASES else _normalize_city(words[-1])
+    elif len(words) == 2:
+        city = _normalize_city(words[-1])
+    else:
+        city = _normalize_city(words[0])
+
+    if not city or _is_invalid_city_name(city):
+        return None
+    return city
+
+
 def split_cargo_message_blocks(text: str) -> list[str]:
     clean_text = _ZERO_WIDTH_RE.sub("", (text or "")).strip()
     if not clean_text:
@@ -752,9 +851,50 @@ def split_cargo_message_blocks(text: str) -> list[str]:
         blocks.append("\n".join(current).strip())
 
     normalized_blocks = [block for block in blocks if block]
-    if len(normalized_blocks) <= 1:
+    expanded_blocks: list[str] = []
+
+    for block in normalized_blocks or [clean_text]:
+        block_lines = [line.strip() for line in block.splitlines() if line.strip()]
+        if len(block_lines) < 2:
+            expanded_blocks.append(block)
+            continue
+
+        explicit_route_lines = sum(1 for line in block_lines if _parse_route(line)[0])
+        if explicit_route_lines:
+            expanded_blocks.append(block)
+            continue
+
+        origin = _extract_standalone_city(block_lines[0])
+        if not origin:
+            expanded_blocks.append(block)
+            continue
+
+        destinations: list[str] = []
+        details_start = 1
+        for idx, line in enumerate(block_lines[1:], start=1):
+            city = _extract_standalone_city(line)
+            if city:
+                destinations.append(city)
+                details_start = idx + 1
+                continue
+            details_start = idx
+            break
+
+        if not destinations:
+            expanded_blocks.append(block)
+            continue
+
+        detail_lines = block_lines[details_start:]
+        common_tail = "\n".join(detail_lines).strip()
+        for destination in destinations:
+            synthetic = f"{origin} - {destination}"
+            if common_tail:
+                synthetic = f"{synthetic}\n{common_tail}"
+            expanded_blocks.append(synthetic)
+
+    if len(expanded_blocks) <= 1:
         return [clean_text]
-    return normalized_blocks
+    return expanded_blocks
 
 
 async def parse_cargo_message_llm(
