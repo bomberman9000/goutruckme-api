@@ -29,6 +29,8 @@ export type FeedItem = {
   distance_km: number | null;
   freshness: string | null;
   ati_link: string | null;
+  payment_status: string | null;
+  verified_payment: boolean;
 };
 
 export type SimilarItem = {
@@ -185,7 +187,24 @@ export type MyCargoItem = {
   feed_id: number | null;
   feed_status: string | null;
   is_published: boolean;
+  payment_status: string;
+  verified_payment: boolean;
+  escrow_amount_rub: number | null;
+  escrow_status: string | null;
   created_at: string;
+};
+
+export type EscrowActionResponse = {
+  ok: boolean;
+  cargo_id: number;
+  escrow_id: number;
+  status: string;
+  payment_status: string;
+  amount_rub: number;
+  platform_fee_rub: number;
+  carrier_amount_rub: number;
+  payment_url: string | null;
+  provider: string;
 };
 
 export type SubscriptionItem = {
@@ -351,6 +370,67 @@ export async function archiveManualCargo(cargoId: number): Promise<void> {
   if (!response.ok) {
     throw new Error(`Archive cargo failed: ${response.status}`);
   }
+}
+
+export async function createEscrow(cargoId: number, amount_rub?: number): Promise<EscrowActionResponse> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+
+  const response = await fetch(`/api/v1/escrow/${cargoId}/create`, {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: JSON.stringify({ amount_rub: amount_rub ?? null }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Create escrow failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function markEscrowDelivered(cargoId: number): Promise<EscrowActionResponse> {
+  const headers: Record<string, string> = {};
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+
+  const response = await fetch(`/api/v1/escrow/${cargoId}/mark-delivered`, {
+    method: "POST",
+    credentials: "include",
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Mark delivered failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function releaseEscrow(cargoId: number): Promise<EscrowActionResponse> {
+  const headers: Record<string, string> = {};
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+
+  const response = await fetch(`/api/v1/escrow/${cargoId}/release`, {
+    method: "POST",
+    credentials: "include",
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Release escrow failed: ${response.status}`);
+  }
+
+  return response.json();
 }
 
 export async function fetchSubscriptions(): Promise<SubscriptionItem[]> {

@@ -3,11 +3,14 @@ import {
   archiveManualCargo,
   addFavorite,
   addVehicle,
+  createEscrow,
   createSubscription,
   createManualCargo,
   deleteSubscription,
   fetchMyCargos,
   fetchSubscriptions,
+  markEscrowDelivered,
+  releaseEscrow,
   fetchFavorites,
   fetchFeed,
   fetchSimilar,
@@ -41,6 +44,25 @@ function trustStars(score: number | null): string {
   if (score >= 40) return "★★★☆☆";
   if (score >= 20) return "★★☆☆☆";
   return "★☆☆☆☆";
+}
+
+function paymentStatusLabel(status: string | null | undefined): string {
+  switch (status) {
+    case "payment_pending":
+      return "🟡 Ожидает оплату";
+    case "funded":
+      return "💰 Оплата гарантирована";
+    case "delivery_marked":
+      return "🚚 Доставка отмечена";
+    case "released":
+      return "✅ Выплачено";
+    case "disputed":
+      return "⚠️ Спор";
+    case "cancelled":
+      return "⛔️ Отменено";
+    default:
+      return "⚪️ Без escrow";
+  }
 }
 
 export function App() {
@@ -345,6 +367,47 @@ export function App() {
     }
   }
 
+  async function handleCreateEscrow(cargo: MyCargoItem) {
+    setMyCargosError(null);
+    try {
+      const result = await createEscrow(cargo.id, cargo.price);
+      if (result.payment_url) {
+        const tg = (window as any)?.Telegram?.WebApp;
+        if (tg?.openLink) {
+          tg.openLink(result.payment_url);
+        } else {
+          window.open(result.payment_url, "_blank", "noopener,noreferrer");
+        }
+      }
+      await Promise.all([loadMyCargos(), load(true)]);
+    } catch (err) {
+      setMyCargosError(err instanceof Error ? err.message : "Не удалось создать безопасную сделку");
+    }
+  }
+
+  async function handleMarkEscrowDelivered(cargoId: number) {
+    setMyCargosError(null);
+    try {
+      await markEscrowDelivered(cargoId);
+      await Promise.all([loadMyCargos(), load(true)]);
+    } catch (err) {
+      setMyCargosError(err instanceof Error ? err.message : "Не удалось отметить доставку");
+    }
+  }
+
+  async function handleReleaseEscrow(cargoId: number) {
+    if (!window.confirm("Подтвердить выплату перевозчику?")) {
+      return;
+    }
+    setMyCargosError(null);
+    try {
+      await releaseEscrow(cargoId);
+      await Promise.all([loadMyCargos(), load(true)]);
+    } catch (err) {
+      setMyCargosError(err instanceof Error ? err.message : "Не удалось выполнить выплату");
+    }
+  }
+
   function hasRouteSubscription(item: FeedItem): boolean {
     return subscriptions.some((sub) =>
       (sub.from_city ?? null) === (item.from_city ?? null)
@@ -464,6 +527,9 @@ export function App() {
               <div className="price-per-km">{item.rate_per_km} ₽/км</div>
             )}
             {item.payment_terms && <div className="payment-terms">{item.payment_terms}</div>}
+            {item.verified_payment && (
+              <div className="verified-payment">💰 Оплата гарантирована</div>
+            )}
             {item.is_direct_customer !== null && (
               <div className="customer-type">
                 {item.is_direct_customer ? "🏭 Прямой" : "👤 Посредник"}
@@ -645,10 +711,45 @@ export function App() {
                   <div className="my-cargo-extra">
                     <span>📅 {cargo.load_date}{cargo.load_time ? ` ${cargo.load_time}` : ""}</span>
                     {cargo.payment_terms && <span>{cargo.payment_terms}</span>}
+                    <span className={`escrow-status${cargo.verified_payment ? " verified" : ""}`}>
+                      {paymentStatusLabel(cargo.payment_status)}
+                    </span>
                     {cargo.description && <span>{cargo.description}</span>}
                   </div>
 
                   <div className="card-actions">
+                    {cargo.payment_status === "unsecured" && (
+                      <button
+                        className="action-btn primary"
+                        onClick={() => void handleCreateEscrow(cargo)}
+                      >
+                        💰 Забронировать
+                      </button>
+                    )}
+                    {cargo.payment_status === "payment_pending" && (
+                      <button
+                        className="action-btn primary"
+                        onClick={() => void handleCreateEscrow(cargo)}
+                      >
+                        🔗 Оплатить
+                      </button>
+                    )}
+                    {cargo.payment_status === "funded" && (
+                      <button
+                        className="action-btn primary"
+                        onClick={() => void handleMarkEscrowDelivered(cargo.id)}
+                      >
+                        🚚 Доставлено
+                      </button>
+                    )}
+                    {cargo.payment_status === "delivery_marked" && (
+                      <button
+                        className="action-btn primary"
+                        onClick={() => void handleReleaseEscrow(cargo.id)}
+                      >
+                        💸 Выплатить
+                      </button>
+                    )}
                     <button
                       className="action-btn"
                       onClick={() => {

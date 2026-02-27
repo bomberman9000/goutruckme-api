@@ -11,7 +11,7 @@ from sqlalchemy import select
 from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
 from src.core.cache import clear_cached
 from src.core.database import async_session
-from src.core.models import Cargo, CargoStatus, ParserIngestEvent, User
+from src.core.models import Cargo, CargoPaymentStatus, CargoStatus, EscrowDeal, EscrowStatus, ParserIngestEvent, User
 from src.core.services.notification_dispatcher import notify_matching_carriers
 
 router = APIRouter(tags=["cargos"])
@@ -50,6 +50,10 @@ class MyCargoItem(BaseModel):
     feed_id: int | None
     feed_status: str | None
     is_published: bool
+    payment_status: str = CargoPaymentStatus.UNSECURED.value
+    verified_payment: bool = False
+    escrow_amount_rub: int | None = None
+    escrow_status: str | None = None
     created_at: datetime
 
 
@@ -144,7 +148,24 @@ async def _find_manual_feed_event(session, owner_id: int, cargo_id: int) -> Pars
     return None
 
 
-def _serialize_my_cargo(cargo: Cargo, event: ParserIngestEvent | None) -> MyCargoItem:
+def _payment_status_value(value: CargoPaymentStatus | str | None) -> str:
+    if isinstance(value, CargoPaymentStatus):
+        return value.value
+    if value:
+        return str(value)
+    return CargoPaymentStatus.UNSECURED.value
+
+
+def _payment_verified(value: CargoPaymentStatus | str | None) -> bool:
+    return _payment_status_value(value) in {
+        CargoPaymentStatus.FUNDED.value,
+        CargoPaymentStatus.DELIVERY_MARKED.value,
+        CargoPaymentStatus.RELEASED.value,
+    }
+
+
+def _serialize_my_cargo(cargo: Cargo, event: ParserIngestEvent | None, escrow: EscrowDeal | None) -> MyCargoItem:
+    payment_status = _payment_status_value(getattr(cargo, "payment_status", None))
     return MyCargoItem(
         id=cargo.id,
         from_city=cargo.from_city,
@@ -160,6 +181,10 @@ def _serialize_my_cargo(cargo: Cargo, event: ParserIngestEvent | None) -> MyCarg
         feed_id=event.id if event else None,
         feed_status=event.status if event else None,
         is_published=bool(event and event.status == "synced" and not event.is_spam),
+        payment_status=payment_status,
+        verified_payment=_payment_verified(payment_status),
+        escrow_amount_rub=int(escrow.amount_rub) if escrow else None,
+        escrow_status=escrow.status.value if escrow and isinstance(escrow.status, EscrowStatus) else (str(escrow.status) if escrow else None),
         created_at=cargo.created_at or datetime.utcnow(),
     )
 
@@ -206,6 +231,7 @@ async def create_manual_cargo(
             load_time=_normalize_text(body.load_time),
             comment=description,
             status=CargoStatus.NEW,
+            payment_status=CargoPaymentStatus.UNSECURED,
         )
         session.add(cargo)
         await session.flush()
@@ -298,14 +324,27 @@ async def get_my_cargos(
             )
         ).scalars().all()
 
+        escrow_rows = (
+            await session.execute(
+                select(EscrowDeal)
+                .where(EscrowDeal.cargo_id.in_([cargo.id for cargo in cargo_rows]))
+                .order_by(EscrowDeal.id.desc())
+            )
+        ).scalars().all() if cargo_rows else []
+
     event_by_cargo_id: dict[int, ParserIngestEvent] = {}
     for event in event_rows:
         for cargo in cargo_rows:
             if cargo.id not in event_by_cargo_id and _details_match_cargo_id(event.details_json, cargo.id):
                 event_by_cargo_id[cargo.id] = event
 
+    escrow_by_cargo_id: dict[int, EscrowDeal] = {}
+    for escrow in escrow_rows:
+        if int(escrow.cargo_id) not in escrow_by_cargo_id:
+            escrow_by_cargo_id[int(escrow.cargo_id)] = escrow
+
     return MyCargoResponse(
-        items=[_serialize_my_cargo(cargo, event_by_cargo_id.get(cargo.id)) for cargo in cargo_rows],
+        items=[_serialize_my_cargo(cargo, event_by_cargo_id.get(cargo.id), escrow_by_cargo_id.get(int(cargo.id))) for cargo in cargo_rows],
         limit=limit,
     )
 

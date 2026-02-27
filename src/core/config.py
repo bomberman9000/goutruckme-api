@@ -112,6 +112,15 @@ class Settings(BaseSettings):
     referral_reward_days: int = 7
     manual_cargo_notify_dedupe_sec: int = 300
 
+    # Escrow prototype
+    escrow_enabled: bool = True
+    escrow_provider: str = "mock"
+    escrow_platform_fee_percent: float = 2.0
+    escrow_fast_payout_fee_percent: float = 0.5
+    tochka_client_id: str = ""
+    tochka_client_secret: str = ""
+    tochka_base_url: str = "https://enter.tochka.com/api/v2"
+
     @field_validator("admin_id", "parser_tg_api_id", "parser_default_user_id", mode="before")
     @classmethod
     def _empty_str_to_none_for_optional_ints(cls, value):

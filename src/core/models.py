@@ -58,6 +58,16 @@ class CargoStatus(enum.Enum):
     CANCELLED = "cancelled"
     ARCHIVED = "archived"
 
+
+class CargoPaymentStatus(enum.Enum):
+    UNSECURED = "unsecured"
+    PAYMENT_PENDING = "payment_pending"
+    FUNDED = "funded"
+    DELIVERY_MARKED = "delivery_marked"
+    RELEASED = "released"
+    DISPUTED = "disputed"
+    CANCELLED = "cancelled"
+
 class Cargo(Base):
     __tablename__ = "cargos"
     
@@ -83,6 +93,10 @@ class Cargo(Base):
     status: Mapped[CargoStatus] = mapped_column(Enum(CargoStatus), default=CargoStatus.NEW)
     tracking_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    payment_status: Mapped[CargoPaymentStatus] = mapped_column(
+        Enum(CargoPaymentStatus), default=CargoPaymentStatus.UNSECURED
+    )
+    payment_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -602,6 +616,60 @@ class Transaction(Base):
         Index("ix_transactions_status", "status"),
         Index("ix_transactions_deadline", "payment_deadline"),
     )
+
+
+class UserWallet(Base):
+    __tablename__ = "user_wallets"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), primary_key=True)
+    balance_rub: Mapped[int] = mapped_column(Integer, default=0)
+    frozen_balance_rub: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class EscrowStatus(enum.Enum):
+    PAYMENT_PENDING = "payment_pending"
+    FUNDED = "funded"
+    DELIVERY_MARKED = "delivery_marked"
+    RELEASED = "released"
+    DISPUTED = "disputed"
+    CANCELLED = "cancelled"
+
+
+class EscrowDeal(Base):
+    __tablename__ = "escrow_deals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cargo_id: Mapped[int] = mapped_column(Integer, ForeignKey("cargos.id"), index=True)
+    client_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), index=True)
+    carrier_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True, index=True)
+    amount_rub: Mapped[int] = mapped_column(Integer)
+    platform_fee_rub: Mapped[int] = mapped_column(Integer, default=0)
+    carrier_amount_rub: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[EscrowStatus] = mapped_column(Enum(EscrowStatus), default=EscrowStatus.PAYMENT_PENDING)
+    provider: Mapped[str] = mapped_column(String(32), default="mock_tochka")
+    tochka_payment_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    payment_link: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    funded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_escrow_deals_client", "client_id", "status"),
+        Index("ix_escrow_deals_carrier", "carrier_id", "status"),
+    )
+
+
+class EscrowEvent(Base):
+    __tablename__ = "escrow_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    escrow_deal_id: Mapped[int] = mapped_column(Integer, ForeignKey("escrow_deals.id"), index=True)
+    event_type: Mapped[str] = mapped_column(String(40))
+    actor_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class CallLog(Base):

@@ -352,6 +352,22 @@ body { background: var(--bg); color: var(--text); }
   font-size: 12px;
   color: var(--muted);
 }
+.verified-payment {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #ffd76a;
+  font-weight: 600;
+}
+.escrow-status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 215, 106, 0.08);
+}
+.escrow-status.verified {
+  color: #ffd76a;
+  border-color: rgba(255, 215, 106, 0.35);
+}
 
 .subscriptions-section { margin-top: 10px; }
 .subscription-list { display: flex; flex-direction: column; gap: 10px; }
