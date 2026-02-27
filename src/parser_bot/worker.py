@@ -271,6 +271,70 @@ def _is_unrealistic_rate(parsed: ParsedCargo) -> bool:
     return False
 
 
+def _rate_review_reason(parsed: ParsedCargo) -> str | None:
+    rate = parsed.rate_rub
+    if not isinstance(rate, int) or rate <= 0:
+        return None
+
+    if rate > int(settings.parser_max_rate_rub):
+        return "rate_above_cap"
+
+    try:
+        from src.core.geo import city_coords, haversine_km
+
+        fc = city_coords(parsed.from_city)
+        tc = city_coords(parsed.to_city)
+        if not fc or not tc:
+            return None
+
+        distance_km = haversine_km(fc[0], fc[1], tc[0], tc[1])
+        if distance_km < 10:
+            return None
+
+        rate_per_km = rate / distance_km
+        if rate_per_km > float(settings.parser_max_rate_per_km):
+            return "rate_per_km_above_cap"
+    except Exception:
+        return None
+
+    return None
+
+
+async def _maybe_recheck_with_llm(
+    text: str,
+    *,
+    keywords: list[str],
+    parsed: ParsedCargo,
+) -> ParsedCargo:
+    if not settings.parser_rate_recheck_with_llm:
+        return parsed
+    if not (settings.groq_api_key or settings.openai_api_key):
+        return parsed
+
+    try:
+        candidate = await parse_cargo_message_llm(text, keywords=keywords)
+    except Exception as exc:
+        logger.warning("LLM rate recheck failed error=%s", str(exc)[:200])
+        return parsed
+
+    if not candidate:
+        return parsed
+    if candidate.from_city != parsed.from_city or candidate.to_city != parsed.to_city:
+        return parsed
+    if candidate.rate_rub is None:
+        return parsed
+
+    candidate.is_hot_deal = evaluate_hot_deal(candidate)
+    logger.info(
+        "LLM rate recheck adjusted route=%s->%s old_rate=%s new_rate=%s",
+        parsed.from_city,
+        parsed.to_city,
+        parsed.rate_rub,
+        candidate.rate_rub,
+    )
+    return candidate
+
+
 async def _save_ingest_event(
     *,
     message: StreamMessage,
@@ -419,6 +483,32 @@ async def _process_message(
                 parsed.from_city,
                 parsed.to_city,
                 parsed.rate_rub,
+            )
+            return
+
+        review_reason = _rate_review_reason(parsed)
+        if review_reason:
+            rechecked = await _maybe_recheck_with_llm(text, keywords=keywords, parsed=parsed)
+            if rechecked is not parsed:
+                parsed = rechecked
+                review_reason = _rate_review_reason(parsed)
+
+        if review_reason:
+            await _save_ingest_event(
+                message=message,
+                parsed=parsed,
+                trust=None,
+                is_spam=False,
+                status="manual_review",
+                error=review_reason,
+            )
+            logger.info(
+                "sent to manual review id=%s route=%s->%s rate=%s reason=%s",
+                message.entry_id,
+                parsed.from_city,
+                parsed.to_city,
+                parsed.rate_rub,
+                review_reason,
             )
             return
 

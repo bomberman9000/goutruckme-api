@@ -93,6 +93,9 @@ class Settings(BaseSettings):
     parser_price_source_chat: str = ""
     parser_price_reference_days: int = 14
     parser_price_reference_min_samples: int = 2
+    parser_max_rate_rub: int = 5_000_000
+    parser_max_rate_per_km: int = 500
+    parser_rate_recheck_with_llm: bool = False
 
     # Parser scoring
     parser_score_min_trust: int = 40

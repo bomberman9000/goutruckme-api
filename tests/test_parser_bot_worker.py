@@ -1,7 +1,8 @@
 import src.core.geo as geo
+from src.core.config import settings
 
 from src.parser_bot.extractor import ParsedCargo
-from src.parser_bot.worker import _is_unrealistic_rate
+from src.parser_bot.worker import _is_unrealistic_rate, _rate_review_reason
 
 
 def make_parsed(from_city: str, to_city: str, rate_rub: int) -> ParsedCargo:
@@ -34,3 +35,24 @@ def test_is_unrealistic_rate_rejects_too_low_rate_per_km(monkeypatch):
 def test_is_unrealistic_rate_allows_reasonable_rate():
     parsed = make_parsed("Москва", "Казань", 120000)
     assert _is_unrealistic_rate(parsed) is False
+
+
+def test_rate_review_reason_uses_upper_cap():
+    parsed = make_parsed("Москва", "Казань", settings.parser_max_rate_rub + 1)
+    assert _rate_review_reason(parsed) == "rate_above_cap"
+
+
+def test_rate_review_reason_uses_rate_per_km_cap(monkeypatch):
+    monkeypatch.setattr(geo, "city_coords", lambda city: (0.0, 0.0) if city == "Москва" else (10.0, 10.0))
+    monkeypatch.setattr(geo, "haversine_km", lambda *_args: 100.0)
+
+    parsed = make_parsed("Москва", "Екатеринбург", 60000)
+    assert _rate_review_reason(parsed) == "rate_per_km_above_cap"
+
+
+def test_rate_review_reason_allows_reasonable_caps(monkeypatch):
+    monkeypatch.setattr(geo, "city_coords", lambda city: (0.0, 0.0) if city == "Москва" else (10.0, 10.0))
+    monkeypatch.setattr(geo, "haversine_km", lambda *_args: 300.0)
+
+    parsed = make_parsed("Москва", "Екатеринбург", 120000)
+    assert _rate_review_reason(parsed) is None
