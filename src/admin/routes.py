@@ -9,7 +9,16 @@ from src.admin.auth import (
 )
 from src.core.config import settings
 from src.core.database import async_session
-from src.core.models import User, Cargo, CargoStatus, Report, Rating, ChatMessage, Feedback
+from src.core.models import (
+    User,
+    Cargo,
+    CargoStatus,
+    Report,
+    Rating,
+    ChatMessage,
+    Feedback,
+    ParserIngestEvent,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory="src/admin/templates")
@@ -53,6 +62,9 @@ async def dashboard(request: Request, admin: dict = Depends(get_current_admin)):
         reports_count = await session.scalar(
             select(func.count()).select_from(Report).where(Report.is_reviewed == False)
         )
+        manual_review_count = await session.scalar(
+            select(func.count()).select_from(ParserIngestEvent).where(ParserIngestEvent.status == "manual_review")
+        )
         
         # Recent activity
         week_ago = datetime.utcnow() - timedelta(days=7)
@@ -84,6 +96,7 @@ async def dashboard(request: Request, admin: dict = Depends(get_current_admin)):
             "cargos": cargos_count,
             "active_cargos": active_cargos,
             "reports": reports_count,
+            "manual_review": manual_review_count,
             "new_users": new_users,
             "new_cargos": new_cargos,
             "revenue": total_revenue
@@ -223,6 +236,59 @@ async def reports_list(request: Request, admin: dict = Depends(get_current_admin
         "reports": reports,
         "users": users
     })
+
+
+@router.get("/manual-review", response_class=HTMLResponse)
+async def manual_review_queue(
+    request: Request,
+    admin: dict = Depends(get_current_admin),
+    page: int = 1,
+):
+    limit = 20
+    offset = (page - 1) * limit
+
+    async with async_session() as session:
+        total = await session.scalar(
+            select(func.count()).select_from(ParserIngestEvent).where(ParserIngestEvent.status == "manual_review")
+        )
+        result = await session.execute(
+            select(ParserIngestEvent)
+            .where(ParserIngestEvent.status == "manual_review")
+            .order_by(desc(ParserIngestEvent.created_at))
+            .offset(offset)
+            .limit(limit)
+        )
+        events = result.scalars().all()
+
+    return templates.TemplateResponse("manual_review.html", {
+        **_ctx(request),
+        "admin": admin,
+        "events": events,
+        "page": page,
+        "total_pages": (total + limit - 1) // limit if total else 1,
+        "total": total,
+    })
+
+
+@router.post("/manual-review/{event_id}/publish")
+async def publish_manual_review(event_id: int, admin: dict = Depends(get_current_admin)):
+    async with async_session() as session:
+        event = await session.get(ParserIngestEvent, event_id)
+        if event:
+            event.status = "synced"
+            event.is_spam = False
+            await session.commit()
+    return RedirectResponse(url="/admin/manual-review", status_code=302)
+
+
+@router.post("/manual-review/{event_id}/dismiss")
+async def dismiss_manual_review(event_id: int, admin: dict = Depends(get_current_admin)):
+    async with async_session() as session:
+        event = await session.get(ParserIngestEvent, event_id)
+        if event:
+            event.status = "ignored"
+            await session.commit()
+    return RedirectResponse(url="/admin/manual-review", status_code=302)
 
 @router.post("/reports/{report_id}/review")
 async def review_report(report_id: int, admin: dict = Depends(get_current_admin)):
