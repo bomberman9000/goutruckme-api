@@ -94,6 +94,7 @@ def _build_tma_header(user_id: int) -> dict[str, str]:
 
 def test_create_manual_cargo_creates_cargo_and_feed_event(monkeypatch):
     fake_session = _FakeSession()
+    dispatched: list[int] = []
 
     app = FastAPI()
     app.include_router(cargos_api.router)
@@ -103,7 +104,12 @@ def test_create_manual_cargo_creates_cargo_and_feed_event(monkeypatch):
     async def _clear_cached(_prefix: str) -> None:
         return None
 
+    async def _notify(cargo_id: int) -> int:
+        dispatched.append(cargo_id)
+        return 1
+
     monkeypatch.setattr(cargos_api, "clear_cached", _clear_cached)
+    monkeypatch.setattr(cargos_api, "notify_matching_carriers", _notify)
 
     client = TestClient(app)
     response = client.post(
@@ -147,6 +153,7 @@ def test_create_manual_cargo_creates_cargo_and_feed_event(monkeypatch):
     assert event.details_json is not None
 
     assert user.full_name == "Alex Logist"
+    assert dispatched == [1]
 
 
 def test_get_my_cargos_returns_only_owner_items(monkeypatch):

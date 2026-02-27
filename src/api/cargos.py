@@ -4,7 +4,7 @@ import json
 import uuid
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -12,6 +12,7 @@ from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
 from src.core.cache import clear_cached
 from src.core.database import async_session
 from src.core.models import Cargo, CargoStatus, ParserIngestEvent, User
+from src.core.services.notification_dispatcher import notify_matching_carriers
 
 router = APIRouter(tags=["cargos"])
 
@@ -166,6 +167,7 @@ def _serialize_my_cargo(cargo: Cargo, event: ParserIngestEvent | None) -> MyCarg
 @router.post("/api/v1/cargos/manual", response_model=ManualCargoResponse)
 async def create_manual_cargo(
     body: ManualCargoCreate,
+    background_tasks: BackgroundTasks,
     tma_user: TelegramTMAUser = Depends(get_required_tma_user),
 ) -> ManualCargoResponse:
     from src.core.geo import city_coords
@@ -264,6 +266,7 @@ async def create_manual_cargo(
         await session.refresh(feed_event)
 
     await clear_cached("feed")
+    background_tasks.add_task(notify_matching_carriers, cargo.id)
     return ManualCargoResponse(cargo_id=cargo.id, feed_id=feed_event.id)
 
 

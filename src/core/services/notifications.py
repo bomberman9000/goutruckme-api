@@ -1,8 +1,10 @@
-"""
-Push-notification service: rich cargo notifications to route subscribers.
-"""
+"""Push-notification service: cargo notifications for matching carriers."""
 
-from sqlalchemy import select, or_
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlalchemy import or_, select
 
 from src.core.database import async_session
 from src.core.logger import logger
@@ -11,56 +13,62 @@ from src.core.models import (
     CompanyDetails,
     RouteSubscription,
     User,
+    UserVehicle,
 )
 
 
-async def notify_subscribers(cargo: Cargo):
-    """Send rich notifications to subscribers matching this cargo's route.
-
-    Sets ``cargo.notified_at`` after successful dispatch.
-    """
-    from src.bot.bot import bot
-    from src.bot.keyboards import notification_kb
-
-    async with async_session() as session:
-        # Find matching subscriptions
-        subs_query = (
-            select(RouteSubscription)
-            .where(RouteSubscription.is_active.is_(True))
-            .where(
-                or_(
-                    RouteSubscription.from_city.is_(None),
-                    RouteSubscription.from_city.ilike(
-                        f"%{cargo.from_city}%"
-                    ),
-                )
-            )
-            .where(
-                or_(
-                    RouteSubscription.to_city.is_(None),
-                    RouteSubscription.to_city.ilike(
-                        f"%{cargo.to_city}%"
-                    ),
-                )
+async def collect_matching_route_subscriber_ids(session, cargo: Cargo) -> list[int]:
+    result = await session.execute(
+        select(RouteSubscription)
+        .where(RouteSubscription.is_active.is_(True))
+        .where(
+            or_(
+                RouteSubscription.from_city.is_(None),
+                RouteSubscription.from_city.ilike(f"%{cargo.from_city}%"),
             )
         )
-        result = await session.execute(subs_query)
-        subscribers = result.scalars().all()
-
-        if not subscribers:
-            return
-
-        # Owner company rating
-        owner_company = await session.scalar(
-            select(CompanyDetails).where(
-                CompanyDetails.user_id == cargo.owner_id
+        .where(
+            or_(
+                RouteSubscription.to_city.is_(None),
+                RouteSubscription.to_city.ilike(f"%{cargo.to_city}%"),
             )
         )
-        owner = await session.scalar(
-            select(User).where(User.id == cargo.owner_id)
-        )
+    )
+    subscribers = result.scalars().all()
+    return [int(sub.user_id) for sub in subscribers if int(sub.user_id) != int(cargo.owner_id)]
 
-    # Build message
+
+async def collect_matching_available_vehicle_user_ids(session, cargo: Cargo) -> list[int]:
+    rows = (
+        await session.execute(
+            select(UserVehicle).where(
+                UserVehicle.is_available.is_(True),
+                UserVehicle.location_city.is_not(None),
+                UserVehicle.location_city.ilike(f"%{cargo.from_city}%"),
+            )
+        )
+    ).scalars().all()
+
+    matches: list[int] = []
+    cargo_body = (cargo.cargo_type or "").strip().lower()
+    for vehicle in rows:
+        if int(vehicle.user_id) == int(cargo.owner_id):
+            continue
+        if vehicle.capacity_tons and cargo.weight and float(cargo.weight) > float(vehicle.capacity_tons):
+            continue
+        vehicle_body = (vehicle.body_type or "").strip().lower()
+        if cargo_body and vehicle_body:
+            if cargo_body not in vehicle_body and vehicle_body not in cargo_body:
+                continue
+        matches.append(int(vehicle.user_id))
+    return matches
+
+
+def _build_cargo_notification_text(
+    cargo: Cargo,
+    owner_company: CompanyDetails | None,
+    owner: User | None,
+) -> str:
     text = "🔔 <b>Новый груз по вашему маршруту!</b>\n\n"
     text += f"📍 {cargo.from_city} → {cargo.to_city}\n"
     text += f"📦 {cargo.cargo_type} | {cargo.weight} т\n"
@@ -77,22 +85,50 @@ async def notify_subscribers(cargo: Cargo):
         text += f"\n🏢 {name} | {stars} ({rating}/10)\n"
     elif owner:
         text += f"\n👤 {owner.full_name}\n"
+    return text
 
+
+async def dispatch_cargo_notification(cargo: Cargo, user_ids: list[int]) -> int:
+    if not user_ids:
+        return 0
+
+    from src.bot.bot import bot
+    from src.bot.keyboards import notification_kb
+
+    async with async_session() as session:
+        owner_company = await session.scalar(
+            select(CompanyDetails).where(CompanyDetails.user_id == cargo.owner_id)
+        )
+        owner = await session.scalar(select(User).where(User.id == cargo.owner_id))
+
+    text = _build_cargo_notification_text(cargo, owner_company, owner)
     kb = notification_kb(cargo.id)
 
     sent = 0
-    for sub in subscribers:
-        if sub.user_id == cargo.owner_id:
-            continue
+    for user_id in user_ids:
         try:
-            await bot.send_message(sub.user_id, text, reply_markup=kb)
+            await bot.send_message(user_id, text, reply_markup=kb)
             sent += 1
         except Exception:
             pass
+    return sent
+
+
+async def notify_subscribers(cargo: Cargo) -> int:
+    """Send cargo notifications to route subscribers only."""
+    async with async_session() as session:
+        target_ids = await collect_matching_route_subscriber_ids(session, cargo)
+    sent = await dispatch_cargo_notification(cargo, target_ids)
+    if sent:
+        async with async_session() as session:
+            current = await session.get(Cargo, cargo.id)
+            if current:
+                current.notified_at = datetime.utcnow()
+                await session.commit()
 
     logger.info(
-        "Notified %d/%d subscribers for cargo #%d",
+        "Notified %d route subscribers for cargo #%d",
         sent,
-        len(subscribers),
         cargo.id,
     )
+    return sent
