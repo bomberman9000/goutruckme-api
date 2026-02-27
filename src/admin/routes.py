@@ -1,3 +1,6 @@
+import uuid
+
+import httpx
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -26,6 +29,87 @@ templates = Jinja2Templates(directory="src/admin/templates")
 
 def _ctx(request: Request, **kwargs):
     return {"request": request, "bot_username": settings.bot_username, **kwargs}
+
+
+def _join_url(base_url: str, path: str) -> str:
+    base = (base_url or "").rstrip("/")
+    if not path.startswith("/"):
+        path = f"/{path}"
+    return f"{base}{path}"
+
+
+def _internal_headers() -> dict[str, str]:
+    token = (settings.internal_token or "").strip() or (settings.internal_api_token or "").strip()
+    return {"X-Internal-Token": token} if token else {}
+
+
+def _build_retry_sync_payload(event: ParserIngestEvent) -> dict:
+    order = {
+        "from_city": event.from_city,
+        "to_city": event.to_city,
+        "price_rub": event.rate_rub or 1,
+        "weight_t": event.weight_t or 0.0,
+        "status": "active",
+        "source": event.source or settings.parser_source_name,
+    }
+
+    if settings.parser_default_user_id:
+        order["user_id"] = int(settings.parser_default_user_id)
+    if event.body_type:
+        order["body_type"] = event.body_type
+    if event.inn:
+        order["inn"] = event.inn
+    if event.load_date:
+        order["load_date"] = event.load_date
+    if event.load_time:
+        order["load_time"] = event.load_time
+    if event.cargo_description:
+        order["cargo_description"] = event.cargo_description
+    if event.payment_terms:
+        order["payment_terms"] = event.payment_terms
+    if event.is_direct_customer is not None:
+        order["is_direct_customer"] = event.is_direct_customer
+    if event.dimensions:
+        order["dimensions"] = event.dimensions
+    if event.is_hot_deal:
+        order["is_hot_deal"] = True
+    if event.phone:
+        order["phone"] = event.phone
+    if event.suggested_response:
+        order["suggested_response"] = event.suggested_response
+
+    metadata = {
+        "chat_id": event.chat_id,
+        "message_id": event.message_id,
+        "stream_entry_id": event.stream_entry_id,
+        "phone": event.phone,
+        "inn": event.inn,
+        "body_type": event.body_type,
+        "raw_text": event.raw_text[:2000] if event.raw_text else "",
+        "load_date": event.load_date,
+        "load_time": event.load_time,
+        "cargo_description": event.cargo_description,
+        "payment_terms": event.payment_terms,
+        "is_direct_customer": event.is_direct_customer,
+        "dimensions": event.dimensions,
+        "is_hot_deal": event.is_hot_deal,
+        "phone_blacklisted": event.phone_blacklisted,
+    }
+
+    if event.trust_score is not None:
+        metadata["trust_score"] = event.trust_score
+        metadata["trust_verdict"] = event.trust_verdict
+        metadata["trust_comment"] = event.trust_comment
+        metadata["trust_provider"] = event.provider
+
+    return {
+        "event_id": f"parser-retry-{uuid.uuid4().hex}",
+        "event_type": "order.created",
+        "source": event.source or settings.parser_source_name,
+        "user_id": int(settings.parser_default_user_id) if settings.parser_default_user_id else None,
+        "metadata": metadata,
+        "order": order,
+    }
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
@@ -358,6 +442,48 @@ async def dismiss_manual_review(event_id: int, admin: dict = Depends(get_current
             event.status = "ignored"
             await session.commit()
     return RedirectResponse(url="/admin/manual-review", status_code=302)
+
+
+@router.post("/parser/{event_id}/retry-sync")
+async def retry_parser_sync(event_id: int, admin: dict = Depends(get_current_admin)):
+    async with async_session() as session:
+        event = await session.get(ParserIngestEvent, event_id)
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found")
+
+        if not event.from_city or not event.to_city:
+            event.status = "manual_review"
+            event.error = "retry_missing_route"
+            await session.commit()
+            return RedirectResponse(url="/admin/parser", status_code=302)
+
+        payload = _build_retry_sync_payload(event)
+        sync_url = _join_url(settings.gruzpotok_api_internal_url, settings.gruzpotok_sync_path)
+
+        try:
+            async with httpx.AsyncClient(timeout=max(3, int(settings.parser_http_timeout))) as client:
+                response = await client.post(sync_url, headers=_internal_headers(), json=payload)
+                response.raise_for_status()
+            event.status = "synced"
+            event.is_spam = False
+            event.error = None
+        except Exception as exc:
+            event.status = "sync_failed"
+            event.error = str(exc)[:255]
+
+        await session.commit()
+
+    return RedirectResponse(url="/admin/parser", status_code=302)
+
+
+@router.post("/parser/{event_id}/ignore")
+async def ignore_parser_event(event_id: int, admin: dict = Depends(get_current_admin)):
+    async with async_session() as session:
+        event = await session.get(ParserIngestEvent, event_id)
+        if event:
+            event.status = "ignored"
+            await session.commit()
+    return RedirectResponse(url="/admin/parser", status_code=302)
 
 @router.post("/reports/{report_id}/review")
 async def review_report(report_id: int, admin: dict = Depends(get_current_admin)):
