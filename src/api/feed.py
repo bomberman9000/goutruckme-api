@@ -147,6 +147,8 @@ async def get_feed(
     verdict: list[str] | None = Query(default=["green", "yellow"]),
     min_score: int | None = Query(default=None, ge=0, le=100),
     max_score: int | None = Query(default=None, ge=0, le=100),
+    min_weight: float | None = Query(default=None, ge=0),
+    max_weight: float | None = Query(default=None, ge=0),
     from_city: str | None = Query(default=None),
     to_city: str | None = Query(default=None),
     from_radius_km: int | None = Query(default=None, ge=1, le=500),
@@ -161,6 +163,7 @@ async def get_feed(
     cache_params = {
         "limit": limit, "cursor": cursor, "verdict": sorted(verdict or []),
         "min_score": min_score, "max_score": max_score,
+        "min_weight": min_weight, "max_weight": max_weight,
         "from_city": from_city, "to_city": to_city,
         "from_radius_km": from_radius_km, "to_radius_km": to_radius_km,
         "body_type": body_type, "load_date": load_date,
@@ -181,6 +184,10 @@ async def get_feed(
         stmt = stmt.where(ParserIngestEvent.trust_score >= min_score)
     if max_score is not None:
         stmt = stmt.where(ParserIngestEvent.trust_score <= max_score)
+    if min_weight is not None:
+        stmt = stmt.where(ParserIngestEvent.weight_t >= min_weight)
+    if max_weight is not None:
+        stmt = stmt.where(ParserIngestEvent.weight_t <= max_weight)
     if body_type:
         stmt = stmt.where(ParserIngestEvent.body_type.ilike(f"%{body_type.strip()}%"))
     if load_date:

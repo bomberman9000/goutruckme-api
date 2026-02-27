@@ -26,7 +26,7 @@ from src.parser_bot.extractor import (
     parse_cargo_message_llm,
 )
 from src.parser_bot.stream import RedisLogisticsStream, StreamMessage
-from src.services.scoring import ScoreResult, get_score
+from src.antifraud.scoring import ScoreResult, get_score
 
 
 logging.basicConfig(

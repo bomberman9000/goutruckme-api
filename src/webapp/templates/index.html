@@ -176,12 +176,20 @@
     </div>
 
 <script>
-const tg = window.Telegram.WebApp;
+const tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : {
+    initData: '',
+    ready() {},
+    expand() {},
+    HapticFeedback: { notificationOccurred() {} },
+    showAlert(message) { window.alert(message); },
+    openTelegramLink(url) { window.open(url, '_blank'); },
+};
 tg.ready();
 tg.expand();
 
 const initData = tg.initData || '';
-const API = '/api/webapp';
+const FEED_API = '/api/v1/feed';
+const WEBAPP_API = '/api/webapp';
 let prevScreen = 'list';
 
 // --- Navigation ---
@@ -202,7 +210,10 @@ function goBack() {
 // --- API helpers ---
 async function apiFetch(url, opts = {}) {
     const headers = opts.headers || {};
-    if (initData) headers['X-Telegram-Init-Data'] = initData;
+    if (initData) {
+        headers['Authorization'] = `tma ${initData}`;
+        headers['X-Telegram-Init-Data'] = initData;
+    }
     const resp = await fetch(url, { ...opts, headers });
     if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
@@ -226,16 +237,17 @@ async function loadCargos(params = {}) {
         if (params.to_city) qs.set('to_city', params.to_city);
         if (params.min_weight) qs.set('min_weight', params.min_weight);
         if (params.max_weight) qs.set('max_weight', params.max_weight);
+        qs.set('limit', '30');
 
-        const data = await apiFetch(API + '/cargos?' + qs.toString());
+        const data = await apiFetch(FEED_API + '?' + qs.toString());
         loading.style.display = 'none';
 
-        if (!data.cargos.length) {
+        if (!data.items.length) {
             empty.style.display = 'block';
             return;
         }
 
-        data.cargos.forEach(c => {
+        data.items.forEach(c => {
             list.innerHTML += renderCargoCard(c);
         });
     } catch (e) {
@@ -245,27 +257,47 @@ async function loadCargos(params = {}) {
 }
 
 function renderCargoCard(c) {
+    const trust = renderTrustBadge(c.trust_verdict, c.trust_score);
+    const weight = c.weight_t ? `${c.weight_t} т` : '—';
+    const body = c.body_type || 'Тип не указан';
+    const price = c.rate_rub ? `${formatPrice(c.rate_rub)} ₽` : 'Цена не указана';
+    const distance = c.distance_km ? ` · ${c.distance_km} км` : '';
+    const freshness = c.freshness || '';
     return `
     <div class="card" onclick="openCargo(${c.id})">
         <div style="display:flex; justify-content:space-between; align-items:start;">
             <div>
-                <div style="font-weight:600; font-size:15px;">📍 ${c.from_city} → ${c.to_city}</div>
+                <div style="font-weight:600; font-size:15px;">📍 ${c.from_city || 'Не указано'} → ${c.to_city || 'Не указано'}</div>
                 <div class="tg-hint" style="font-size:13px; margin-top:4px;">
-                    ${c.cargo_type} · ${c.weight} т
-                    ${c.load_time ? ' · ' + c.load_time : ''}
+                    ${body} · ${weight}${distance}
                 </div>
             </div>
             <div style="text-align:right;">
-                <div style="font-weight:700; font-size:16px;">${formatPrice(c.price)} ₽</div>
-                <div class="tg-hint" style="font-size:12px;">${c.load_date}</div>
+                <div style="font-weight:700; font-size:16px;">${price}</div>
+                <div class="tg-hint" style="font-size:12px;">${c.load_date || freshness}</div>
             </div>
         </div>
-        ${c.comment ? '<div class="tg-hint" style="font-size:13px; margin-top:6px;">💬 ' + c.comment.substring(0, 60) + '</div>' : ''}
+        <div style="margin-top:8px; display:flex; justify-content:space-between; gap:8px; align-items:center;">
+            <div class="tg-hint" style="font-size:13px;">${(c.cargo_description || c.payment_terms || '').substring(0, 70)}</div>
+            <div>${trust}</div>
+        </div>
     </div>`;
 }
 
 function formatPrice(n) {
+    if (n === null || n === undefined || n === '') return '—';
     return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+function renderTrustBadge(verdict, score) {
+    const map = {
+        green: { label: '🟢 Green', color: '#16a34a' },
+        yellow: { label: '🟡 Yellow', color: '#ca8a04' },
+        red: { label: '🔴 Red', color: '#dc2626' },
+    };
+    const item = map[(verdict || '').toLowerCase()] || { label: '⚪ Unknown', color: '#64748b' };
+    const scoreText = score !== null && score !== undefined ? ` · ${score}/100` : '';
+    return `<span style="font-size:12px; color:${item.color}; white-space:nowrap;">${item.label}${scoreText}</span>`;
 }
 
 // --- Cargo Detail ---
@@ -276,55 +308,44 @@ async function openCargo(id) {
     content.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
 
     try {
-        const c = await apiFetch(API + '/cargo/' + id);
-        let stars = '';
-        if (c.company && c.company.rating !== null) {
-            const r = c.company.rating;
-            stars = '⭐'.repeat(r) + '☆'.repeat(10 - r) + ` (${r}/10)`;
-        }
+        const c = await apiFetch(FEED_API + '/' + id);
+        const trust = renderTrustBadge(c.trust_verdict, c.trust_score);
+        const phone = c.phone || 'Скрыт';
+        const contactHint = c.can_view_contact
+            ? 'Контакт доступен'
+            : 'Контакт скрыт. Открой Premium через /buy_premium';
 
         let html = `
         <div style="margin-bottom: 20px;">
             <h2 style="font-size: 20px; font-weight: 700; margin: 0 0 4px 0;">📦 Груз #${c.id}</h2>
-            <div class="tg-hint" style="font-size: 13px;">Создан: ${c.created_at.substring(0,10)}</div>
+            <div class="tg-hint" style="font-size: 13px;">Создан: ${c.created_at.substring(0,10)} · ${c.freshness || ''}</div>
         </div>
 
         <div class="tg-secondary" style="border-radius:12px; padding:14px; margin-bottom:12px;">
-            <div style="font-size: 17px; font-weight: 600; margin-bottom: 8px;">📍 ${c.from_city} → ${c.to_city}</div>
+            <div style="font-size: 17px; font-weight: 600; margin-bottom: 8px;">📍 ${c.from_city || 'Не указано'} → ${c.to_city || 'Не указано'}</div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:14px;">
-                <div>📦 ${c.cargo_type}</div>
-                <div>⚖️ ${c.weight} т${c.volume ? ' / ' + c.volume + ' м³' : ''}</div>
-                <div>💰 <b>${formatPrice(c.price)} ₽</b></div>
-                <div>📅 ${c.load_date}${c.load_time ? ' ' + c.load_time : ''}</div>
+                <div>🚚 ${c.body_type || 'Тип не указан'}</div>
+                <div>⚖️ ${c.weight_t ? c.weight_t + ' т' : '—'}</div>
+                <div>💰 <b>${c.rate_rub ? formatPrice(c.rate_rub) + ' ₽' : 'Цена не указана'}</b></div>
+                <div>📅 ${c.load_date || 'Дата не указана'}${c.load_time ? ' ' + c.load_time : ''}</div>
+                <div>🛣 ${c.distance_km ? c.distance_km + ' км' : '—'}</div>
+                <div>📉 ${c.rate_per_km ? c.rate_per_km + ' ₽/км' : '—'}</div>
             </div>
-            ${c.comment ? '<div style="margin-top:8px; font-size:14px;" class="tg-hint">💬 ' + c.comment + '</div>' : ''}
+            ${c.cargo_description ? '<div style="margin-top:8px; font-size:14px;" class="tg-hint">💬 ' + c.cargo_description + '</div>' : ''}
         </div>
 
         <div class="tg-secondary" style="border-radius:12px; padding:14px; margin-bottom:12px;">
-            <div style="font-weight:600; margin-bottom:6px;">👤 Заказчик</div>
-            <div style="font-size:14px;">${c.owner.name}</div>`;
-
-        if (c.company) {
-            html += `
-            <div style="font-size:14px; margin-top:4px;">🏢 ${c.company.name || 'Компания'}</div>
-            <div style="font-size:14px; margin-top:4px;" class="stars">📊 ${stars}</div>`;
-            if (c.company.rating < 4) {
-                html += '<div style="color:#ef4444; font-size:13px; margin-top:4px;">⚠️ Низкий рейтинг</div>';
-            }
-            if (c.company.open_claims > 0) {
-                html += `<div style="color:#ef4444; font-size:13px; margin-top:2px;">🚨 Открытых претензий: ${c.company.open_claims}</div>`;
-            }
-        } else {
-            html += '<div class="tg-hint" style="font-size:13px; margin-top:4px;">Компания не зарегистрирована</div>';
-        }
-
-        html += `
-            <div class="tg-hint" style="font-size:13px; margin-top:4px;">Откликов: ${c.responses_count}</div>
+            <div style="font-weight:600; margin-bottom:6px;">🛡 Проверка</div>
+            <div style="font-size:14px;">${trust}</div>
+            <div class="tg-hint" style="font-size:13px; margin-top:4px;">${c.trust_comment || 'Комментарий отсутствует'}</div>
+            <div class="tg-hint" style="font-size:13px; margin-top:4px;">📞 ${phone}</div>
+            <div class="tg-hint" style="font-size:13px; margin-top:4px;">${contactHint}</div>
         </div>`;
 
+        const actionLabel = c.can_view_contact ? '📞 Позвонить' : '⭐ Открыть контакт';
         html += `
-        <button id="btn-respond" onclick="respondCargo(${c.id})" class="tg-btn" style="width:100%; padding:14px; border-radius:12px; border:none; font-size:16px; font-weight:600; cursor:pointer;">
-            📨 Откликнуться
+        <button id="btn-respond" onclick='respondCargo(${c.id}, ${JSON.stringify(c.reply_link)}, ${c.can_view_contact})' class="tg-btn" style="width:100%; padding:14px; border-radius:12px; border:none; font-size:16px; font-weight:600; cursor:pointer;">
+            ${actionLabel}
         </button>`;
 
         content.innerHTML = html;
@@ -338,21 +359,32 @@ function showScreenRaw(name) {
     document.getElementById('screen-' + name).classList.add('active');
 }
 
-async function respondCargo(id) {
+async function respondCargo(id, replyLink, canViewContact) {
     const btn = document.getElementById('btn-respond');
     btn.disabled = true;
-    btn.textContent = '⏳ Отправка...';
+    btn.textContent = '⏳ Обработка...';
 
     try {
-        await apiFetch(API + '/respond/' + id, { method: 'POST' });
-        btn.textContent = '✅ Отклик отправлен';
+        if (!canViewContact) {
+            btn.textContent = '⭐ Нужен Premium';
+            tg.HapticFeedback.notificationOccurred('warning');
+            tg.showAlert('Контакт скрыт. Купите Premium в боте командой /buy_premium.');
+            setTimeout(() => { btn.textContent = '⭐ Открыть контакт'; btn.disabled = false; }, 2000);
+            return;
+        }
+
+        await apiFetch(FEED_API + '/' + id + '/click', { method: 'POST', body: JSON.stringify({ source: 'webapp' }), headers: { 'Content-Type': 'application/json' } });
+        btn.textContent = '✅ Открываю контакт';
         btn.style.opacity = '0.7';
         tg.HapticFeedback.notificationOccurred('success');
+        if (replyLink) {
+            window.location.href = replyLink;
+        }
     } catch (e) {
         btn.textContent = e.message || 'Ошибка';
         btn.disabled = false;
         tg.HapticFeedback.notificationOccurred('error');
-        setTimeout(() => { btn.textContent = '📨 Откликнуться'; }, 2000);
+        setTimeout(() => { btn.textContent = canViewContact ? '📞 Позвонить' : '⭐ Открыть контакт'; }, 2000);
     }
 }
 
@@ -374,17 +406,18 @@ async function doSearch() {
         if (wMin) qs.set('min_weight', wMin);
         if (wMax) qs.set('max_weight', wMax);
 
-        const data = await apiFetch(API + '/cargos?' + qs.toString());
+        qs.set('limit', '30');
+        const data = await apiFetch(FEED_API + '?' + qs.toString());
 
-        if (!data.cargos.length) {
+        if (!data.items.length) {
             results.innerHTML = '';
             empty.style.display = 'block';
             empty.querySelector('.tg-hint').textContent = 'Ничего не найдено';
             return;
         }
 
-        results.innerHTML = `<div class="tg-hint" style="margin-bottom:10px; font-size:13px;">Найдено: ${data.count}</div>`;
-        data.cargos.forEach(c => {
+        results.innerHTML = `<div class="tg-hint" style="margin-bottom:10px; font-size:13px;">Найдено: ${data.items.length}</div>`;
+        data.items.forEach(c => {
             results.innerHTML += renderCargoCard(c);
         });
     } catch (e) {
@@ -402,7 +435,7 @@ async function loadProfile() {
     content.innerHTML = '<div class="skeleton"></div>';
 
     try {
-        const data = await apiFetch(API + '/profile');
+        const data = await apiFetch(WEBAPP_API + '/profile');
 
         let html = `
         <div class="tg-secondary" style="border-radius:12px; padding:14px; margin-bottom:12px;">

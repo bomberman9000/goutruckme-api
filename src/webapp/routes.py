@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Request, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func
 
+from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
 from src.core.config import settings
 from src.core.database import async_session
 from src.core.models import (
@@ -14,7 +15,6 @@ from src.core.models import (
     Claim,
     ClaimStatus,
 )
-from src.webapp.auth import validate_init_data
 
 router = APIRouter(tags=["webapp"])
 templates = Jinja2Templates(directory="src/webapp/templates")
@@ -23,16 +23,6 @@ templates = Jinja2Templates(directory="src/webapp/templates")
 def _get_webapp_url() -> str:
     """Base URL for WebApp links."""
     return "/webapp"
-
-
-def _auth_user(init_data: str | None) -> dict:
-    """Validate initData and return user dict or raise 401."""
-    if not init_data:
-        raise HTTPException(status_code=401, detail="Missing initData")
-    user = validate_init_data(init_data)
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid initData")
-    return user
 
 
 # --------------- HTML page ---------------
@@ -167,11 +157,10 @@ async def webapp_cargo_detail(cargo_id: int):
 @router.post("/api/webapp/respond/{cargo_id}")
 async def webapp_respond(
     cargo_id: int,
-    x_telegram_init_data: str | None = Header(None),
+    tma_user: TelegramTMAUser = Depends(get_required_tma_user),
 ):
     """Submit a response to a cargo (requires initData auth)."""
-    tg_user = _auth_user(x_telegram_init_data)
-    user_id = tg_user["id"]
+    user_id = tma_user.user_id
 
     async with async_session() as session:
         cargo = await session.scalar(
@@ -211,11 +200,10 @@ async def webapp_respond(
 
 @router.get("/api/webapp/profile")
 async def webapp_profile(
-    x_telegram_init_data: str | None = Header(None),
+    tma_user: TelegramTMAUser = Depends(get_required_tma_user),
 ):
     """Current user profile with cargos and company info."""
-    tg_user = _auth_user(x_telegram_init_data)
-    user_id = tg_user["id"]
+    user_id = tma_user.user_id
 
     async with async_session() as session:
         user = await session.scalar(
