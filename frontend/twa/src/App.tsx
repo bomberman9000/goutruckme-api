@@ -98,6 +98,14 @@ export function App() {
   const [subscriptionsError, setSubscriptionsError] = useState<string | null>(null);
   const [showAddSubscription, setShowAddSubscription] = useState(false);
   const [addingSubscription, setAddingSubscription] = useState(false);
+  const [expandedCalcId, setExpandedCalcId] = useState<number | null>(null);
+  const [tripCalc, setTripCalc] = useState({
+    fuelLPer100: 35,
+    fuelRubPerL: 60,
+    taxPercent: 6,
+    extraRub: 0,
+    fallbackDistanceKm: 500,
+  });
   const [profileSummary, setProfileSummary] = useState<WebappProfileResponse | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -508,6 +516,105 @@ export function App() {
     }
   }
 
+  function updateTripCalc<K extends keyof typeof tripCalc>(key: K, value: number) {
+    setTripCalc((prev) => ({ ...prev, [key]: Number.isFinite(value) ? value : prev[key] }));
+  }
+
+  function renderTripCalculator(item: FeedItem) {
+    const distanceKm = item.distance_km ?? tripCalc.fallbackDistanceKm;
+    const rateRub = item.rate_rub ?? 0;
+    const fuelCost = Math.round((distanceKm * tripCalc.fuelLPer100 * tripCalc.fuelRubPerL) / 100);
+    const taxCost = Math.round((rateRub * tripCalc.taxPercent) / 100);
+    const extraCost = Math.round(tripCalc.extraRub);
+    const netRub = rateRub - fuelCost - taxCost - extraCost;
+    const margin = rateRub > 0 ? (netRub / rateRub) * 100 : 0;
+    const toneClass = margin >= 20 ? "green" : netRub > 0 ? "yellow" : "red";
+
+    return (
+      <div className="trip-calc-panel">
+        <div className="trip-calc-grid">
+          <label className="trip-calc-field">
+            <span>Расход л/100</span>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={tripCalc.fuelLPer100}
+              onChange={(e) => updateTripCalc("fuelLPer100", Number(e.target.value))}
+            />
+          </label>
+          <label className="trip-calc-field">
+            <span>Топливо ₽/л</span>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={tripCalc.fuelRubPerL}
+              onChange={(e) => updateTripCalc("fuelRubPerL", Number(e.target.value))}
+            />
+          </label>
+          <label className="trip-calc-field">
+            <span>Налог %</span>
+            <input
+              type="number"
+              min="0"
+              step="0.1"
+              value={tripCalc.taxPercent}
+              onChange={(e) => updateTripCalc("taxPercent", Number(e.target.value))}
+            />
+          </label>
+          <label className="trip-calc-field">
+            <span>Доп. расходы</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={tripCalc.extraRub}
+              onChange={(e) => updateTripCalc("extraRub", Number(e.target.value))}
+            />
+          </label>
+          {item.distance_km == null && (
+            <label className="trip-calc-field trip-calc-distance">
+              <span>км</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={tripCalc.fallbackDistanceKm}
+                onChange={(e) => updateTripCalc("fallbackDistanceKm", Number(e.target.value))}
+              />
+            </label>
+          )}
+        </div>
+
+        <div className={`trip-calc-result ${toneClass}`}>
+          <div className="trip-calc-line">
+            <span>⛽ Топливо</span>
+            <span>−{fuelCost.toLocaleString("ru")} ₽</span>
+          </div>
+          <div className="trip-calc-line">
+            <span>📋 Налог {tripCalc.taxPercent}%</span>
+            <span>−{taxCost.toLocaleString("ru")} ₽</span>
+          </div>
+          {extraCost > 0 && (
+            <div className="trip-calc-line">
+              <span>🧾 Доп. расходы</span>
+              <span>−{extraCost.toLocaleString("ru")} ₽</span>
+            </div>
+          )}
+          <div className="trip-calc-divider" />
+          <div className="trip-calc-line total">
+            <span>💰 Чистыми</span>
+            <span>{netRub >= 0 ? "+" : ""}{netRub.toLocaleString("ru")} ₽</span>
+          </div>
+          <div className="trip-calc-margin">
+            Рентабельность {margin.toFixed(1)}%
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderCard(item: FeedItem) {
     const isHot = item.is_hot_deal;
     return (
@@ -597,6 +704,9 @@ export function App() {
             {item.ati_link && (
               <a href={item.ati_link} target="_blank" rel="noopener noreferrer" className="action-btn ati">АТИ</a>
             )}
+            <button className="action-btn" onClick={() => setExpandedCalcId((current) => current === item.id ? null : item.id)}>
+              {expandedCalcId === item.id ? "✖" : "🧮"}
+            </button>
             <button className="action-btn similar" onClick={() => void toggleSimilar(item.id)}>
               {expandedId === item.id ? "▲" : "📦"}
             </button>
@@ -605,6 +715,8 @@ export function App() {
             </button>
           </div>
         </div>
+
+        {expandedCalcId === item.id && renderTripCalculator(item)}
 
         {expandedId === item.id && similarMap[item.id] && (
           <div className="similar-section">
