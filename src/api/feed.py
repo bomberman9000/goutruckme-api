@@ -11,7 +11,7 @@ from sqlalchemy import Select, select
 from src.core.auth.telegram_tma import TelegramTMAUser, get_optional_tma_user, get_required_tma_user
 from src.core.cache import get_cached, set_cached
 from src.core.database import async_session
-from src.core.models import CallLog, Cargo, CargoPaymentStatus, ParserIngestEvent, User
+from src.core.models import CallLog, Cargo, CargoPaymentStatus, CompanyDetails, ParserIngestEvent, User
 
 
 router = APIRouter(tags=["feed"])
@@ -50,6 +50,8 @@ class FeedItem(BaseModel):
     ati_link: str | None = None
     payment_status: str | None = None
     verified_payment: bool = False
+    company_name: str | None = None
+    company_rating: int | None = None
 
 
 class FeedResponse(BaseModel):
@@ -263,11 +265,18 @@ async def get_feed(
             if cargo_id is not None
         }
         manual_cargo_map: dict[int, Cargo] = {}
+        company_map: dict[int, CompanyDetails] = {}
         if manual_ids:
             cargo_rows = (
                 await session.execute(select(Cargo).where(Cargo.id.in_(manual_ids)))
             ).scalars().all()
             manual_cargo_map = {int(cargo.id): cargo for cargo in cargo_rows}
+            owner_ids = {int(cargo.owner_id) for cargo in cargo_rows if cargo.owner_id is not None}
+            if owner_ids:
+                company_rows = (
+                    await session.execute(select(CompanyDetails).where(CompanyDetails.user_id.in_(owner_ids)))
+                ).scalars().all()
+                company_map = {int(company.user_id): company for company in company_rows}
 
     if from_coords or to_coords:
         from src.core.geo import haversine_km
@@ -292,6 +301,7 @@ async def get_feed(
     for item in items:
         rpk, dist = _calc_rate_per_km(item.from_city, item.to_city, item.rate_rub)
         manual_cargo = manual_cargo_map.get(_extract_manual_cargo_id(getattr(item, "details_json", None)) or -1)
+        owner_company = company_map.get(int(manual_cargo.owner_id)) if manual_cargo else None
         payment_status = _payment_status_value(getattr(manual_cargo, "payment_status", None)) if manual_cargo else None
         feed_items.append(FeedItem(
             id=item.id,
@@ -326,6 +336,8 @@ async def get_feed(
             ati_link=f"https://ati.su/firms?inn={item.inn}" if item.inn else None,
             payment_status=payment_status,
             verified_payment=_verified_payment(payment_status) if payment_status else False,
+            company_name=owner_company.company_name if owner_company else None,
+            company_rating=owner_company.total_rating if owner_company else None,
         ))
 
     response = FeedResponse(
@@ -371,6 +383,8 @@ class CargoDetailResponse(BaseModel):
     ati_link: str | None = None
     payment_status: str | None = None
     verified_payment: bool = False
+    company_name: str | None = None
+    company_rating: int | None = None
     created_at: datetime
 
 
@@ -388,9 +402,14 @@ async def get_cargo_detail(
         current_user = await session.get(User, tma_user.user_id) if tma_user else None
         can_view = _is_premium_active(current_user)
         manual_cargo = None
+        owner_company = None
         manual_cargo_id = _extract_manual_cargo_id(getattr(event, "details_json", None))
         if manual_cargo_id is not None:
             manual_cargo = await session.get(Cargo, manual_cargo_id)
+            if manual_cargo is not None:
+                owner_company = await session.scalar(
+                    select(CompanyDetails).where(CompanyDetails.user_id == manual_cargo.owner_id)
+                )
 
     rpk, dist = _calc_rate_per_km(event.from_city, event.to_city, event.rate_rub)
     payment_status = _payment_status_value(getattr(manual_cargo, "payment_status", None)) if manual_cargo else None
@@ -425,6 +444,8 @@ async def get_cargo_detail(
         ati_link=f"https://ati.su/firms?inn={event.inn}" if event.inn else None,
         payment_status=payment_status,
         verified_payment=_verified_payment(payment_status) if payment_status else False,
+        company_name=owner_company.company_name if owner_company else None,
+        company_rating=owner_company.total_rating if owner_company else None,
         created_at=event.created_at,
     )
 

@@ -572,6 +572,9 @@ export function App() {
             <span className={`trust-badge ${item.trust_verdict ?? "none"}`}>
               {item.trust_score ?? "?"}/100
             </span>
+            {item.company_rating != null && (
+              <span className="company-rating">🏢 {item.company_name || "Компания"} • {item.company_rating}/10</span>
+            )}
             {item.load_date && <span className="load-date">📅 {item.load_date}{item.load_time ? ` ${item.load_time}` : ""}</span>}
           </div>
 

@@ -105,6 +105,14 @@ body { background: var(--bg); color: var(--text); }
 .trust-badge.green { border-color: var(--green); color: var(--green); }
 .trust-badge.yellow { border-color: var(--yellow); color: var(--yellow); }
 .trust-badge.red { border-color: var(--red); color: var(--red); }
+.company-rating {
+  font-size: 11px;
+  color: #93c5fd;
+  border: 1px solid rgba(147, 197, 253, 0.28);
+  background: rgba(59, 130, 246, 0.08);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
 .load-date { color: var(--muted); margin-left: auto; }
 
 .card-actions { display: flex; gap: 6px; flex-wrap: wrap; }

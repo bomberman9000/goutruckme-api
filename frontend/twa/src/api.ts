@@ -31,6 +31,8 @@ export type FeedItem = {
   ati_link: string | null;
   payment_status: string | null;
   verified_payment: boolean;
+  company_name: string | null;
+  company_rating: number | null;
 };
 
 export type SimilarItem = {
