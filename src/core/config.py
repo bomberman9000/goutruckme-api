@@ -87,6 +87,7 @@ class Settings(BaseSettings):
     parser_worker_max_retries: int = 3
     parser_worker_enable_inn_moderation: bool = False
     parser_worker_inn_timeout_sec: int = 8
+    parser_manual_review_alert_threshold: int = 20
 
     # Parser LLM extractor
     parser_use_llm: bool = False

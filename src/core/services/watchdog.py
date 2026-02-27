@@ -296,6 +296,22 @@ async def watchdog_loop():
                     alert_key="parser_stale",
                 )
 
+            parser_metrics = health.get("metrics", {}).get("parser", {})
+            manual_review_count = parser_metrics.get("manual_review")
+            threshold = settings.parser_manual_review_alert_threshold
+            if (
+                isinstance(manual_review_count, int)
+                and threshold > 0
+                and manual_review_count >= threshold
+            ):
+                await notify_admin(
+                    "⚠️ Очередь ручной проверки переполнена!\n\n"
+                    f"Сейчас: {manual_review_count}\n"
+                    f"Порог: {threshold}\n\n"
+                    "Проверь /admin/manual-review и /admin/parser",
+                    alert_key="manual_review_backlog",
+                )
+
         except Exception as e:
             logger.error("Watchdog loop error: %s", e)
             await asyncio.sleep(30)

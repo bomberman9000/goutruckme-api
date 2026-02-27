@@ -274,6 +274,71 @@ async def manual_review_queue(
     })
 
 
+@router.get("/parser", response_class=HTMLResponse)
+async def parser_events(
+    request: Request,
+    admin: dict = Depends(get_current_admin),
+    page: int = 1,
+    status: str | None = None,
+    source: str | None = None,
+):
+    limit = 25
+    offset = (page - 1) * limit
+    parser_metrics = await watchdog.collect_parser_metrics()
+
+    async with async_session() as session:
+        counts_rows = await session.execute(
+            select(ParserIngestEvent.status, func.count())
+            .group_by(ParserIngestEvent.status)
+            .order_by(ParserIngestEvent.status)
+        )
+        status_counts = {
+            row[0] or "unknown": row[1]
+            for row in counts_rows.all()
+        }
+
+        sources_rows = await session.execute(
+            select(ParserIngestEvent.source)
+            .distinct()
+            .order_by(ParserIngestEvent.source)
+        )
+        sources = [row[0] for row in sources_rows.all() if row[0]]
+
+        query = select(ParserIngestEvent)
+        count_query = select(func.count()).select_from(ParserIngestEvent)
+
+        if status:
+            query = query.where(ParserIngestEvent.status == status)
+            count_query = count_query.where(ParserIngestEvent.status == status)
+
+        if source:
+            query = query.where(ParserIngestEvent.source == source)
+            count_query = count_query.where(ParserIngestEvent.source == source)
+
+        total = await session.scalar(count_query)
+        result = await session.execute(
+            query
+            .order_by(desc(ParserIngestEvent.created_at))
+            .offset(offset)
+            .limit(limit)
+        )
+        events = result.scalars().all()
+
+    return templates.TemplateResponse("parser.html", {
+        **_ctx(request),
+        "admin": admin,
+        "events": events,
+        "page": page,
+        "total_pages": (total + limit - 1) // limit if total else 1,
+        "total": total,
+        "status_counts": status_counts,
+        "current_status": status,
+        "current_source": source,
+        "sources": sources,
+        "parser_metrics": parser_metrics,
+    })
+
+
 @router.post("/manual-review/{event_id}/publish")
 async def publish_manual_review(event_id: int, admin: dict = Depends(get_current_admin)):
     async with async_session() as session:
