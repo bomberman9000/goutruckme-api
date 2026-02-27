@@ -1,3 +1,4 @@
+from pathlib import Path
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -120,6 +121,13 @@ async def lifespan(app: FastAPI):
     await close_redis()
 
 app = FastAPI(title="Logistics Bot API", lifespan=lifespan)
+
+TWA_ASSETS_DIR = Path("frontend/twa/dist/assets")
+app.mount(
+    "/webapp/assets",
+    StaticFiles(directory=TWA_ASSETS_DIR, check_dir=False),
+    name="twa-assets",
+)
 
 # Admin panel
 from src.admin.routes import router as admin_panel_router

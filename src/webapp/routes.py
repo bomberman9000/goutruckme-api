@@ -1,5 +1,7 @@
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func
 
@@ -18,6 +20,8 @@ from src.core.models import (
 
 router = APIRouter(tags=["webapp"])
 templates = Jinja2Templates(directory="src/webapp/templates")
+TWA_DIST_DIR = Path("frontend/twa/dist")
+TWA_INDEX_FILE = TWA_DIST_DIR / "index.html"
 
 
 def _get_webapp_url() -> str:
@@ -28,8 +32,12 @@ def _get_webapp_url() -> str:
 # --------------- HTML page ---------------
 
 @router.get("/webapp", response_class=HTMLResponse)
+@router.get("/webapp/", response_class=HTMLResponse)
 async def webapp_page(request: Request):
     """Serve the WebApp SPA."""
+    if TWA_INDEX_FILE.exists():
+        return FileResponse(TWA_INDEX_FILE)
+
     return templates.TemplateResponse("index.html", {
         "request": request,
         "bot_username": settings.bot_username or "",

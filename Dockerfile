@@ -1,3 +1,11 @@
+FROM node:20-slim AS twa-build
+
+WORKDIR /twa
+COPY frontend/twa/package.json frontend/twa/package-lock.json ./
+RUN npm ci
+COPY frontend/twa/ ./
+RUN npm run build
+
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
@@ -14,6 +22,7 @@ RUN uv sync --frozen --no-dev
 ENV PATH="/app/.venv/bin:$PATH"
 
 COPY . .
+COPY --from=twa-build /twa/dist ./frontend/twa/dist
 
 EXPOSE 8001
 
