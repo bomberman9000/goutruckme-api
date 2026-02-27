@@ -76,8 +76,12 @@ CITY_STOP_WORDS = {
 
 CITY_INVALID_EXACT = {
     "оплата",
+    "оптала",
     "нал",
     "без нала",
+    "перечис",
+    "перечисление",
+    "перечисл",
     "растаможка",
     "растоможка",
     "верхняя",
@@ -360,13 +364,15 @@ def _parse_body_type(text_lc: str) -> str | None:
 
 
 def _parse_route(text: str) -> tuple[str, str] | tuple[None, None]:
-    for route in ROUTE_RE.finditer(text):
+    route_text = re.sub(r"[\U0001F1E6-\U0001F1FF]", "", text or "")
+
+    for route in ROUTE_RE.finditer(route_text):
         from_city = _normalize_city(route.group("from"))
         to_city = _normalize_city(route.group("to"))
         if from_city and to_city and not _is_invalid_city_name(from_city) and not _is_invalid_city_name(to_city):
             return from_city, to_city
 
-    for compact in ROUTE_COMPACT_RE.finditer(text):
+    for compact in ROUTE_COMPACT_RE.finditer(route_text):
         compact_token = f"{compact.group('from')}-{compact.group('to')}"
         compact_lookup = compact_token.lower().replace("ʻ", "'").replace("’", "'").replace("`", "'")
         if compact_lookup in CITY_ALIASES or compact_lookup.replace("-", " ") in CITY_ALIASES:
@@ -647,7 +653,7 @@ _CARGO_SIGNAL_RE = re.compile(
 )
 
 _INVALID_GEO_TOKEN_RE = re.compile(
-    r"\b(?:оплата|нал|без\s+нала|растаможка|растоможка|верхняя|боковая)\b",
+    r"\b(?:оплата|оптала|нал|без\s+нала|перечис(?:ление|л)?|растаможка|растоможка|верхняя|боковая)\b",
     re.IGNORECASE,
 )
 

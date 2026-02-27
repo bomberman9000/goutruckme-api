@@ -98,14 +98,31 @@ def test_parse_cargo_message_prefers_first_valid_route_over_invalid_later_line()
     assert parsed.to_city == "Ташкент"
 
 
+def test_parse_cargo_message_ignores_flag_emoji_and_payment_route_noise():
+    text = (
+        "🇺🇿ТАШКЕНТ-🇰🇬БИШКЕК\n"
+        "ОПТАЛА-ПЕРЕЧИС/НАЛ\n"
+        "22 ТОННЫ\n"
+        "📞 +998920104057\n"
+    )
+    parsed = parse_cargo_message(text, keywords=["тент"])
+
+    assert parsed is not None
+    assert parsed.from_city == "Ташкент"
+    assert parsed.to_city == "Бишкек"
+
+
 def test_parse_cargo_message_skips_invalid_geo_blacklist_route():
     assert parse_cargo_message("Оплата - Ташкент, 20т, 100к", keywords=["тент"]) is None
+    assert parse_cargo_message("Оптала - Ташкент, 20т, 100к", keywords=["тент"]) is None
+    assert parse_cargo_message("Ташкент - Перечисление, 20т, 100к", keywords=["тент"]) is None
     assert parse_cargo_message("Верхняя - Ташкент, 20т, 100к", keywords=["тент"]) is None
     assert parse_cargo_message("Без нала - Ташкент, 20т, 100к", keywords=["тент"]) is None
 
 
 def test_contains_invalid_geo_token_detects_payment_noise():
     assert contains_invalid_geo_token("Оплата наличными, Москва - Ташкент") is True
+    assert contains_invalid_geo_token("ОПТАЛА-ПЕРЕЧИС/НАЛ") is True
     assert contains_invalid_geo_token("Без нала, Москва - Ташкент") is True
     assert contains_invalid_geo_token("Москва - Ташкент, 20т, 120к") is False
 
