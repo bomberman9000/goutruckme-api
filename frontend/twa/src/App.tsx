@@ -3,8 +3,11 @@ import {
   archiveManualCargo,
   addFavorite,
   addVehicle,
+  createSubscription,
   createManualCargo,
+  deleteSubscription,
   fetchMyCargos,
+  fetchSubscriptions,
   fetchFavorites,
   fetchFeed,
   fetchSimilar,
@@ -17,6 +20,7 @@ import {
   type FeedItem,
   type MyCargoItem,
   type SimilarItem,
+  type SubscriptionItem,
   type VehicleItem,
 } from "./api";
 
@@ -64,6 +68,7 @@ export function App() {
   const [myCargosLoading, setMyCargosLoading] = useState(false);
   const [myCargosError, setMyCargosError] = useState<string | null>(null);
   const [editingCargoId, setEditingCargoId] = useState<number | null>(null);
+  const [subscriptions, setSubscriptions] = useState<SubscriptionItem[]>([]);
   const [initData] = useState<string | null>(() => {
     const value = (window as any)?.Telegram?.WebApp?.initData || "";
     return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -122,6 +127,12 @@ export function App() {
     if (tab === "dashboard") fetchFavorites().then(setFavorites);
     if (tab === "fleet") fetchVehicles().then(setVehicles);
     if (tab === "cargos") void loadMyCargos();
+  }, [tab]);
+
+  useEffect(() => {
+    void fetchSubscriptions()
+      .then(setSubscriptions)
+      .catch(() => {});
   }, [tab]);
 
   const loadMyCargos = useCallback(async () => {
@@ -319,6 +330,42 @@ export function App() {
     }
   }
 
+  function hasRouteSubscription(item: FeedItem): boolean {
+    return subscriptions.some((sub) =>
+      (sub.from_city ?? null) === (item.from_city ?? null)
+      && (sub.to_city ?? null) === (item.to_city ?? null)
+      && (sub.body_type ?? null) === (item.body_type ?? null)
+    );
+  }
+
+  async function handleToggleSubscription(item: FeedItem) {
+    if (!item.from_city && !item.to_city && !item.body_type) {
+      return;
+    }
+
+    const existing = subscriptions.find((sub) =>
+      (sub.from_city ?? null) === (item.from_city ?? null)
+      && (sub.to_city ?? null) === (item.to_city ?? null)
+      && (sub.body_type ?? null) === (item.body_type ?? null)
+    );
+
+    try {
+      if (existing) {
+        await deleteSubscription(existing.id);
+        setSubscriptions((prev) => prev.filter((sub) => sub.id !== existing.id));
+      } else {
+        const created = await createSubscription({
+          from_city: item.from_city,
+          to_city: item.to_city,
+          body_type: item.body_type,
+        });
+        setSubscriptions((prev) => [created, ...prev]);
+      }
+    } catch {
+      window.alert("Не удалось обновить подписку");
+    }
+  }
+
   function renderCard(item: FeedItem) {
     const isHot = item.is_hot_deal;
     return (
@@ -394,6 +441,9 @@ export function App() {
             )}
             <button className="action-btn fav" onClick={() => void onSave(item)}>
               {copied === -item.id ? "✓" : "⭐"}
+            </button>
+            <button className="action-btn" onClick={() => void handleToggleSubscription(item)}>
+              {hasRouteSubscription(item) ? "🔕" : "🔔"}
             </button>
             {item.ati_link && (
               <a href={item.ati_link} target="_blank" rel="noopener noreferrer" className="action-btn ati">АТИ</a>

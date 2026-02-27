@@ -150,6 +150,7 @@ from src.api.docs_gen import router as docs_gen_router
 from src.api.finance import router as finance_router
 from src.api.teams import router as teams_router
 from src.api.currency import router as currency_router
+from src.api.subscriptions import router as subscriptions_router
 from src.core.services.watchdog import watchdog
 
 app.include_router(admin_panel_router)
@@ -169,6 +170,7 @@ app.include_router(docs_gen_router)
 app.include_router(finance_router)
 app.include_router(teams_router)
 app.include_router(currency_router)
+app.include_router(subscriptions_router)
 app.include_router(antifraud_api_router)
 app.include_router(antifraud_admin_api_router)
 app.include_router(internal_api_router)

@@ -188,9 +188,24 @@ export type MyCargoItem = {
   created_at: string;
 };
 
+export type SubscriptionItem = {
+  id: number;
+  from_city: string | null;
+  to_city: string | null;
+  body_type: string | null;
+  min_rate: number | null;
+  max_weight: number | null;
+  region: string | null;
+  is_active: boolean;
+};
+
 type MyCargoResponse = {
   items: MyCargoItem[];
   limit: number;
+};
+
+type SubscriptionListResponse = {
+  items: SubscriptionItem[];
 };
 
 export async function fetchVehicles(): Promise<VehicleItem[]> {
@@ -334,5 +349,64 @@ export async function archiveManualCargo(cargoId: number): Promise<void> {
 
   if (!response.ok) {
     throw new Error(`Archive cargo failed: ${response.status}`);
+  }
+}
+
+export async function fetchSubscriptions(): Promise<SubscriptionItem[]> {
+  const headers: Record<string, string> = {};
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+  const response = await fetch("/api/v1/subscriptions", {
+    credentials: "include",
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error(`Subscriptions request failed: ${response.status}`);
+  }
+  const data = (await response.json()) as SubscriptionListResponse;
+  return data.items ?? [];
+}
+
+export async function createSubscription(payload: {
+  from_city?: string | null;
+  to_city?: string | null;
+  body_type?: string | null;
+  min_rate?: number | null;
+  max_weight?: number | null;
+  region?: string | null;
+}): Promise<SubscriptionItem> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+  const response = await fetch("/api/v1/subscriptions", {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`Create subscription failed: ${response.status}`);
+  }
+  const data = await response.json();
+  return data.item as SubscriptionItem;
+}
+
+export async function deleteSubscription(subscriptionId: number): Promise<void> {
+  const headers: Record<string, string> = {};
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+  const response = await fetch(`/api/v1/subscriptions/${subscriptionId}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error(`Delete subscription failed: ${response.status}`);
   }
 }
