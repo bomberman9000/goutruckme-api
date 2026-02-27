@@ -138,6 +138,57 @@ body { background: var(--bg); color: var(--text); }
 
 /* ─── Dashboard / Kanban ────────────────────────── */
 .dashboard { margin-top: 10px; }
+.cabinet-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+@media (max-width: 700px) {
+  .cabinet-summary { grid-template-columns: 1fr; }
+}
+.cabinet-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cabinet-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cabinet-user {
+  font-size: 16px;
+  font-weight: 700;
+}
+.cabinet-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+.wallet-balance {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--green);
+}
+.secured-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.secured-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
 .kanban { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
 @media (max-width: 700px) { .kanban { grid-template-columns: 1fr; } }
 

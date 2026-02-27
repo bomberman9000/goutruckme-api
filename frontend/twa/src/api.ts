@@ -219,6 +219,47 @@ export type SubscriptionItem = {
   match_count: number;
 };
 
+export type WebappProfileCargo = {
+  id: number;
+  from_city: string;
+  to_city: string;
+  weight: number;
+  price: number;
+  status: string;
+  payment_status: string;
+  payment_verified: boolean;
+  load_date: string;
+};
+
+export type WebappProfileResponse = {
+  user: {
+    id: number;
+    name: string;
+    username: string | null;
+    phone: string | null;
+    is_carrier: boolean;
+    is_verified: boolean;
+    is_premium: boolean;
+    premium_until: string | null;
+  };
+  company: {
+    id: number;
+    name: string | null;
+    inn: string | null;
+    rating: number;
+  } | null;
+  wallet: {
+    balance_rub: number;
+    frozen_balance_rub: number;
+  };
+  stats: {
+    cargo_count: number;
+    verified_payment_count: number;
+    released_payment_count: number;
+  };
+  cargos: WebappProfileCargo[];
+};
+
 type MyCargoResponse = {
   items: MyCargoItem[];
   limit: number;
@@ -227,6 +268,23 @@ type MyCargoResponse = {
 type SubscriptionListResponse = {
   items: SubscriptionItem[];
 };
+
+export async function fetchWebappProfile(): Promise<WebappProfileResponse> {
+  const headers: Record<string, string> = {};
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+
+  const response = await fetch("/api/webapp/profile", {
+    credentials: "include",
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error(`Profile request failed: ${response.status}`);
+  }
+  return response.json();
+}
 
 export async function fetchVehicles(): Promise<VehicleItem[]> {
   const headers: Record<string, string> = {};

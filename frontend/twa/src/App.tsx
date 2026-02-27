@@ -7,11 +7,12 @@ import {
   createSubscription,
   createManualCargo,
   deleteSubscription,
+  fetchFavorites,
   fetchMyCargos,
   fetchSubscriptions,
+  fetchWebappProfile,
   markEscrowDelivered,
   releaseEscrow,
-  fetchFavorites,
   fetchFeed,
   fetchSimilar,
   fetchVehicles,
@@ -25,6 +26,7 @@ import {
   type SimilarItem,
   type SubscriptionItem,
   type VehicleItem,
+  type WebappProfileResponse,
 } from "./api";
 
 import { CargoMap } from "./CargoMap";
@@ -96,6 +98,9 @@ export function App() {
   const [subscriptionsError, setSubscriptionsError] = useState<string | null>(null);
   const [showAddSubscription, setShowAddSubscription] = useState(false);
   const [addingSubscription, setAddingSubscription] = useState(false);
+  const [profileSummary, setProfileSummary] = useState<WebappProfileResponse | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [initData] = useState<string | null>(() => {
     const value = (window as any)?.Telegram?.WebApp?.initData || "";
     return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -150,11 +155,30 @@ export function App() {
 
   useEffect(() => { void load(true); }, [selected.join(","), initData, searchQuery]);
 
+  const loadProfileSummary = useCallback(async () => {
+    setProfileLoading(true);
+    setProfileError(null);
+    try {
+      setProfileSummary(await fetchWebappProfile());
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : "Не удалось загрузить кабинет");
+    } finally {
+      setProfileLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (tab === "dashboard") fetchFavorites().then(setFavorites);
-    if (tab === "fleet") fetchVehicles().then(setVehicles);
-    if (tab === "cargos") void loadMyCargos();
-  }, [tab]);
+    if (tab === "dashboard") {
+      void fetchFavorites().then(setFavorites).catch(() => setFavorites([]));
+      void loadProfileSummary();
+    }
+    if (tab === "fleet") {
+      void fetchVehicles().then(setVehicles).catch(() => setVehicles([]));
+    }
+    if (tab === "cargos") {
+      void loadMyCargos();
+    }
+  }, [tab, loadMyCargos, loadProfileSummary]);
 
   const loadSubscriptions = useCallback(async () => {
     setSubscriptionsLoading(true);
@@ -601,6 +625,7 @@ export function App() {
     const saved = favorites.filter((f) => f.status === "saved");
     const inProgress = favorites.filter((f) => f.status === "in_progress");
     const completed = favorites.filter((f) => f.status === "completed" || f.status === "cancelled");
+    const securedCargos = (profileSummary?.cargos ?? []).filter((cargo) => cargo.payment_verified).slice(0, 3);
 
     function kanbanCard(fav: FavoriteItem) {
       return (
@@ -631,6 +656,68 @@ export function App() {
 
     return (
       <div className="dashboard">
+        <section className="cabinet-summary">
+          <article className="cabinet-card">
+            <div className="cabinet-title">👤 Кабинет</div>
+            {profileLoading && !profileSummary ? (
+              <div className="cabinet-meta">Загружаем…</div>
+            ) : profileSummary ? (
+              <>
+                <div className="cabinet-user">{profileSummary.user.name || "Пользователь"}</div>
+                <div className="cabinet-meta">
+                  {profileSummary.company?.name || "Компания не заполнена"}
+                </div>
+                <div className="cabinet-meta">
+                  {profileSummary.user.is_premium ? "⭐ Premium" : "⚪️ Базовый доступ"}
+                  {profileSummary.user.is_verified ? " • ✅ Проверен" : " • ⚠️ Не проверен"}
+                </div>
+                <div className="cabinet-meta">Размещено грузов: {profileSummary.stats.cargo_count}</div>
+              </>
+            ) : (
+              <div className="cabinet-meta">{profileError || "Кабинет недоступен"}</div>
+            )}
+          </article>
+
+          <article className="cabinet-card">
+            <div className="cabinet-title">💼 Кошелек</div>
+            {profileSummary ? (
+              <>
+                <div className="wallet-balance">
+                  {(profileSummary.wallet.balance_rub ?? 0).toLocaleString("ru")} ₽
+                </div>
+                <div className="cabinet-meta">В холде: {(profileSummary.wallet.frozen_balance_rub ?? 0).toLocaleString("ru")} ₽</div>
+                <div className="cabinet-meta">Выплачено сделок: {profileSummary.stats.released_payment_count}</div>
+              </>
+            ) : (
+              <div className="cabinet-meta">{profileLoading ? "Загружаем…" : "Нет данных"}</div>
+            )}
+          </article>
+
+          <article className="cabinet-card">
+            <div className="cabinet-title">💰 Safe Deal</div>
+            {profileSummary ? (
+              <>
+                <div className="wallet-balance">{profileSummary.stats.verified_payment_count}</div>
+                <div className="cabinet-meta">Грузов с подтвержденной оплатой</div>
+                {securedCargos.length > 0 ? (
+                  <div className="secured-list">
+                    {securedCargos.map((cargo) => (
+                      <div className="secured-item" key={cargo.id}>
+                        <span>{cargo.from_city} → {cargo.to_city}</span>
+                        <span>{cargo.price.toLocaleString("ru")} ₽</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="cabinet-meta">Пока нет подтвержденных сделок</div>
+                )}
+              </>
+            ) : (
+              <div className="cabinet-meta">{profileLoading ? "Загружаем…" : "Нет данных"}</div>
+            )}
+          </article>
+        </section>
+
         <div className="kanban">
           <div className="kanban-col">
             <div className="kanban-header saved">📌 Выбрано <span className="count">{saved.length}</span></div>
