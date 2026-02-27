@@ -35,7 +35,7 @@ import { AddCargoForm } from "./AddCargoForm";
 import { AddSubscriptionForm } from "./AddSubscriptionForm";
 
 type Verdict = "green" | "yellow" | "red";
-type Tab = "feed" | "map" | "dashboard" | "fleet" | "cargos" | "subscriptions";
+type Tab = "feed" | "map" | "dashboard" | "wallet" | "fleet" | "cargos" | "subscriptions";
 
 const BODY_TYPES = ["тент", "рефрижератор", "трал", "борт", "контейнер", "изотерм"];
 
@@ -196,7 +196,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (tab === "dashboard") {
+    if (tab === "dashboard" || tab === "wallet") {
       void fetchFavorites().then(setFavorites).catch(() => setFavorites([]));
       void loadProfileSummary();
     }
@@ -511,7 +511,7 @@ export function App() {
   function renderCard(item: FeedItem) {
     const isHot = item.is_hot_deal;
     return (
-      <article className={`cargo-card${isHot ? " hot" : ""}`} key={item.id}>
+      <article className={`cargo-card${isHot ? " hot" : ""}${item.verified_payment ? " verified" : ""}`} key={item.id}>
         <div className="card-top">
           <div className="card-route">
             {isHot && <span className="hot-badge">🔥</span>}
@@ -520,6 +520,10 @@ export function App() {
           </div>
           <div className="card-freshness">{item.freshness}</div>
         </div>
+
+        {item.verified_payment && (
+          <div className="honest-banner">🛡️ Честный рейс — оплата через сервис</div>
+        )}
 
         <div className="card-body">
           <div className="card-col specs">
@@ -551,9 +555,6 @@ export function App() {
               <div className="price-per-km">{item.rate_per_km} ₽/км</div>
             )}
             {item.payment_terms && <div className="payment-terms">{item.payment_terms}</div>}
-            {item.verified_payment && (
-              <div className="verified-payment">💰 Оплата гарантирована</div>
-            )}
             {item.is_direct_customer !== null && (
               <div className="customer-type">
                 {item.is_direct_customer ? "🏭 Прямой" : "👤 Посредник"}
@@ -628,7 +629,6 @@ export function App() {
     const saved = favorites.filter((f) => f.status === "saved");
     const inProgress = favorites.filter((f) => f.status === "in_progress");
     const completed = favorites.filter((f) => f.status === "completed" || f.status === "cancelled");
-    const securedCargos = (profileSummary?.cargos ?? []).filter((cargo) => cargo.payment_verified).slice(0, 3);
 
     function kanbanCard(fav: FavoriteItem) {
       return (
@@ -689,31 +689,9 @@ export function App() {
                   {(profileSummary.wallet.balance_rub ?? 0).toLocaleString("ru")} ₽
                 </div>
                 <div className="cabinet-meta">В холде: {(profileSummary.wallet.frozen_balance_rub ?? 0).toLocaleString("ru")} ₽</div>
+                <div className="cabinet-meta">Гарантировано: {profileSummary.stats.verified_payment_count}</div>
                 <div className="cabinet-meta">Выплачено сделок: {profileSummary.stats.released_payment_count}</div>
-              </>
-            ) : (
-              <div className="cabinet-meta">{profileLoading ? "Загружаем…" : "Нет данных"}</div>
-            )}
-          </article>
-
-          <article className="cabinet-card">
-            <div className="cabinet-title">💰 Safe Deal</div>
-            {profileSummary ? (
-              <>
-                <div className="wallet-balance">{profileSummary.stats.verified_payment_count}</div>
-                <div className="cabinet-meta">Грузов с подтвержденной оплатой</div>
-                {securedCargos.length > 0 ? (
-                  <div className="secured-list">
-                    {securedCargos.map((cargo) => (
-                      <div className="secured-item" key={cargo.id}>
-                        <span>{cargo.from_city} → {cargo.to_city}</span>
-                        <span>{cargo.price.toLocaleString("ru")} ₽</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="cabinet-meta">Пока нет подтвержденных сделок</div>
-                )}
+                <button className="action-btn" onClick={() => setTab("wallet")}>Подробнее →</button>
               </>
             ) : (
               <div className="cabinet-meta">{profileLoading ? "Загружаем…" : "Нет данных"}</div>
@@ -837,7 +815,7 @@ export function App() {
                         className="action-btn primary"
                         onClick={() => void handleReleaseEscrow(cargo.id)}
                       >
-                        💸 Выплатить
+                        💸 Разблокировать оплату
                       </button>
                     )}
                     <button
@@ -886,6 +864,88 @@ export function App() {
             })}
           </div>
         )}
+      </div>
+    );
+  }
+
+  function renderWallet() {
+    const securedHistory = (profileSummary?.cargos ?? []).filter(
+      (cargo) => cargo.payment_status !== "unsecured",
+    );
+
+    return (
+      <div className="wallet-page">
+        {profileError && !profileSummary && <div className="error">{profileError}</div>}
+
+        <section className="wallet-hero">
+          <div className="wallet-hero-label">💼 Кошелек</div>
+          <div className="wallet-hero-balance">
+            {profileSummary ? (profileSummary.wallet.balance_rub ?? 0).toLocaleString("ru") : "0"} ₽
+          </div>
+          <div className="wallet-hold">
+            В холде: {profileSummary ? (profileSummary.wallet.frozen_balance_rub ?? 0).toLocaleString("ru") : "0"} ₽
+          </div>
+        </section>
+
+        <section className="wallet-stats-grid">
+          <article className="wallet-stat-card">
+            <div className="cabinet-title">Гарантировано</div>
+            <div className="wallet-stat-value">{profileSummary?.stats.verified_payment_count ?? 0}</div>
+          </article>
+          <article className="wallet-stat-card">
+            <div className="cabinet-title">Выплачено</div>
+            <div className="wallet-stat-value">{profileSummary?.stats.released_payment_count ?? 0}</div>
+          </article>
+          <article className="wallet-stat-card">
+            <div className="cabinet-title">Всего грузов</div>
+            <div className="wallet-stat-value">{profileSummary?.stats.cargo_count ?? 0}</div>
+          </article>
+        </section>
+
+        {profileSummary?.company && (
+          <section className="wallet-company-card">
+            <div className="cabinet-title">🏢 Компания</div>
+            <div className="cabinet-user">{profileSummary.company.name || "Компания"}</div>
+            <div className="cabinet-meta">Рейтинг: {profileSummary.company.rating}/10</div>
+            {profileSummary.company.inn && (
+              <div className="cabinet-meta">ИНН: {profileSummary.company.inn}</div>
+            )}
+          </section>
+        )}
+
+        <section className="wallet-history">
+          <div className="fleet-header">
+            <h2>🛡️ История Safe Deal</h2>
+          </div>
+          {profileLoading && !profileSummary ? (
+            <p className="muted" style={{ textAlign: "center", padding: "20px" }}>Загружаем…</p>
+          ) : securedHistory.length === 0 ? (
+            <p className="muted" style={{ textAlign: "center", padding: "20px" }}>
+              Пока нет сделок с резервом оплаты
+            </p>
+          ) : (
+            <div className="my-cargo-list">
+              {securedHistory.map((cargo) => (
+                <div className="my-cargo-card published" key={cargo.id}>
+                  <div className="my-cargo-head">
+                    <div>
+                      <div className="my-cargo-route">{cargo.from_city} → {cargo.to_city}</div>
+                      <div className="my-cargo-meta">
+                        {cargo.weight}т • {cargo.price.toLocaleString("ru")} ₽
+                      </div>
+                    </div>
+                    <span className="escrow-status verified">
+                      {paymentStatusLabel(cargo.payment_status)}
+                    </span>
+                  </div>
+                  <div className="wallet-safe-note">
+                    Деньги уже зарезервированы. Выплата поступит после подтверждения разгрузки.
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     );
   }
@@ -968,6 +1028,7 @@ export function App() {
             <button className={`tab-btn${tab === "feed" ? " active" : ""}`} onClick={() => setTab("feed")}>📋</button>
             <button className={`tab-btn${tab === "map" ? " active" : ""}`} onClick={() => setTab("map")}>🗺️</button>
             <button className={`tab-btn${tab === "dashboard" ? " active" : ""}`} onClick={() => setTab("dashboard")}>⭐</button>
+            <button className={`tab-btn${tab === "wallet" ? " active" : ""}`} onClick={() => setTab("wallet")}>💼</button>
             <button className={`tab-btn${tab === "fleet" ? " active" : ""}`} onClick={() => setTab("fleet")}>🚛</button>
             <button className={`tab-btn${tab === "cargos" ? " active" : ""}`} onClick={() => setTab("cargos")}>📦</button>
             <button className={`tab-btn${tab === "subscriptions" ? " active" : ""}`} onClick={() => setTab("subscriptions")}>🔔</button>
@@ -1069,6 +1130,7 @@ export function App() {
       )}
 
       {tab === "dashboard" && renderDashboard()}
+      {tab === "wallet" && renderWallet()}
 
       {tab === "fleet" && (
         <div className="fleet-section">
