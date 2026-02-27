@@ -16,6 +16,7 @@ import {
 } from "./api";
 
 import { CargoMap } from "./CargoMap";
+import { AddTruckForm } from "./AddTruckForm";
 
 type Verdict = "green" | "yellow" | "red";
 type Tab = "feed" | "map" | "dashboard" | "fleet";
@@ -47,6 +48,9 @@ export function App() {
   const [vehicles, setVehicles] = useState<VehicleItem[]>([]);
   const [matchResult, setMatchResult] = useState<any>(null);
   const [copied, setCopied] = useState<number | null>(null);
+  const [showAddTruck, setShowAddTruck] = useState(false);
+  const [addingVehicle, setAddingVehicle] = useState(false);
+  const [fleetError, setFleetError] = useState<string | null>(null);
   const [initData] = useState<string | null>(() => {
     const value = (window as any)?.Telegram?.WebApp?.initData || "";
     return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -154,6 +158,38 @@ export function App() {
   async function moveFavorite(feedId: number, status: string) {
     await updateFavoriteStatus(feedId, status);
     setFavorites(await fetchFavorites());
+  }
+
+  async function handleAddTruck(payload: {
+    bodyType: string;
+    capacityTons: number;
+    locationCity?: string;
+    plateNumber?: string;
+    markAvailable: boolean;
+  }) {
+    setAddingVehicle(true);
+    setFleetError(null);
+
+    try {
+      const created = await addVehicle(
+        payload.bodyType,
+        payload.capacityTons,
+        payload.locationCity,
+        payload.plateNumber,
+      );
+
+      if (payload.markAvailable && payload.locationCity) {
+        const result = await setVehicleAvailable(created.id, payload.locationCity);
+        setMatchResult(result);
+      }
+
+      setVehicles(await fetchVehicles());
+      setShowAddTruck(false);
+    } catch (err) {
+      setFleetError(err instanceof Error ? err.message : "Не удалось добавить машину");
+    } finally {
+      setAddingVehicle(false);
+    }
   }
 
   function renderCard(item: FeedItem) {
@@ -408,15 +444,28 @@ export function App() {
         <div className="fleet-section">
           <div className="fleet-header">
             <h2>🚛 Мой флот</h2>
-            <button className="action-btn primary" onClick={async () => {
-              const bt = window.prompt("Тип кузова (тент/реф/трал/борт):", "тент");
-              if (!bt) return;
-              const tons = parseFloat(window.prompt("Грузоподъёмность (т):", "20") || "20");
-              const city = window.prompt("Город базирования:", "");
-              await addVehicle(bt, tons, city || undefined);
-              setVehicles(await fetchVehicles());
-            }}>+ Добавить машину</button>
+            <button
+              className="action-btn primary"
+              onClick={() => {
+                setFleetError(null);
+                setShowAddTruck((prev) => !prev);
+              }}
+            >
+              {showAddTruck ? "Скрыть форму" : "+ Добавить машину"}
+            </button>
           </div>
+
+          {showAddTruck && (
+            <AddTruckForm
+              onSubmit={handleAddTruck}
+              onCancel={() => {
+                setFleetError(null);
+                setShowAddTruck(false);
+              }}
+              busy={addingVehicle}
+              error={fleetError}
+            />
+          )}
 
           {vehicles.length === 0 ? (
             <p className="muted" style={{textAlign: "center", padding: "20px"}}>

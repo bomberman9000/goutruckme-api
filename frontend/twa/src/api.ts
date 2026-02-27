@@ -162,14 +162,28 @@ export async function fetchVehicles(): Promise<VehicleItem[]> {
   return data.vehicles ?? [];
 }
 
-export async function addVehicle(body_type: string, capacity_tons: number, city?: string): Promise<void> {
+export async function addVehicle(
+  body_type: string,
+  capacity_tons: number,
+  city?: string,
+  plate_number?: string,
+): Promise<VehicleItem> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const initData = (window as any)?.Telegram?.WebApp?.initData || null;
   if (initData) headers.Authorization = `tma ${initData}`;
-  await fetch("/api/v1/fleet/vehicles", {
+  const response = await fetch("/api/v1/fleet/vehicles", {
     method: "POST", credentials: "include", headers,
-    body: JSON.stringify({ body_type, capacity_tons, location_city: city || null }),
+    body: JSON.stringify({
+      body_type,
+      capacity_tons,
+      location_city: city || null,
+      plate_number: plate_number || null,
+    }),
   });
+  if (!response.ok) {
+    throw new Error(`Add vehicle failed: ${response.status}`);
+  }
+  return response.json();
 }
 
 export async function setVehicleAvailable(vehicleId: number, city: string): Promise<any> {
