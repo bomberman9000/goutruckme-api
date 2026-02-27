@@ -352,3 +352,30 @@ body { background: var(--bg); color: var(--text); }
   font-size: 12px;
   color: var(--muted);
 }
+
+.subscriptions-section { margin-top: 10px; }
+.subscription-list { display: flex; flex-direction: column; gap: 10px; }
+.subscription-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+.subscription-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.subscription-route {
+  font-size: 15px;
+  font-weight: 700;
+}
+.subscription-meta {
+  font-size: 12px;
+  color: var(--muted);
+}

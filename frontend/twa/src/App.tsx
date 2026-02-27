@@ -27,9 +27,10 @@ import {
 import { CargoMap } from "./CargoMap";
 import { AddTruckForm } from "./AddTruckForm";
 import { AddCargoForm } from "./AddCargoForm";
+import { AddSubscriptionForm } from "./AddSubscriptionForm";
 
 type Verdict = "green" | "yellow" | "red";
-type Tab = "feed" | "map" | "dashboard" | "fleet" | "cargos";
+type Tab = "feed" | "map" | "dashboard" | "fleet" | "cargos" | "subscriptions";
 
 const BODY_TYPES = ["тент", "рефрижератор", "трал", "борт", "контейнер", "изотерм"];
 
@@ -69,6 +70,10 @@ export function App() {
   const [myCargosError, setMyCargosError] = useState<string | null>(null);
   const [editingCargoId, setEditingCargoId] = useState<number | null>(null);
   const [subscriptions, setSubscriptions] = useState<SubscriptionItem[]>([]);
+  const [subscriptionsLoading, setSubscriptionsLoading] = useState(false);
+  const [subscriptionsError, setSubscriptionsError] = useState<string | null>(null);
+  const [showAddSubscription, setShowAddSubscription] = useState(false);
+  const [addingSubscription, setAddingSubscription] = useState(false);
   const [initData] = useState<string | null>(() => {
     const value = (window as any)?.Telegram?.WebApp?.initData || "";
     return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -129,11 +134,21 @@ export function App() {
     if (tab === "cargos") void loadMyCargos();
   }, [tab]);
 
+  const loadSubscriptions = useCallback(async () => {
+    setSubscriptionsLoading(true);
+    setSubscriptionsError(null);
+    try {
+      setSubscriptions(await fetchSubscriptions());
+    } catch (err) {
+      setSubscriptionsError(err instanceof Error ? err.message : "Не удалось загрузить подписки");
+    } finally {
+      setSubscriptionsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    void fetchSubscriptions()
-      .then(setSubscriptions)
-      .catch(() => {});
-  }, [tab]);
+    void loadSubscriptions();
+  }, [loadSubscriptions]);
 
   const loadMyCargos = useCallback(async () => {
     setMyCargosLoading(true);
@@ -363,6 +378,46 @@ export function App() {
       }
     } catch {
       window.alert("Не удалось обновить подписку");
+    }
+  }
+
+  async function handleCreateSubscription(payload: {
+    fromCity?: string;
+    toCity?: string;
+    bodyType?: string;
+    minRate?: number;
+    maxWeight?: number;
+    region?: string;
+  }) {
+    setAddingSubscription(true);
+    setSubscriptionsError(null);
+    try {
+      const created = await createSubscription({
+        from_city: payload.fromCity ?? null,
+        to_city: payload.toCity ?? null,
+        body_type: payload.bodyType ?? null,
+        min_rate: payload.minRate ?? null,
+        max_weight: payload.maxWeight ?? null,
+        region: payload.region ?? null,
+      });
+      setSubscriptions((prev) => {
+        const withoutSame = prev.filter((sub) => sub.id !== created.id);
+        return [created, ...withoutSame];
+      });
+      setShowAddSubscription(false);
+    } catch (err) {
+      setSubscriptionsError(err instanceof Error ? err.message : "Не удалось сохранить подписку");
+    } finally {
+      setAddingSubscription(false);
+    }
+  }
+
+  async function handleDeleteSubscription(subscriptionId: number) {
+    try {
+      await deleteSubscription(subscriptionId);
+      setSubscriptions((prev) => prev.filter((sub) => sub.id !== subscriptionId));
+    } catch {
+      setSubscriptionsError("Не удалось удалить подписку");
     }
   }
 
@@ -644,6 +699,71 @@ export function App() {
     );
   }
 
+  function renderSubscriptions() {
+    return (
+      <div className="subscriptions-section">
+        <div className="fleet-header">
+          <h2>🔔 Мои подписки</h2>
+          <button
+            className="action-btn primary"
+            onClick={() => {
+              setSubscriptionsError(null);
+              setShowAddSubscription((prev) => !prev);
+            }}
+          >
+            {showAddSubscription ? "Скрыть форму" : "+ Подписка"}
+          </button>
+        </div>
+
+        {showAddSubscription && (
+          <AddSubscriptionForm
+            onSubmit={handleCreateSubscription}
+            onCancel={() => {
+              setSubscriptionsError(null);
+              setShowAddSubscription(false);
+            }}
+            busy={addingSubscription}
+            error={subscriptionsError}
+          />
+        )}
+
+        {subscriptionsError && !showAddSubscription && <div className="error">{subscriptionsError}</div>}
+
+        {subscriptionsLoading ? (
+          <p className="muted" style={{ textAlign: "center", padding: "20px" }}>Загружаем…</p>
+        ) : subscriptions.length === 0 ? (
+          <p className="muted" style={{ textAlign: "center", padding: "20px" }}>
+            Подписок пока нет. Нажми 🔔 на грузе или создай фильтр вручную.
+          </p>
+        ) : (
+          <div className="subscription-list">
+            {subscriptions.map((sub) => (
+              <div className="subscription-card" key={sub.id}>
+                <div className="subscription-main">
+                  <div className="subscription-route">
+                    {(sub.from_city || "Любой")} → {(sub.to_city || "Любой")}
+                  </div>
+                  <div className="subscription-meta">
+                    {sub.body_type || "Любой кузов"}
+                    {sub.min_rate != null ? ` • от ${sub.min_rate.toLocaleString("ru")} ₽` : ""}
+                    {sub.max_weight != null ? ` • до ${sub.max_weight}т` : ""}
+                    {sub.region ? ` • ${sub.region}` : ""}
+                  </div>
+                </div>
+                <button
+                  className="action-btn report"
+                  onClick={() => void handleDeleteSubscription(sub.id)}
+                >
+                  ✖
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <main className="layout">
       <header className="topbar">
@@ -655,6 +775,7 @@ export function App() {
             <button className={`tab-btn${tab === "dashboard" ? " active" : ""}`} onClick={() => setTab("dashboard")}>⭐</button>
             <button className={`tab-btn${tab === "fleet" ? " active" : ""}`} onClick={() => setTab("fleet")}>🚛</button>
             <button className={`tab-btn${tab === "cargos" ? " active" : ""}`} onClick={() => setTab("cargos")}>📦</button>
+            <button className={`tab-btn${tab === "subscriptions" ? " active" : ""}`} onClick={() => setTab("subscriptions")}>🔔</button>
           </div>
         </div>
 
@@ -838,6 +959,7 @@ export function App() {
       )}
 
       {tab === "cargos" && renderMyCargos()}
+      {tab === "subscriptions" && renderSubscriptions()}
     </main>
   );
 }
