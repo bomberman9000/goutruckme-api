@@ -39,6 +39,18 @@ def test_parse_cargo_message_requires_route_and_keyword():
     assert parse_cargo_message("Мск - Казань без ключевых слов", keywords=["реф"]) is None
 
 
+def test_parse_cargo_message_uses_cargo_signals_without_keyword_match():
+    text = "Москва - Ташкент 20т 120к тел +7 999 000 11 22"
+    parsed = parse_cargo_message(text, keywords=["реф"])
+
+    assert parsed is not None
+    assert parsed.from_city == "Москва"
+    assert parsed.to_city == "Ташкент"
+    assert parsed.rate_rub == 120000
+    assert parsed.weight_t == 20.0
+    assert parsed.matched_keywords == ["auto"]
+
+
 def test_parse_price_from_keyword_with_thousand_separators():
     text = "Тент Москва - Самара, фрахт 6.500.000, тел +7 999 1112233"
     parsed = parse_cargo_message(text, keywords=["тент", "фрахт"])
@@ -58,6 +70,15 @@ def test_parse_price_in_usd_suffix():
     parsed = parse_cargo_message(text, keywords=["тент"])
     assert parsed is not None
     assert parsed.rate_rub == 180000
+
+
+def test_parse_route_with_apostrophe_city_names():
+    text = "Toshkent-Farg'ona 20t 120k +79991112233"
+    parsed = parse_cargo_message(text, keywords=["реф"])
+    assert parsed is not None
+    assert parsed.from_city == "Toshkent"
+    assert parsed.to_city == "Farg'Ona"
+    assert parsed.matched_keywords == ["auto"]
 
 
 def test_build_dedupe_key_is_stable_for_same_route_and_phone():

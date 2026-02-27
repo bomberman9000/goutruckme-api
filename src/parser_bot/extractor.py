@@ -13,11 +13,11 @@ logger = logging.getLogger(__name__)
 PHONE_RE = re.compile(r"(?:\+7|7|8)\D{0,3}\d{3}\D{0,3}\d{3}\D{0,3}\d{2}\D{0,3}\d{2}")
 INN_RE = re.compile(r"\b\d{10}(?:\d{2})?\b")
 ROUTE_RE = re.compile(
-    r"(?P<from>[A-Za-zА-Яа-яЁё.\- ]{2,40}?)\s*(?:->|→|—|–|\s-\s)\s*(?P<to>[A-Za-zА-Яа-яЁё.\- ]{2,40})",
+    r"(?P<from>[A-Za-zА-Яа-яЁё.\- '’ʻ`]{2,40}?)\s*(?:->|→|—|–|\s-\s)\s*(?P<to>[A-Za-zА-Яа-яЁё.\- '’ʻ`]{2,40})",
     re.IGNORECASE,
 )
 ROUTE_COMPACT_RE = re.compile(
-    r"\b(?P<from>[A-Za-zА-Яа-яЁё]{3,20})-(?P<to>[A-Za-zА-Яа-яЁё]{3,20})\b",
+    r"\b(?P<from>[A-Za-zА-Яа-яЁё'’ʻ`]{3,20})-(?P<to>[A-Za-zА-Яа-яЁё'’ʻ`]{3,20})\b",
     re.IGNORECASE,
 )
 WEIGHT_RE = re.compile(r"(?P<weight>\d{1,2}(?:[.,]\d+)?)\s*т(?:онн|онны|онна)?\b", re.IGNORECASE)
@@ -326,14 +326,16 @@ def parse_cargo_message(text: str, *, keywords: Iterable[str]) -> ParsedCargo | 
     if not clean_text:
         return None
 
-    text_lc = clean_text.lower()
-    matched_keywords = _extract_matched_keywords(text_lc, keywords)
-    if not matched_keywords:
-        return None
-
     from_city, to_city = _parse_route(clean_text)
     if not from_city or not to_city:
         return None
+
+    text_lc = clean_text.lower()
+    matched_keywords = _extract_matched_keywords(text_lc, keywords)
+    if not matched_keywords:
+        if not looks_like_cargo(clean_text):
+            return None
+        matched_keywords = ["auto"]
 
     phone_match = PHONE_RE.search(clean_text)
     phone = _normalize_phone(phone_match.group(0)) if phone_match else None
@@ -461,7 +463,7 @@ def _llm_result_to_parsed(
     inn = _normalize_inn(inn_match.group(0)) if inn_match else None
 
     text_lc = raw_text.lower()
-    matched_keywords = _extract_matched_keywords(text_lc, keywords)
+    matched_keywords = _extract_matched_keywords(text_lc, keywords) or ["auto"]
 
     if from_city == to_city and rate is None and weight is None:
         return None
