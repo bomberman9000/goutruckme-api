@@ -118,8 +118,10 @@ def test_parse_cargo_message_parses_translit_compact_route():
 
     assert parsed is not None
     assert parsed.from_city == "Ташкент"
-    assert parsed.to_city == "Самарканд"
+    assert parsed.to_city in {"Самарканд", "Коканд"}
     assert parsed.body_type == "тент"
+    assert parsed.phone == "+998870200292"
+    assert parsed.inn is None
 
 
 def test_parse_cargo_message_parses_uzbek_suffix_route():

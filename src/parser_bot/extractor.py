@@ -303,6 +303,8 @@ def _is_invalid_city_name(value: str) -> bool:
 
 def _normalize_phone(value: str) -> str:
     digits = "".join(ch for ch in value if ch.isdigit())
+    if len(digits) == 12 and digits.startswith("998"):
+        return f"+{digits}"
     if len(digits) == 10:
         digits = f"7{digits}"
     elif len(digits) == 11 and digits.startswith("8"):
@@ -317,6 +319,20 @@ def _normalize_inn(value: str) -> str | None:
     if len(digits) not in (10, 12):
         return None
     return digits
+
+
+def _extract_inn(text: str, *, phone: str | None = None) -> str | None:
+    phone_digits = "".join(ch for ch in (phone or "") if ch.isdigit())
+    for match in INN_RE.finditer(text):
+        candidate = _normalize_inn(match.group(0))
+        if not candidate:
+            continue
+        if candidate.startswith("998") and len(candidate) == 12:
+            continue
+        if phone_digits and candidate == phone_digits:
+            continue
+        return candidate
+    return None
 
 
 def _parse_price(text: str) -> int | None:
@@ -442,8 +458,7 @@ def parse_cargo_message(text: str, *, keywords: Iterable[str]) -> ParsedCargo | 
 
     phone_match = PHONE_RE.search(clean_text)
     phone = _normalize_phone(phone_match.group(0)) if phone_match else None
-    inn_match = INN_RE.search(clean_text)
-    inn = _normalize_inn(inn_match.group(0)) if inn_match else None
+    inn = _extract_inn(clean_text, phone=phone)
 
     return ParsedCargo(
         from_city=from_city,
@@ -569,8 +584,7 @@ def _llm_result_to_parsed(
         phone_match = PHONE_RE.search(raw_text)
         phone = _normalize_phone(phone_match.group(0)) if phone_match else None
 
-    inn_match = INN_RE.search(raw_text)
-    inn = _normalize_inn(inn_match.group(0)) if inn_match else None
+    inn = _extract_inn(raw_text, phone=phone)
 
     text_lc = raw_text.lower()
     matched_keywords = _extract_matched_keywords(text_lc, keywords) or ["auto"]
