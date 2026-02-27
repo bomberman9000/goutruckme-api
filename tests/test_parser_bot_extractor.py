@@ -59,6 +59,11 @@ def test_parse_cargo_message_normalizes_common_city_typos():
     assert parsed.from_city == "Екатеринбург"
     assert parsed.to_city == "Ташкент"
 
+    typo_text = "Тент Нижний Новогород - Ташкент, 20т, 100к"
+    typo_parsed = parse_cargo_message(typo_text, keywords=["тент"])
+    assert typo_parsed is not None
+    assert typo_parsed.from_city == "Нижний Новгород"
+
 
 def test_parse_cargo_message_normalizes_cis_city_variants():
     text = "Тент Бухоро - Самарқанд, 20т, 100к"
