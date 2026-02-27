@@ -115,9 +115,13 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
         logger.error("No valid parser chats resolved from config=%s", ",".join(str(c) for c in chat_ids))
         await client.disconnect()
         return
+    watched_chat_ids = set(resolved_chat_ids)
 
-    @client.on(events.NewMessage(chats=resolved_chat_ids))
+    @client.on(events.NewMessage())
     async def on_new_message(event: events.NewMessage.Event) -> None:
+        if event.chat_id not in watched_chat_ids:
+            return
+
         text = (event.raw_text or "").strip()
         if not text:
             return
