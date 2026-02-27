@@ -105,6 +105,40 @@
             </div>
         </div>
 
+        <div class="bg-white rounded-lg shadow p-5 mb-6">
+            <div class="text-sm text-gray-500 mb-3">Массовые действия</div>
+            <div class="flex flex-wrap gap-3">
+                <form action="/admin/parser/bulk-retry-sync" method="POST">
+                    <input type="hidden" name="status" value="sync_failed">
+                    {% if current_source %}<input type="hidden" name="source" value="{{ current_source }}">{% endif %}
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        Повторить все sync_failed ({{ status_counts.get("sync_failed", 0) }})
+                    </button>
+                </form>
+                <form action="/admin/parser/bulk-retry-sync" method="POST">
+                    <input type="hidden" name="status" value="error">
+                    {% if current_source %}<input type="hidden" name="source" value="{{ current_source }}">{% endif %}
+                    <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                        Повторить все error ({{ status_counts.get("error", 0) }})
+                    </button>
+                </form>
+                <form action="/admin/parser/bulk-ignore" method="POST">
+                    <input type="hidden" name="status" value="error">
+                    {% if current_source %}<input type="hidden" name="source" value="{{ current_source }}">{% endif %}
+                    <button type="submit" class="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">
+                        Скрыть все error ({{ status_counts.get("error", 0) }})
+                    </button>
+                </form>
+                <form action="/admin/parser/bulk-ignore" method="POST">
+                    <input type="hidden" name="status" value="retry_queued">
+                    {% if current_source %}<input type="hidden" name="source" value="{{ current_source }}">{% endif %}
+                    <button type="submit" class="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300">
+                        Скрыть все retry_queued ({{ status_counts.get("retry_queued", 0) }})
+                    </button>
+                </form>
+            </div>
+        </div>
+
         <div class="space-y-4">
             {% for event in events %}
             <div class="bg-white rounded-lg shadow border border-gray-200 p-5">

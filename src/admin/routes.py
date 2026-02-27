@@ -111,6 +111,34 @@ def _build_retry_sync_payload(event: ParserIngestEvent) -> dict:
         "order": order,
     }
 
+
+def _apply_parser_filters(query, *, status: str | None, source: str | None):
+    if status:
+        query = query.where(ParserIngestEvent.status == status)
+    if source:
+        query = query.where(ParserIngestEvent.source == source)
+    return query
+
+
+async def _retry_sync_event(client: httpx.AsyncClient, event: ParserIngestEvent) -> None:
+    if not event.from_city or not event.to_city:
+        event.status = "manual_review"
+        event.error = "retry_missing_route"
+        return
+
+    payload = _build_retry_sync_payload(event)
+    sync_url = _join_url(settings.gruzpotok_api_internal_url, settings.gruzpotok_sync_path)
+
+    try:
+        response = await client.post(sync_url, headers=_internal_headers(), json=payload)
+        response.raise_for_status()
+        event.status = "synced"
+        event.is_spam = False
+        event.error = None
+    except Exception as exc:
+        event.status = "sync_failed"
+        event.error = str(exc)[:255]
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", _ctx(request))
@@ -388,16 +416,16 @@ async def parser_events(
         )
         sources = [row[0] for row in sources_rows.all() if row[0]]
 
-        query = select(ParserIngestEvent)
-        count_query = select(func.count()).select_from(ParserIngestEvent)
-
-        if status:
-            query = query.where(ParserIngestEvent.status == status)
-            count_query = count_query.where(ParserIngestEvent.status == status)
-
-        if source:
-            query = query.where(ParserIngestEvent.source == source)
-            count_query = count_query.where(ParserIngestEvent.source == source)
+        query = _apply_parser_filters(
+            select(ParserIngestEvent),
+            status=status,
+            source=source,
+        )
+        count_query = _apply_parser_filters(
+            select(func.count()).select_from(ParserIngestEvent),
+            status=status,
+            source=source,
+        )
 
         total = await session.scalar(count_query)
         result = await session.execute(
@@ -421,6 +449,77 @@ async def parser_events(
         "sources": sources,
         "parser_metrics": parser_metrics,
     })
+
+
+@router.post("/parser/bulk-retry-sync")
+async def bulk_retry_parser_sync(
+    admin: dict = Depends(get_current_admin),
+    status: str = Form("sync_failed"),
+    source: str | None = Form(None),
+):
+    allowed = {"sync_failed", "error", "retry_queued"}
+    if status not in allowed:
+        raise HTTPException(status_code=400, detail="Unsupported status")
+
+    async with async_session() as session:
+        rows = (
+            await session.execute(
+                _apply_parser_filters(
+                    select(ParserIngestEvent).where(ParserIngestEvent.status == status),
+                    status=None,
+                    source=source,
+                ).order_by(desc(ParserIngestEvent.created_at)).limit(100)
+            )
+        ).scalars().all()
+
+        async with httpx.AsyncClient(timeout=max(3, int(settings.parser_http_timeout))) as client:
+            for event in rows:
+                await _retry_sync_event(client, event)
+
+        await session.commit()
+
+    redirect_url = "/admin/parser"
+    if status or source:
+        params = []
+        if status:
+            params.append(f"status={status}")
+        if source:
+            params.append(f"source={source}")
+        redirect_url = f"{redirect_url}?{'&'.join(params)}"
+    return RedirectResponse(url=redirect_url, status_code=302)
+
+
+@router.post("/parser/bulk-ignore")
+async def bulk_ignore_parser_events(
+    admin: dict = Depends(get_current_admin),
+    status: str = Form("error"),
+    source: str | None = Form(None),
+):
+    async with async_session() as session:
+        rows = (
+            await session.execute(
+                _apply_parser_filters(
+                    select(ParserIngestEvent).where(ParserIngestEvent.status == status),
+                    status=None,
+                    source=source,
+                ).order_by(desc(ParserIngestEvent.created_at)).limit(200)
+            )
+        ).scalars().all()
+
+        for event in rows:
+            event.status = "ignored"
+
+        await session.commit()
+
+    redirect_url = "/admin/parser"
+    if status or source:
+        params = []
+        if status:
+            params.append(f"status={status}")
+        if source:
+            params.append(f"source={source}")
+        redirect_url = f"{redirect_url}?{'&'.join(params)}"
+    return RedirectResponse(url=redirect_url, status_code=302)
 
 
 @router.post("/manual-review/{event_id}/publish")
@@ -450,26 +549,8 @@ async def retry_parser_sync(event_id: int, admin: dict = Depends(get_current_adm
         event = await session.get(ParserIngestEvent, event_id)
         if not event:
             raise HTTPException(status_code=404, detail="Event not found")
-
-        if not event.from_city or not event.to_city:
-            event.status = "manual_review"
-            event.error = "retry_missing_route"
-            await session.commit()
-            return RedirectResponse(url="/admin/parser", status_code=302)
-
-        payload = _build_retry_sync_payload(event)
-        sync_url = _join_url(settings.gruzpotok_api_internal_url, settings.gruzpotok_sync_path)
-
-        try:
-            async with httpx.AsyncClient(timeout=max(3, int(settings.parser_http_timeout))) as client:
-                response = await client.post(sync_url, headers=_internal_headers(), json=payload)
-                response.raise_for_status()
-            event.status = "synced"
-            event.is_spam = False
-            event.error = None
-        except Exception as exc:
-            event.status = "sync_failed"
-            event.error = str(exc)[:255]
+        async with httpx.AsyncClient(timeout=max(3, int(settings.parser_http_timeout))) as client:
+            await _retry_sync_event(client, event)
 
         await session.commit()
 
