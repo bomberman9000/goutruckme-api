@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 import time
+from datetime import datetime, timedelta, timezone
 
 import redis.asyncio as redis
 from telethon import TelegramClient, events, utils
@@ -83,14 +85,7 @@ async def _resolve_chat_filters(
     return resolved
 
 
-async def _build_source_name(event: events.NewMessage.Event) -> str:
-    chat = getattr(event, "chat", None)
-    if chat is None:
-        try:
-            chat = await event.get_chat()
-        except Exception:
-            chat = None
-
+def _build_source_name_from_chat(chat_id: int | None, chat: object | None) -> str:
     username = (getattr(chat, "username", None) or "").strip().lower() if chat else ""
     if username:
         return f"tg:{username}"
@@ -101,10 +96,89 @@ async def _build_source_name(event: events.NewMessage.Event) -> str:
         if slug:
             return f"tg:{slug[:50]}"
 
-    if event.chat_id:
-        return f"tg:chat_{event.chat_id}"
+    if chat_id:
+        return f"tg:chat_{chat_id}"
 
     return settings.parser_source_name
+
+
+async def _build_source_name(event: events.NewMessage.Event) -> str:
+    chat = getattr(event, "chat", None)
+    if chat is None:
+        try:
+            chat = await event.get_chat()
+        except Exception:
+            chat = None
+    return _build_source_name_from_chat(event.chat_id, chat)
+
+
+async def _enqueue_message(
+    stream: RedisLogisticsStream,
+    *,
+    raw_text: str,
+    chat_id: int | str,
+    message_id: int,
+    source: str,
+) -> None:
+    entry_id = await stream.add_raw_message(
+        raw_text=raw_text[:4000],
+        chat_id=str(chat_id or "unknown"),
+        message_id=int(message_id),
+        source=source,
+        received_at=int(time.time()),
+    )
+    logger.info("stream enqueue id=%s chat=%s message=%s", entry_id, chat_id, message_id)
+
+
+async def _startup_backfill(
+    client: TelegramClient,
+    stream: RedisLogisticsStream,
+    watched_chat_ids: set[int],
+) -> None:
+    limit = max(0, settings.parser_startup_backfill_limit)
+    minutes = max(0, settings.parser_startup_backfill_minutes)
+    if limit == 0 or minutes == 0:
+        return
+
+    since = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    total = 0
+
+    for peer_id in watched_chat_ids:
+        try:
+            entity = await client.get_entity(peer_id)
+        except Exception as exc:
+            logger.warning("skip startup backfill chat=%s error=%s", peer_id, str(exc)[:200])
+            continue
+
+        source = _build_source_name_from_chat(peer_id, entity)
+        queued = 0
+
+        async for message in client.iter_messages(entity, limit=limit):
+            if not message or not (message.message or "").strip():
+                continue
+            if message.date is None or message.date < since:
+                continue
+            await _enqueue_message(
+                stream,
+                raw_text=message.message,
+                chat_id=peer_id,
+                message_id=int(message.id),
+                source=source,
+            )
+            queued += 1
+            total += 1
+
+        logger.info(
+            "startup backfill chat=%s source=%s queued=%s limit=%s window=%sm",
+            peer_id,
+            source,
+            queued,
+            limit,
+            minutes,
+        )
+
+    if total:
+        logger.info("startup backfill complete queued_total=%s", total)
 
 
 async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> None:
@@ -116,6 +190,7 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
         await client.disconnect()
         return
     watched_chat_ids = set(resolved_chat_ids)
+    await _startup_backfill(client, stream, watched_chat_ids)
 
     @client.on(events.NewMessage())
     async def on_new_message(event: events.NewMessage.Event) -> None:
@@ -127,14 +202,13 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
             return
 
         try:
-            entry_id = await stream.add_raw_message(
-                raw_text=text[:4000],
-                chat_id=str(event.chat_id or "unknown"),
+            await _enqueue_message(
+                stream,
+                raw_text=text,
+                chat_id=event.chat_id or "unknown",
                 message_id=int(event.id),
                 source=await _build_source_name(event),
-                received_at=int(time.time()),
             )
-            logger.debug("stream enqueue id=%s chat=%s message=%s", entry_id, event.chat_id, event.id)
         except Exception as exc:
             logger.warning(
                 "stream enqueue failed chat=%s message=%s error=%s",
@@ -149,7 +223,11 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
         ",".join(str(c) for c in resolved_chat_ids),
         settings.parser_stream_name,
     )
-    await client.run_until_disconnected()
+    try:
+        await client.run_until_disconnected()
+    finally:
+        with contextlib.suppress(Exception):
+            await client.disconnect()
 
 
 async def run() -> None:

@@ -81,6 +81,8 @@ class Settings(BaseSettings):
     parser_stream_block_ms: int = 5000
     parser_stream_batch: int = 100
     parser_stream_claim_idle_ms: int = 60000
+    parser_startup_backfill_limit: int = 10
+    parser_startup_backfill_minutes: int = 30
     parser_worker_name: str = "worker-1"
     parser_worker_max_retries: int = 3
     parser_worker_enable_inn_moderation: bool = False
