@@ -3941,7 +3941,10 @@
         
         // Форматирование
         function formatPrice(price) {
-            return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0 }).format(price);
+            if (price === null || price === undefined || price === '') return '—';
+            const numericPrice = Number(price);
+            if (!Number.isFinite(numericPrice)) return '—';
+            return new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', minimumFractionDigits: 0 }).format(numericPrice);
         }
         
         function formatDate(dateString) {
@@ -3957,6 +3960,46 @@
         function formatDistance(distance) {
             if (!distance) return '—';
             return `${distance.toLocaleString('ru-RU')} км`;
+        }
+
+        function toFiniteNumber(value) {
+            if (value === null || value === undefined || value === '') return null;
+            const num = Number(value);
+            return Number.isFinite(num) ? num : null;
+        }
+
+        function normalizeRiskLevelValue(value) {
+            const normalized = String(value || '').trim().toLowerCase();
+            return ['low', 'medium', 'high'].includes(normalized) ? normalized : '';
+        }
+
+        function deriveRiskLevel(explicitRisk, aiScore) {
+            const normalizedRisk = normalizeRiskLevelValue(explicitRisk);
+            if (normalizedRisk) return normalizedRisk;
+
+            const numericScore = toFiniteNumber(aiScore);
+            if (numericScore === null) return '';
+            if (numericScore < 40) return 'high';
+            if (numericScore < 70) return 'medium';
+            return 'low';
+        }
+
+        function buildAiExplain(load, aiScore, riskLevel) {
+            const explain = String(load.ai_explain || '').trim();
+            if (explain) return explain;
+
+            const parts = [];
+            if (toFiniteNumber(aiScore) !== null) {
+                parts.push(`AI score ${Math.round(Number(aiScore))}/100`);
+            }
+            if (normalizeRiskLevelValue(riskLevel)) {
+                const riskMap = { low: 'низкий', medium: 'средний', high: 'высокий' };
+                parts.push(`риск ${riskMap[riskLevel] || riskLevel}`);
+            }
+            if (toFiniteNumber(load.price_per_km) !== null) {
+                parts.push(`ставка ${load.price_per_km} ₽/км`);
+            }
+            return parts.length ? parts.join(' · ') : 'AI-анализ пока недоступен';
         }
 
         function normalizeCargoStatusValue(status) {
@@ -4318,9 +4361,15 @@
                 }
                 
                 // Используем новую систему лейблов
-                const riskLevel = load.risk_level || 'low';
-                const riskEmoji = window.RiskLabels ? window.RiskLabels.getLevelEmoji(riskLevel) : '⚪';
-                const riskLabel = window.RiskLabels ? window.RiskLabels.getLevelLabel(riskLevel) : riskLevel;
+                const riskLevel = deriveRiskLevel(load.risk_level, load.ai_score);
+                const riskEmojiMap = { low: '🟢', medium: '🟡', high: '🔴' };
+                const riskLabelMap = { low: 'Низкий', medium: 'Средний', high: 'Высокий' };
+                const riskEmoji = riskLevel
+                    ? (window.RiskLabels ? window.RiskLabels.getLevelEmoji(riskLevel) : riskEmojiMap[riskLevel])
+                    : '⚪';
+                const riskLabel = riskLevel
+                    ? (window.RiskLabels ? window.RiskLabels.getLevelLabel(riskLevel) : riskLabelMap[riskLevel])
+                    : 'Нет оценки';
                 const cargoStatus = normalizeCargoStatusValue(load.status);
                 const isExpired = cargoStatus === 'expired';
                 
@@ -4357,18 +4406,22 @@
                         return `<div class="mb-2"><span class="font-semibold text-yellow-400">• ${label}</span>${desc ? '<div class="text-xs text-gray-400 mt-0.5 ml-3">' + desc + '</div>' : ''}</div>`;
                     }).join('');
                 } else {
-                    riskTooltipHTML = '<div class="text-gray-400">Риски не обнаружены</div>';
+                    riskTooltipHTML = riskLevel
+                        ? '<div class="text-gray-400">Риски не обнаружены</div>'
+                        : '<div class="text-gray-400">AI-анализ еще не рассчитан</div>';
                 }
                 
                 // Цвета для бейджей
                 const badgeColors = {
                     low: 'bg-green-500/20 text-green-400 border-green-500/30',
                     medium: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-                    high: 'bg-red-500/20 text-red-400 border-red-500/30'
+                    high: 'bg-red-500/20 text-red-400 border-red-500/30',
+                    unknown: 'bg-slate-500/20 text-slate-300 border-slate-500/30'
                 };
-                const badgeColor = badgeColors[riskLevel] || badgeColors.low;
-                const aiScore = Math.max(0, Math.min(100, Math.round(Number(load.ai_score || 0))));
-                const aiExplain = escapeHtml(load.ai_explain || 'Без объяснения');
+                const badgeColor = badgeColors[riskLevel] || badgeColors.unknown;
+                const aiScoreValue = toFiniteNumber(load.ai_score);
+                const aiScore = aiScoreValue === null ? null : Math.max(0, Math.min(100, Math.round(aiScoreValue)));
+                const aiExplain = escapeHtml(buildAiExplain(load, aiScoreValue, riskLevel));
                 const statusBadge = isExpired
                     ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-xs border border-amber-500/40 bg-amber-500/15 text-amber-300 mt-1">Истёк</span>'
                     : '';
@@ -4405,10 +4458,20 @@
                             <div class="text-gray-400 mt-1">Рекомендуем внимательно изучить детали груза</div>
                         </div>
                     </div>`;
-                } else { // high
+                } else if (riskLevel === 'high') {
                     takeButtonHTML = `<button onclick="event.stopPropagation(); confirmHighRiskBid(${load.id})" class="px-3 py-1 bg-transparent border border-red-500/50 text-red-400 hover:bg-red-500/10 rounded text-xs font-semibold transition-all">
                         Взять
                     </button>`;
+                } else {
+                    takeButtonHTML = `<div class="relative group">
+                        <button onclick="event.stopPropagation(); openTakeCargoModal(${load.id})" class="px-3 py-1 bg-dark-border hover:bg-dark-border/80 border border-slate-500/30 text-slate-300 rounded text-xs font-semibold transition-all">
+                            Открыть
+                        </button>
+                        <div class="absolute left-0 bottom-full mb-2 hidden group-hover:block z-20 w-48 p-2 bg-dark-card border border-dark-border rounded-lg shadow-xl text-xs">
+                            <div class="text-slate-200 font-semibold">AI обновляется</div>
+                            <div class="text-gray-400 mt-1">Пока показываем только реальные данные груза</div>
+                        </div>
+                    </div>`;
                 }
 
                 const columnCells = {
@@ -4438,7 +4501,7 @@
                                 ${formatPrice(load.price)}
                             </div>
                             <div class="flex items-center gap-1 text-xs ${priceAnomaly ? 'text-yellow-400' : 'text-gray-400'}">
-                                ${load.price_per_km || 0} ₽/км
+                                ${toFiniteNumber(load.price_per_km) !== null ? `${load.price_per_km} ₽/км` : '—'}
                                 ${priceAnomaly ? '<span class="text-yellow-400" title="Цена отличается от среднерыночной более чем на 30%">⚠️</span>' : ''}
                             </div>
                         </td>
@@ -4484,7 +4547,7 @@
                         <td class="px-4 py-3">
                             <div class="relative inline-block group">
                                 <span class="px-2 py-1 rounded text-xs border border-purple/30 bg-purple/20 text-purple cursor-help">
-                                    ${aiScore}/100
+                                    ${aiScore === null ? '—' : `${aiScore}/100`}
                                 </span>
                                 <div class="absolute left-0 bottom-full mb-2 hidden group-hover:block z-20 w-72 p-3 bg-dark-card border border-dark-border rounded-lg shadow-xl text-xs text-gray-300">
                                     ${aiExplain}
@@ -4699,28 +4762,55 @@
                 const apiLoads = await response.json();
                 
                 if (apiLoads && apiLoads.length > 0) {
-                    // Добавляем мок-данные к реальным
                     cargoState.allLoads = apiLoads.map(load => ({
                         ...load,
-                        distance: load.distance || load.distance_km || Math.round(Math.random() * 2000 + 500),
-                        price_per_km: load.price_per_km || load.rate_per_km || Math.round(load.price / (load.distance || load.distance_km || 1000)),
-                        truck_type: load.truck_type || 'Тент',
+                        price: toFiniteNumber(load.total_price ?? load.price),
+                        total_price: toFiniteNumber(load.total_price ?? load.price),
+                        weight: toFiniteNumber(load.weight_t ?? load.weight),
+                        volume: toFiniteNumber(load.volume_m3 ?? load.volume),
+                        distance: toFiniteNumber(load.distance_km ?? load.distance),
+                        distance_km: toFiniteNumber(load.distance_km ?? load.distance),
+                        price_per_km: (() => {
+                            const explicitRate = toFiniteNumber(load.price_per_km ?? load.rate_per_km);
+                            if (explicitRate !== null) return Math.round(explicitRate * 10) / 10;
+                            const price = toFiniteNumber(load.total_price ?? load.price);
+                            const distance = toFiniteNumber(load.distance_km ?? load.distance);
+                            if (price !== null && distance && distance > 0) {
+                                return Math.round((price / distance) * 10) / 10;
+                            }
+                            return null;
+                        })(),
+                        rate_per_km: (() => {
+                            const explicitRate = toFiniteNumber(load.price_per_km ?? load.rate_per_km);
+                            if (explicitRate !== null) return Math.round(explicitRate * 10) / 10;
+                            const price = toFiniteNumber(load.total_price ?? load.price);
+                            const distance = toFiniteNumber(load.distance_km ?? load.distance);
+                            if (price !== null && distance && distance > 0) {
+                                return Math.round((price / distance) * 10) / 10;
+                            }
+                            return null;
+                        })(),
+                        truck_type: String(
+                            load.truck_type
+                            || load.required_body_type
+                            || (Array.isArray(load.required_vehicle_kinds) ? load.required_vehicle_kinds[0] : '')
+                            || ''
+                        ).trim() || null,
                         status: normalizeCargoStatusValue(load.status),
-                        risk_level: load.ai_risk || load.risk_level || 'low',
-                        risk_score: load.risk_score || Math.round(Math.random() * 30 + 10),
-                        risk_reasons: load.risk_reasons || [],
-                        ai_score: Number.isFinite(Number(load.ai_score)) ? Number(load.ai_score) : 50,
-                        ai_explain: load.ai_explain || '',
+                        risk_level: deriveRiskLevel(load.ai_risk || load.risk_level, load.ai_score),
+                        risk_score: toFiniteNumber(load.risk_score) ?? toFiniteNumber(load.ai_score) ?? 0,
+                        risk_reasons: Array.isArray(load.risk_reasons) ? load.risk_reasons : [],
+                        ai_score: toFiniteNumber(load.ai_score),
+                        ai_explain: buildAiExplain(load, load.ai_score, load.ai_risk || load.risk_level),
                         ai_flags: Array.isArray(load.ai_flags) ? load.ai_flags : []
                     }));
                 } else {
-                    // Используем только моки
-                    cargoState.allLoads = generateMockLoads(80);
+                    cargoState.allLoads = [];
                 }
             } catch (err) {
-                // Если API недоступен, используем моки
-                console.log('Using mock data:', err.message);
-                cargoState.allLoads = generateMockLoads(80);
+                console.error('Failed to load loads:', err.message);
+                cargoState.allLoads = [];
+                showNotification('Не удалось загрузить грузы с API', 'error');
             }
             
             // Загружаем состояние
@@ -6388,7 +6478,7 @@
             document.getElementById('take-cargo-id').value = loadId;
             document.getElementById('take-cargo-route').textContent = `${load.from_city} → ${load.to_city}`;
             document.getElementById('take-cargo-price').textContent = formatPrice(load.price);
-            document.getElementById('take-cargo-price-per-km').textContent = `${load.price_per_km || Math.round(load.price / (load.distance || 1000))} ₽/км`;
+            document.getElementById('take-cargo-price-per-km').textContent = toFiniteNumber(load.price_per_km) !== null ? `${load.price_per_km} ₽/км` : '—';
             document.getElementById('take-cargo-distance').textContent = formatDistance(load.distance);
             document.getElementById('take-cargo-weight').textContent = `${load.weight || '—'} т / ${load.volume || '—'} м³`;
             document.getElementById('take-cargo-truck-type').textContent = load.truck_type || '—';
