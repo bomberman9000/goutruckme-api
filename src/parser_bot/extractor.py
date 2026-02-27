@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 PHONE_RE = re.compile(r"(?:\+7|7|8)\D{0,3}\d{3}\D{0,3}\d{3}\D{0,3}\d{2}\D{0,3}\d{2}")
 INN_RE = re.compile(r"\b\d{10}(?:\d{2})?\b")
 ROUTE_RE = re.compile(
-    r"(?P<from>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ.\- '’ʻ`]{2,40}?)\s*(?:->|→|—|–|\s-\s)\s*(?P<to>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ.\- '’ʻ`]{2,40})",
+    r"(?P<from>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ.\- '’ʻ`]{2,40}?)\s*(?:[)\]}])?\s*(?:->|→|➞|—|–|\s-\s)\s*(?P<to>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ.\- '’ʻ`]{2,40})",
     re.IGNORECASE,
 )
 ROUTE_COMPACT_RE = re.compile(
@@ -82,6 +82,12 @@ CITY_INVALID_EXACT = {
     "растоможка",
     "верхняя",
     "боковая",
+    "тулов",
+    "тўлов",
+    "tolov",
+    "накд",
+    "нақд",
+    "naqd",
 }
 
 CITY_ALIASES = {
@@ -354,19 +360,17 @@ def _parse_body_type(text_lc: str) -> str | None:
 
 
 def _parse_route(text: str) -> tuple[str, str] | tuple[None, None]:
-    route = ROUTE_RE.search(text)
-    if route:
+    for route in ROUTE_RE.finditer(text):
         from_city = _normalize_city(route.group("from"))
         to_city = _normalize_city(route.group("to"))
         if from_city and to_city and not _is_invalid_city_name(from_city) and not _is_invalid_city_name(to_city):
             return from_city, to_city
 
-    compact = ROUTE_COMPACT_RE.search(text)
-    if compact:
+    for compact in ROUTE_COMPACT_RE.finditer(text):
         compact_token = f"{compact.group('from')}-{compact.group('to')}"
         compact_lookup = compact_token.lower().replace("ʻ", "'").replace("’", "'").replace("`", "'")
         if compact_lookup in CITY_ALIASES or compact_lookup.replace("-", " ") in CITY_ALIASES:
-            return None, None
+            continue
         from_city = _normalize_city(compact.group("from"))
         to_city = _normalize_city(compact.group("to"))
         if from_city and to_city and not _is_invalid_city_name(from_city) and not _is_invalid_city_name(to_city):

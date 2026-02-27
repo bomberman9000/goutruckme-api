@@ -84,6 +84,20 @@ def test_parse_cargo_message_skips_non_city_stopword_route():
     assert parsed is None
 
 
+def test_parse_cargo_message_prefers_first_valid_route_over_invalid_later_line():
+    text = (
+        "Калужская область (Ворсино) ➞ Ташкент\n"
+        "Растаможка - Ташкент\n"
+        "23 тонна\n"
+        "Тўлов - нақд 3100 $\n"
+    )
+    parsed = parse_cargo_message(text, keywords=["тент"])
+
+    assert parsed is not None
+    assert parsed.from_city == "Ворсино"
+    assert parsed.to_city == "Ташкент"
+
+
 def test_parse_cargo_message_skips_invalid_geo_blacklist_route():
     assert parse_cargo_message("Оплата - Ташкент, 20т, 100к", keywords=["тент"]) is None
     assert parse_cargo_message("Верхняя - Ташкент, 20т, 100к", keywords=["тент"]) is None
