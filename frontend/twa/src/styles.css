@@ -370,6 +370,7 @@ body { background: var(--bg); color: var(--text); }
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  flex: 1;
 }
 .subscription-route {
   font-size: 15px;
@@ -378,4 +379,11 @@ body { background: var(--bg); color: var(--text); }
 .subscription-meta {
   font-size: 12px;
   color: var(--muted);
+}
+.subscription-count {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 60px;
 }

@@ -12,7 +12,9 @@ from fastapi.testclient import TestClient
 
 from src.api import subscriptions as subscriptions_api
 from src.core.config import settings
-from src.core.models import RouteSubscription
+from datetime import datetime
+
+from src.core.models import ParserIngestEvent, RouteSubscription
 
 
 class _FakeExecuteResult:
@@ -26,11 +28,17 @@ class _FakeExecuteResult:
 class _FakeSession:
     def __init__(self):
         self.subscriptions: list[RouteSubscription] = []
+        self.events: list[ParserIngestEvent] = []
         self._pending: list[object] = []
         self._id = 0
 
     async def execute(self, _stmt):
-        return _FakeExecuteResult(self.subscriptions)
+        sql = str(_stmt)
+        if "FROM route_subscriptions" in sql:
+            return _FakeExecuteResult(self.subscriptions)
+        if "FROM parser_ingest_events" in sql:
+            return _FakeExecuteResult(self.events)
+        return _FakeExecuteResult([])
 
     async def get(self, model, key):
         if model is RouteSubscription:
@@ -88,6 +96,24 @@ def test_create_list_and_delete_subscription():
     assert created.status_code == 200
     body = created.json()
     assert body["item"]["id"] == 1
+    assert body["item"]["match_count"] == 0
+
+    fake_session.events = [
+        ParserIngestEvent(
+            id=10,
+            stream_entry_id="10-0",
+            chat_id="chat",
+            message_id=10,
+            source="test",
+            from_city="Москва",
+            to_city="Казань",
+            body_type="тент",
+            status="synced",
+            is_spam=False,
+            raw_text="x",
+            created_at=datetime.utcnow(),
+        )
+    ]
 
     duplicate = client.post(
         "/api/v1/subscriptions",
@@ -101,6 +127,7 @@ def test_create_list_and_delete_subscription():
     listed = client.get("/api/v1/subscriptions", headers=_build_tma_header(777))
     assert listed.status_code == 200
     assert len(listed.json()["items"]) == 1
+    assert listed.json()["items"][0]["match_count"] == 1
 
     deleted = client.delete("/api/v1/subscriptions/1", headers=_build_tma_header(777))
     assert deleted.status_code == 200

@@ -197,6 +197,7 @@ export type SubscriptionItem = {
   max_weight: number | null;
   region: string | null;
   is_active: boolean;
+  match_count: number;
 };
 
 type MyCargoResponse = {

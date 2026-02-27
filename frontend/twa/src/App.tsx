@@ -750,6 +750,10 @@ export function App() {
                     {sub.region ? ` • ${sub.region}` : ""}
                   </div>
                 </div>
+                <div className="subscription-count">
+                  <span className="count">{sub.match_count}</span>
+                  <span className="muted">за 24ч</span>
+                </div>
                 <button
                   className="action-btn report"
                   onClick={() => void handleDeleteSubscription(sub.id)}

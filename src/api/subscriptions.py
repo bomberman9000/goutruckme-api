@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
 from src.core.database import async_session
-from src.core.models import RouteSubscription
+from src.core.models import ParserIngestEvent, RouteSubscription
+from src.core.services.feed_notifications import _find_matching_subs
 
 router = APIRouter(tags=["subscriptions"])
 
@@ -29,6 +32,7 @@ class SubscriptionItem(BaseModel):
     max_weight: float | None
     region: str | None
     is_active: bool
+    match_count: int = 0
 
 
 class SubscriptionListResponse(BaseModel):
@@ -45,7 +49,7 @@ def _clean_str(value: str | None) -> str | None:
     return clean or None
 
 
-def _serialize(sub: RouteSubscription) -> SubscriptionItem:
+def _serialize(sub: RouteSubscription, *, match_count: int = 0) -> SubscriptionItem:
     return SubscriptionItem(
         id=sub.id,
         from_city=sub.from_city,
@@ -55,6 +59,7 @@ def _serialize(sub: RouteSubscription) -> SubscriptionItem:
         max_weight=sub.max_weight,
         region=sub.region,
         is_active=bool(sub.is_active),
+        match_count=match_count,
     )
 
 
@@ -71,8 +76,29 @@ async def list_subscriptions(
                 .order_by(RouteSubscription.id.desc())
             )
         ).scalars().all()
+        if not rows:
+            return SubscriptionListResponse(items=[])
 
-    return SubscriptionListResponse(items=[_serialize(row) for row in rows])
+        cutoff = datetime.utcnow() - timedelta(hours=24)
+        events = (
+            await session.execute(
+                select(ParserIngestEvent)
+                .where(
+                    ParserIngestEvent.status == "synced",
+                    ParserIngestEvent.is_spam.is_(False),
+                    ParserIngestEvent.created_at >= cutoff,
+                )
+                .order_by(ParserIngestEvent.id.desc())
+                .limit(500)
+            )
+        ).scalars().all()
+
+    counts = {int(row.id): 0 for row in rows}
+    for event in events:
+        for sub in _find_matching_subs(event, rows):
+            counts[int(sub.id)] = counts.get(int(sub.id), 0) + 1
+
+    return SubscriptionListResponse(items=[_serialize(row, match_count=counts.get(int(row.id), 0)) for row in rows])
 
 
 @router.post("/api/v1/subscriptions", response_model=SubscriptionResponse)
