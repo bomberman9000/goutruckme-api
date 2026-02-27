@@ -155,31 +155,6 @@ export function App() {
 
   useEffect(() => { void load(true); }, [selected.join(","), initData, searchQuery]);
 
-  const loadProfileSummary = useCallback(async () => {
-    setProfileLoading(true);
-    setProfileError(null);
-    try {
-      setProfileSummary(await fetchWebappProfile());
-    } catch (err) {
-      setProfileError(err instanceof Error ? err.message : "Не удалось загрузить кабинет");
-    } finally {
-      setProfileLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (tab === "dashboard") {
-      void fetchFavorites().then(setFavorites).catch(() => setFavorites([]));
-      void loadProfileSummary();
-    }
-    if (tab === "fleet") {
-      void fetchVehicles().then(setVehicles).catch(() => setVehicles([]));
-    }
-    if (tab === "cargos") {
-      void loadMyCargos();
-    }
-  }, [tab, loadMyCargos, loadProfileSummary]);
-
   const loadSubscriptions = useCallback(async () => {
     setSubscriptionsLoading(true);
     setSubscriptionsError(null);
@@ -207,6 +182,31 @@ export function App() {
       setMyCargosLoading(false);
     }
   }, []);
+
+  const loadProfileSummary = useCallback(async () => {
+    setProfileLoading(true);
+    setProfileError(null);
+    try {
+      setProfileSummary(await fetchWebappProfile());
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : "Не удалось загрузить кабинет");
+    } finally {
+      setProfileLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === "dashboard") {
+      void fetchFavorites().then(setFavorites).catch(() => setFavorites([]));
+      void loadProfileSummary();
+    }
+    if (tab === "fleet") {
+      void fetchVehicles().then(setVehicles).catch(() => setVehicles([]));
+    }
+    if (tab === "cargos") {
+      void loadMyCargos();
+    }
+  }, [tab, loadMyCargos, loadProfileSummary]);
 
   function onCallClick(item: FeedItem) {
     void trackClick(item.id).catch(() => {});
