@@ -8,7 +8,7 @@ from src.bot.states import ProfileEdit
 from src.bot.keyboards import main_menu, skip_kb, profile_menu
 from src.bot.utils import cargo_deeplink
 from src.core.database import async_session
-from src.core.models import User, Cargo, CargoStatus, Rating, UserProfile, UserRole, VerificationStatus
+from src.core.models import User, Cargo, CargoPaymentStatus, CargoStatus, Rating, UserProfile, UserRole, UserWallet, VerificationStatus
 from src.core.logger import logger
 
 router = Router()
@@ -54,8 +54,17 @@ async def show_profile(cb: CallbackQuery):
         )
 
         profile = await session.scalar(select(UserProfile).where(UserProfile.user_id == cb.from_user.id))
+        wallet = await session.get(UserWallet, cb.from_user.id)
 
     stars = "⭐" * round(avg_rating) if avg_rating else "нет оценок"
+    premium_text = "нет"
+    if user.is_premium:
+        if user.premium_until:
+            premium_text = f"до {user.premium_until.strftime('%d.%m.%Y %H:%M')}"
+        else:
+            premium_text = "активен"
+    wallet_balance = int(wallet.balance_rub) if wallet else 0
+    wallet_frozen = int(wallet.frozen_balance_rub) if wallet else 0
 
     text = f"👤 <b>Мой профиль</b>\n\n"
     text += f"🆔 <code>{user.id}</code>\n"
@@ -74,6 +83,8 @@ async def show_profile(cb: CallbackQuery):
     text += f"🛡 Верификация: {ver_label}\n\n"
     text += f"⭐ Рейтинг: {stars} ({rating_count})\n"
     text += f"📦 Грузов: {cargos_count} (завершено: {completed})\n"
+    text += f"💎 Premium: {premium_text}\n"
+    text += f"💼 Кошелёк: {wallet_balance:,}₽ (холд: {wallet_frozen:,}₽)\n"
     text += f"📅 С нами с: {user.created_at.strftime('%d.%m.%Y')}"
 
     try:
@@ -163,6 +174,12 @@ async def show_history(cb: CallbackQuery):
 
         text = f"{role} {c.from_city} → {c.to_city}\n"
         text += f"   {c.weight}т, {c.price}₽ — {status}\n"
+        if getattr(c, "payment_status", None) in {
+            CargoPaymentStatus.FUNDED,
+            CargoPaymentStatus.DELIVERY_MARKED,
+            CargoPaymentStatus.RELEASED,
+        }:
+            text += "   💰 Оплата гарантирована\n"
         text += f"   {link}\n"
 
         reply_markup = None

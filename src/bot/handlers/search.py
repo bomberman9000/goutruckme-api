@@ -14,7 +14,7 @@ from src.core.config import settings
 from src.core.database import async_session
 from src.core.schemas.sync import SharedSyncEvent
 from src.core.services.cross_sync import create_gruzpotok_login_link, make_search_id, publish_sync_event
-from src.core.models import Cargo, CargoStatus, RouteSubscription
+from src.core.models import Cargo, CargoStatus, ParserIngestEvent, RouteSubscription
 from src.core.logger import logger
 import re
 
@@ -76,6 +76,62 @@ async def _send_web_open_button(
         f"Search ID: <code>{search_id}</code>",
         reply_markup=kb.as_markup(),
     )
+
+
+async def _find_feed_fallback(
+    *,
+    from_city: str | None,
+    to_city: str | None,
+    limit: int = 10,
+) -> list[ParserIngestEvent]:
+    async with async_session() as session:
+        query = select(ParserIngestEvent).where(
+            ParserIngestEvent.is_spam.is_(False),
+            ParserIngestEvent.status == "synced",
+        )
+        if from_city:
+            query = query.where(ParserIngestEvent.from_city.ilike(f"%{from_city}%"))
+        if to_city:
+            query = query.where(ParserIngestEvent.to_city.ilike(f"%{to_city}%"))
+        result = await session.execute(query.order_by(ParserIngestEvent.id.desc()).limit(limit))
+        return result.scalars().all()
+
+
+async def _reply_with_feed_fallback(
+    *,
+    message: Message,
+    search_id: str,
+    user_id: int,
+    from_city: str | None,
+    to_city: str | None,
+) -> bool:
+    feed_items = await _find_feed_fallback(from_city=from_city, to_city=to_city)
+    if not feed_items:
+        return False
+
+    await _publish_search_event(
+        user_id=user_id,
+        search_id=search_id,
+        found_count=len(feed_items),
+        from_city=from_city,
+        to_city=to_city,
+        query_text=f"{from_city or ''}->{to_city or ''}",
+    )
+
+    text = f"📡 Нашли в ленте ({len(feed_items)}):\n\n"
+    for ev in feed_items:
+        text += (
+            f"🔹 {ev.from_city or '—'} → {ev.to_city or '—'}\n"
+            f"   {ev.body_type or '?'} • {ev.weight_t or 0}т • {ev.rate_rub or 0}₽ • /cargo_{ev.id}\n\n"
+        )
+
+    await message.answer(text, reply_markup=cargos_menu())
+    await _send_web_open_button(
+        message=message,
+        user_id=user_id,
+        search_id=search_id,
+    )
+    return True
 
 @router.message(Command("find"))
 async def smart_find(message: Message):
@@ -149,6 +205,14 @@ async def smart_find(message: Message):
     filter_text = " ".join(filters) if filters else "все"
 
     if not cargos:
+        if await _reply_with_feed_fallback(
+            message=message,
+            search_id=search_id,
+            user_id=message.from_user.id,
+            from_city=params.get("from_city"),
+            to_city=params.get("to_city"),
+        ):
+            return
         await _publish_search_event(
             user_id=message.from_user.id,
             search_id=search_id,
@@ -289,6 +353,15 @@ async def do_search(message: Message, state: FSMContext):
     await state.clear()
     
     if not cargos:
+        if await _reply_with_feed_fallback(
+            message=message,
+            search_id=search_id,
+            user_id=message.from_user.id,
+            from_city=from_city,
+            to_city=to_city,
+        ):
+            return
+
         await _publish_search_event(
             user_id=message.from_user.id,
             search_id=search_id,

@@ -10,9 +10,11 @@ from src.core.config import settings
 from src.core.database import async_session
 from src.core.models import (
     Cargo,
+    CargoPaymentStatus,
     CargoStatus,
     CargoResponse,
     CompanyDetails,
+    UserWallet,
     User,
     Claim,
     ClaimStatus,
@@ -233,6 +235,7 @@ async def webapp_profile(
             .limit(10)
         )
         user_cargos = cargos_result.scalars().all()
+        wallet = await session.get(UserWallet, user_id)
 
         company_data = None
         if company:
@@ -243,6 +246,22 @@ async def webapp_profile(
                 "rating": company.total_rating,
             }
 
+        verified_payment_count = sum(
+            1
+            for cargo in user_cargos
+            if getattr(cargo, "payment_status", None)
+            in {
+                CargoPaymentStatus.FUNDED,
+                CargoPaymentStatus.DELIVERY_MARKED,
+                CargoPaymentStatus.RELEASED,
+            }
+        )
+        released_payment_count = sum(
+            1
+            for cargo in user_cargos
+            if getattr(cargo, "payment_status", None) == CargoPaymentStatus.RELEASED
+        )
+
     return {
         "user": {
             "id": user.id,
@@ -251,8 +270,19 @@ async def webapp_profile(
             "phone": user.phone,
             "is_carrier": user.is_carrier,
             "is_verified": user.is_verified,
+            "is_premium": user.is_premium,
+            "premium_until": user.premium_until.isoformat() if user.premium_until else None,
         },
         "company": company_data,
+        "wallet": {
+            "balance_rub": int(wallet.balance_rub) if wallet else 0,
+            "frozen_balance_rub": int(wallet.frozen_balance_rub) if wallet else 0,
+        },
+        "stats": {
+            "cargo_count": len(user_cargos),
+            "verified_payment_count": verified_payment_count,
+            "released_payment_count": released_payment_count,
+        },
         "cargos": [
             {
                 "id": c.id,
@@ -261,6 +291,13 @@ async def webapp_profile(
                 "weight": c.weight,
                 "price": c.price,
                 "status": c.status.value,
+                "payment_status": c.payment_status.value if getattr(c, "payment_status", None) else "unsecured",
+                "payment_verified": getattr(c, "payment_status", None)
+                in {
+                    CargoPaymentStatus.FUNDED,
+                    CargoPaymentStatus.DELIVERY_MARKED,
+                    CargoPaymentStatus.RELEASED,
+                },
                 "load_date": c.load_date.strftime("%d.%m.%Y"),
             }
             for c in user_cargos
