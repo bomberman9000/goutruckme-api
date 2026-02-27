@@ -112,6 +112,26 @@ def test_parse_cargo_message_ignores_flag_emoji_and_payment_route_noise():
     assert parsed.to_city == "Бишкек"
 
 
+def test_parse_cargo_message_parses_translit_compact_route():
+    text = "Toshkent-SAMARQAND Tent fura yoki ref +998870200292"
+    parsed = parse_cargo_message(text, keywords=["тент"])
+
+    assert parsed is not None
+    assert parsed.from_city == "Ташкент"
+    assert parsed.to_city == "Самарканд"
+    assert parsed.body_type == "тент"
+
+
+def test_parse_cargo_message_parses_uzbek_suffix_route():
+    text = "Jizzaxdan Qashqadaryoga yuk bor 25tona Fura tent"
+    parsed = parse_cargo_message(text, keywords=["тент"])
+
+    assert parsed is not None
+    assert parsed.from_city == "Джизак"
+    assert parsed.to_city == "Кашкадарья"
+    assert parsed.weight_t == 25.0
+
+
 def test_parse_cargo_message_skips_invalid_geo_blacklist_route():
     assert parse_cargo_message("Оплата - Ташкент, 20т, 100к", keywords=["тент"]) is None
     assert parse_cargo_message("Оптала - Ташкент, 20т, 100к", keywords=["тент"]) is None
@@ -158,7 +178,7 @@ def test_parse_route_with_apostrophe_city_names():
     text = "Toshkent-Farg'ona 20t 120k +79991112233"
     parsed = parse_cargo_message(text, keywords=["реф"])
     assert parsed is not None
-    assert parsed.from_city == "Toshkent"
+    assert parsed.from_city == "Ташкент"
     assert parsed.to_city == "Farg'ona"
     assert parsed.matched_keywords == ["auto"]
 

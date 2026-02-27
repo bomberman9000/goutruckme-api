@@ -10,7 +10,12 @@ from typing import Iterable
 
 logger = logging.getLogger(__name__)
 
-PHONE_RE = re.compile(r"(?:\+7|7|8)\D{0,3}\d{3}\D{0,3}\d{3}\D{0,3}\d{2}\D{0,3}\d{2}")
+PHONE_RE = re.compile(
+    r"(?:"
+    r"(?:\+7|7|8)\D{0,3}\d{3}\D{0,3}\d{3}\D{0,3}\d{2}\D{0,3}\d{2}"
+    r"|(?:\+998)\D{0,3}\d{2}\D{0,3}\d{3}\D{0,3}\d{2}\D{0,3}\d{2}"
+    r")"
+)
 INN_RE = re.compile(r"\b\d{10}(?:\d{2})?\b")
 ROUTE_RE = re.compile(
     r"(?P<from>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ.\- '’ʻ`]{2,40}?)\s*(?:[)\]}])?\s*(?:->|→|➞|—|–|\s-\s)\s*(?P<to>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ.\- '’ʻ`]{2,40})",
@@ -20,7 +25,15 @@ ROUTE_COMPACT_RE = re.compile(
     r"\b(?P<from>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ'’ʻ`]{3,20})-(?P<to>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ'’ʻ`]{3,20})\b",
     re.IGNORECASE,
 )
-WEIGHT_RE = re.compile(r"(?P<weight>\d{1,2}(?:[.,]\d+)?)\s*т(?:онн|онны|онна)?\b", re.IGNORECASE)
+ROUTE_UZ_SUFFIX_RE = re.compile(
+    r"\b(?P<from>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ'’ʻ`]{3,25}?)(?:dan|den|дан)\s+"
+    r"(?P<to>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ'’ʻ`]{3,25}?)(?:ga|qa|ka|га|қа|ка)\b",
+    re.IGNORECASE,
+)
+WEIGHT_RE = re.compile(
+    r"(?P<weight>\d{1,2}(?:[.,]\d+)?)\s*(?:т(?:онн|онны|онна)?|t|ton(?:na|a)?)\b",
+    re.IGNORECASE,
+)
 PRICE_RE = re.compile(
     r"(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{2,8}(?:[.,]\d+)?)\s*(?P<suffix>к|k|тыс|тыс\.|млн|мил|₽|р|руб(?:лей)?|\$|usd|дол(?:лар(?:ов|а)?)?)",
     re.IGNORECASE,
@@ -36,7 +49,9 @@ PRICE_BY_NDS_RE = re.compile(
 
 BODY_TYPES = {
     "тент": "тент",
+    "tent": "тент",
     "реф": "рефрижератор",
+    "ref": "рефрижератор",
     "рефрижератор": "рефрижератор",
     "изотерм": "изотерм",
     "борт": "борт",
@@ -47,6 +62,7 @@ BODY_TYPES = {
     "телега": "трал",
     "низкорамник": "трал",
     "фура": "тент",
+    "fura": "тент",
     "газель": "борт",
 }
 
@@ -110,13 +126,21 @@ CITY_ALIASES = {
     "ростов-на-дону": "Ростов-на-Дону",
     "ташкен": "Ташкент",
     "ташкенд": "Ташкент",
+    "toshkent": "Ташкент",
     "сырдаря": "Сырдарья",
     "бухоро": "Бухара",
     "самарқанд": "Самарканд",
     "самарканд": "Самарканд",
+    "samarqand": "Самарканд",
     "фаргона": "Фергана",
     "фарғона": "Фергана",
     "фергана": "Фергана",
+    "namangan": "Наманган",
+    "andijon": "Андижан",
+    "jizzax": "Джизак",
+    "qashqadaryo": "Кашкадарья",
+    "qoqon": "Коканд",
+    "xorazm": "Хорезм",
     "fargona": "Farg'ona",
     "farg'ona": "Farg'ona",
     "fargʻona": "Farg'ona",
@@ -382,6 +406,12 @@ def _parse_route(text: str) -> tuple[str, str] | tuple[None, None]:
         if from_city and to_city and not _is_invalid_city_name(from_city) and not _is_invalid_city_name(to_city):
             return from_city, to_city
 
+    for suffix_route in ROUTE_UZ_SUFFIX_RE.finditer(route_text):
+        from_city = _normalize_city(suffix_route.group("from"))
+        to_city = _normalize_city(suffix_route.group("to"))
+        if from_city and to_city and not _is_invalid_city_name(from_city) and not _is_invalid_city_name(to_city):
+            return from_city, to_city
+
     return None, None
 
 
@@ -644,10 +674,13 @@ _CARGO_SIGNAL_RE = re.compile(
     r"\d+\s*т(?:онн)?"                    # weight: 20т, 20 тонн
     r"|руб|₽|\d+\s*к\b|\d+\s*тыс"        # price: 120к, 50 тыс, руб
     r"|(?:->|→|—|–)\s*[А-Яа-я]"          # route arrow: -> Москва
+    r"|[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ]{3,20}-[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ]{3,20}"  # compact route
     r"|тент|реф|трал|борт|фура|контейнер" # vehicle types
+    r"|tent|ref|fura"                    # translit vehicle types
     r"|погруз|выгруз|догруз|фрахт"        # logistics terms
+    r"|yuk|yuklan|naqd|nakd|товар"        # translit logistics/payment words
     r"|ндс|предоплат|безнал"              # payment terms
-    r"|(?:\+7|^8\d{10})"                  # phone patterns
+    r"|(?:\+7|^8\d{10}|\+998\d{9})"       # phone patterns
     r")",
     re.IGNORECASE,
 )
