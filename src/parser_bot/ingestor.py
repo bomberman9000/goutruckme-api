@@ -6,9 +6,10 @@ import re
 import time
 
 import redis.asyncio as redis
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, utils
 from telethon.errors import AuthKeyDuplicatedError, FloodWaitError
 from telethon.sessions import StringSession
+from telethon.tl.types import User
 
 from src.core.config import settings
 from src.parser_bot.stream import RedisLogisticsStream
@@ -43,6 +44,45 @@ def _build_session() -> StringSession | str:
     return settings.parser_tg_session_name
 
 
+async def _resolve_chat_filters(
+    client: TelegramClient,
+    chat_ids: list[int | str],
+) -> list[int]:
+    resolved: list[int] = []
+    for item in chat_ids:
+        if isinstance(item, int):
+            resolved.append(item)
+            logger.info("watch target=%s peer_id=%s type=int", item, item)
+            continue
+
+        try:
+            entity = await client.get_entity(item)
+        except Exception as exc:
+            logger.warning("skip unresolved target=%s error=%s", item, str(exc)[:200])
+            continue
+
+        if isinstance(entity, User):
+            logger.warning(
+                "skip non-chat target=%s resolved_user=%s",
+                item,
+                getattr(entity, "username", None) or getattr(entity, "id", None),
+            )
+            continue
+
+        peer_id = int(utils.get_peer_id(entity))
+        resolved.append(peer_id)
+        logger.info(
+            "watch target=%s peer_id=%s title=%s username=%s type=%s",
+            item,
+            peer_id,
+            getattr(entity, "title", None) or getattr(entity, "first_name", None),
+            getattr(entity, "username", None),
+            type(entity).__name__,
+        )
+
+    return resolved
+
+
 async def _build_source_name(event: events.NewMessage.Event) -> str:
     chat = getattr(event, "chat", None)
     if chat is None:
@@ -69,8 +109,14 @@ async def _build_source_name(event: events.NewMessage.Event) -> str:
 
 async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> None:
     client = TelegramClient(_build_session(), settings.parser_tg_api_id, settings.parser_tg_api_hash)
+    await client.start()
+    resolved_chat_ids = await _resolve_chat_filters(client, chat_ids)
+    if not resolved_chat_ids:
+        logger.error("No valid parser chats resolved from config=%s", ",".join(str(c) for c in chat_ids))
+        await client.disconnect()
+        return
 
-    @client.on(events.NewMessage(chats=chat_ids))
+    @client.on(events.NewMessage(chats=resolved_chat_ids))
     async def on_new_message(event: events.NewMessage.Event) -> None:
         text = (event.raw_text or "").strip()
         if not text:
@@ -94,11 +140,11 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
             )
 
     logger.info(
-        "Ingestor started: chats=%s stream=%s",
+        "Ingestor started: configured=%s resolved=%s stream=%s",
         ",".join(str(c) for c in chat_ids),
+        ",".join(str(c) for c in resolved_chat_ids),
         settings.parser_stream_name,
     )
-    await client.start()
     await client.run_until_disconnected()
 
 
