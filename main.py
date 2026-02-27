@@ -183,6 +183,7 @@ async def health_check():
         "status": "healthy" if is_healthy else "unhealthy",
         "timestamp": health["timestamp"],
         "checks": health["checks"],
+        "metrics": health.get("metrics", {}),
     }
 
 
