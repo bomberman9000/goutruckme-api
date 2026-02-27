@@ -239,6 +239,38 @@ def _is_spam(trust: ScoreResult | None) -> bool:
     return int(trust.score) < int(settings.parser_score_min_trust)
 
 
+def _is_unrealistic_rate(parsed: ParsedCargo) -> bool:
+    rate = parsed.rate_rub
+    if not isinstance(rate, int) or rate <= 0:
+        return False
+
+    # Messages with tiny absolute prices are almost always bad parses.
+    if rate < 5000:
+        return True
+
+    try:
+        from src.core.geo import city_coords, haversine_km
+
+        fc = city_coords(parsed.from_city)
+        tc = city_coords(parsed.to_city)
+        if not fc or not tc:
+            return False
+
+        distance_km = haversine_km(fc[0], fc[1], tc[0], tc[1])
+        if distance_km < 50:
+            return False
+
+        rate_per_km = rate / distance_km
+        if distance_km >= 100 and rate_per_km < 8:
+            return True
+        if distance_km >= 500 and rate < 10000:
+            return True
+    except Exception:
+        return False
+
+    return False
+
+
 async def _save_ingest_event(
     *,
     message: StreamMessage,
@@ -372,6 +404,23 @@ async def _process_message(
             await _fill_rate_from_reference(parsed)
             if not parsed.rate_rub:
                 _fill_rate_by_distance(parsed)
+
+        if _is_unrealistic_rate(parsed):
+            await _save_ingest_event(
+                message=message,
+                parsed=parsed,
+                trust=None,
+                is_spam=False,
+                status="ignored",
+            )
+            logger.info(
+                "ignored unrealistic rate id=%s route=%s->%s rate=%s",
+                message.entry_id,
+                parsed.from_city,
+                parsed.to_city,
+                parsed.rate_rub,
+            )
+            return
 
         dedupe_key = build_dedupe_key(parsed, chat_id=message.chat_id, fallback_id=fallback_id)
         is_new = await stream.redis.set(dedupe_key, "1", ex=dedupe_ttl, nx=True)

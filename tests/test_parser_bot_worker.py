@@ -1,0 +1,36 @@
+import src.core.geo as geo
+
+from src.parser_bot.extractor import ParsedCargo
+from src.parser_bot.worker import _is_unrealistic_rate
+
+
+def make_parsed(from_city: str, to_city: str, rate_rub: int) -> ParsedCargo:
+    return ParsedCargo(
+        from_city=from_city,
+        to_city=to_city,
+        body_type="тент",
+        rate_rub=rate_rub,
+        weight_t=20.0,
+        phone=None,
+        inn=None,
+        matched_keywords=["auto"],
+        raw_text="stub",
+    )
+
+
+def test_is_unrealistic_rate_rejects_tiny_absolute_values():
+    parsed = make_parsed("Москва", "Казань", 3203)
+    assert _is_unrealistic_rate(parsed) is True
+
+
+def test_is_unrealistic_rate_rejects_too_low_rate_per_km(monkeypatch):
+    monkeypatch.setattr(geo, "city_coords", lambda city: (0.0, 0.0) if city == "Москва" else (10.0, 10.0))
+    monkeypatch.setattr(geo, "haversine_km", lambda *_args: 1200.0)
+
+    parsed = make_parsed("Москва", "Екатеринбург", 8000)
+    assert _is_unrealistic_rate(parsed) is True
+
+
+def test_is_unrealistic_rate_allows_reasonable_rate():
+    parsed = make_parsed("Москва", "Казань", 120000)
+    assert _is_unrealistic_rate(parsed) is False
