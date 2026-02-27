@@ -1,4 +1,8 @@
-from src.parser_bot.extractor import build_dedupe_key, parse_cargo_message
+from src.parser_bot.extractor import (
+    build_dedupe_key,
+    contains_invalid_geo_token,
+    parse_cargo_message,
+)
 
 
 def test_parse_cargo_message_success():
@@ -78,6 +82,16 @@ def test_parse_cargo_message_skips_non_city_stopword_route():
     text = "Растаможка - Ташкент, 20т, 310000"
     parsed = parse_cargo_message(text, keywords=["тент"])
     assert parsed is None
+
+
+def test_parse_cargo_message_skips_invalid_geo_blacklist_route():
+    assert parse_cargo_message("Оплата - Ташкент, 20т, 100к", keywords=["тент"]) is None
+    assert parse_cargo_message("Верхняя - Ташкент, 20т, 100к", keywords=["тент"]) is None
+
+
+def test_contains_invalid_geo_token_detects_payment_noise():
+    assert contains_invalid_geo_token("Оплата наличными, Москва - Ташкент") is True
+    assert contains_invalid_geo_token("Москва - Ташкент, 20т, 120к") is False
 
 
 def test_parse_cargo_message_does_not_treat_single_hyphenated_city_as_route():

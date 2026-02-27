@@ -74,6 +74,15 @@ CITY_STOP_WORDS = {
     "перегруз",
 }
 
+CITY_INVALID_EXACT = {
+    "оплата",
+    "нал",
+    "растаможка",
+    "растоможка",
+    "верхняя",
+    "боковая",
+}
+
 CITY_ALIASES = {
     "мск": "Москва",
     "москва": "Москва",
@@ -137,6 +146,8 @@ _LLM_SYSTEM_PROMPT = """\
 нск=Новосибирск, рнд=Ростов-на-Дону, нн=Нижний Новгород, крд=Краснодар, \
 крск=Красноярск, кзн=Казань, чел/челяба=Челябинск, врн=Воронеж, \
 тмн=Тюмень, влг=Волгоград.
+- Никогда не считай городами слова: «Оплата», «Нал», «Растаможка», \
+«Растоможка», «Верхняя», «Боковая».
 - Если указан регион вместо города (Сибирь, Урал, Поволжье, Юг, Центр, \
 Северо-Запад, Дальний Восток, Кубань, Кавказ), верни крупнейший город \
 региона: Сибирь→Новосибирск, Урал→Екатеринбург, Поволжье→Самара, \
@@ -241,6 +252,18 @@ def _normalize_city(value: str) -> str:
     return raw.title()
 
 
+def _city_key(value: str) -> str:
+    key = (value or "").strip().lower()
+    key = key.replace("ё", "е").replace("-", " ")
+    key = re.sub(r"[^0-9a-zа-яқғўҳүұ\\s'’ʻ`]", " ", key)
+    key = key.replace("ʻ", "'").replace("’", "'").replace("`", "'")
+    return re.sub(r"\s+", " ", key).strip()
+
+
+def _is_invalid_city_name(value: str) -> bool:
+    return _city_key(value) in CITY_INVALID_EXACT
+
+
 def _normalize_phone(value: str) -> str:
     digits = "".join(ch for ch in value if ch.isdigit())
     if len(digits) == 10:
@@ -332,7 +355,7 @@ def _parse_route(text: str) -> tuple[str, str] | tuple[None, None]:
     if route:
         from_city = _normalize_city(route.group("from"))
         to_city = _normalize_city(route.group("to"))
-        if from_city and to_city:
+        if from_city and to_city and not _is_invalid_city_name(from_city) and not _is_invalid_city_name(to_city):
             return from_city, to_city
 
     compact = ROUTE_COMPACT_RE.search(text)
@@ -343,7 +366,7 @@ def _parse_route(text: str) -> tuple[str, str] | tuple[None, None]:
             return None, None
         from_city = _normalize_city(compact.group("from"))
         to_city = _normalize_city(compact.group("to"))
-        if from_city and to_city:
+        if from_city and to_city and not _is_invalid_city_name(from_city) and not _is_invalid_city_name(to_city):
             return from_city, to_city
 
     return None, None
@@ -428,16 +451,23 @@ def _llm_result_to_parsed(
     from_city = _normalize_city(str(data.get("from_city") or "").strip())
     to_city = _normalize_city(str(data.get("to_city") or "").strip())
     invalid_city_markers = {
-        "нет данных",
-        "не указано",
-        "неизвестно",
-        "unknown",
-        "n/a",
-        "none",
-        "умная логистика",
-        "этрн",
+        _city_key("нет данных"),
+        _city_key("не указано"),
+        _city_key("неизвестно"),
+        _city_key("unknown"),
+        _city_key("n/a"),
+        _city_key("none"),
+        _city_key("умная логистика"),
+        _city_key("этрн"),
     }
-    if from_city.lower() in invalid_city_markers or to_city.lower() in invalid_city_markers:
+    from_city_key = _city_key(from_city)
+    to_city_key = _city_key(to_city)
+    if (
+        from_city_key in invalid_city_markers
+        or to_city_key in invalid_city_markers
+        or _is_invalid_city_name(from_city)
+        or _is_invalid_city_name(to_city)
+    ):
         return None
     if not from_city or not to_city:
         return None
@@ -609,6 +639,11 @@ _CARGO_SIGNAL_RE = re.compile(
     re.IGNORECASE,
 )
 
+_INVALID_GEO_TOKEN_RE = re.compile(
+    r"\b(?:оплата|нал|растаможка|растоможка|верхняя|боковая)\b",
+    re.IGNORECASE,
+)
+
 _MIN_CARGO_TEXT_LEN = 15
 
 
@@ -622,6 +657,10 @@ def looks_like_cargo(text: str) -> bool:
     if len(text) < _MIN_CARGO_TEXT_LEN:
         return False
     return bool(_CARGO_SIGNAL_RE.search(text))
+
+
+def contains_invalid_geo_token(text: str) -> bool:
+    return bool(_INVALID_GEO_TOKEN_RE.search(text or ""))
 
 
 async def parse_cargo_message_llm(

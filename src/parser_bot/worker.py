@@ -21,6 +21,7 @@ from src.parser_bot.extractor import (
     ParsedCargo,
     build_content_dedupe_key,
     build_dedupe_key,
+    contains_invalid_geo_token,
     evaluate_hot_deal,
     parse_cargo_message,
     parse_cargo_message_llm,
@@ -438,6 +439,16 @@ async def _process_message(
             parsed = await parse_cargo_message_llm(text, keywords=keywords)
         else:
             parsed = parse_cargo_message(text, keywords=keywords)
+            if (
+                not parsed
+                and contains_invalid_geo_token(text)
+                and (settings.groq_api_key or settings.openai_api_key)
+            ):
+                logger.info(
+                    "invalid geo token detected, retrying with LLM id=%s",
+                    message.entry_id,
+                )
+                parsed = await parse_cargo_message_llm(text, keywords=keywords)
             if parsed:
                 parsed.is_hot_deal = evaluate_hot_deal(parsed)
         if not parsed:
