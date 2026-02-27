@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import {
+  archiveManualCargo,
   addFavorite,
   addVehicle,
   createManualCargo,
+  fetchMyCargos,
   fetchFavorites,
   fetchFeed,
   fetchSimilar,
   fetchVehicles,
   setVehicleAvailable,
   trackClick,
+  updateManualCargo,
   updateFavoriteStatus,
   type FavoriteItem,
   type FeedItem,
+  type MyCargoItem,
   type SimilarItem,
   type VehicleItem,
 } from "./api";
@@ -21,7 +25,7 @@ import { AddTruckForm } from "./AddTruckForm";
 import { AddCargoForm } from "./AddCargoForm";
 
 type Verdict = "green" | "yellow" | "red";
-type Tab = "feed" | "map" | "dashboard" | "fleet";
+type Tab = "feed" | "map" | "dashboard" | "fleet" | "cargos";
 
 const BODY_TYPES = ["тент", "рефрижератор", "трал", "борт", "контейнер", "изотерм"];
 
@@ -56,6 +60,10 @@ export function App() {
   const [showAddCargo, setShowAddCargo] = useState(false);
   const [addingCargo, setAddingCargo] = useState(false);
   const [cargoError, setCargoError] = useState<string | null>(null);
+  const [myCargos, setMyCargos] = useState<MyCargoItem[]>([]);
+  const [myCargosLoading, setMyCargosLoading] = useState(false);
+  const [myCargosError, setMyCargosError] = useState<string | null>(null);
+  const [editingCargoId, setEditingCargoId] = useState<number | null>(null);
   const [initData] = useState<string | null>(() => {
     const value = (window as any)?.Telegram?.WebApp?.initData || "";
     return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -113,7 +121,20 @@ export function App() {
   useEffect(() => {
     if (tab === "dashboard") fetchFavorites().then(setFavorites);
     if (tab === "fleet") fetchVehicles().then(setVehicles);
+    if (tab === "cargos") void loadMyCargos();
   }, [tab]);
+
+  const loadMyCargos = useCallback(async () => {
+    setMyCargosLoading(true);
+    setMyCargosError(null);
+    try {
+      setMyCargos(await fetchMyCargos());
+    } catch (err) {
+      setMyCargosError(err instanceof Error ? err.message : "Не удалось загрузить мои грузы");
+    } finally {
+      setMyCargosLoading(false);
+    }
+  }, []);
 
   function onCallClick(item: FeedItem) {
     void trackClick(item.id).catch(() => {});
@@ -208,6 +229,7 @@ export function App() {
     description?: string;
     paymentTerms?: string;
   }) {
+    const returnToCargos = tab === "cargos";
     setAddingCargo(true);
     setCargoError(null);
 
@@ -225,8 +247,12 @@ export function App() {
       });
 
       setShowAddCargo(false);
-      setTab("feed");
-      await load(true);
+      if (returnToCargos) {
+        await Promise.all([loadMyCargos(), load(true)]);
+      } else {
+        setTab("feed");
+        await load(true);
+      }
 
       const tg = (window as any)?.Telegram?.WebApp;
       if (tg?.showAlert) {
@@ -238,6 +264,58 @@ export function App() {
       setCargoError(err instanceof Error ? err.message : "Не удалось добавить груз");
     } finally {
       setAddingCargo(false);
+    }
+  }
+
+  async function handleEditCargo(
+    cargoId: number,
+    payload: {
+      origin: string;
+      destination: string;
+      bodyType: string;
+      weight: number;
+      price: number;
+      loadDate: string;
+      loadTime?: string;
+      description?: string;
+      paymentTerms?: string;
+    },
+  ) {
+    setAddingCargo(true);
+    setMyCargosError(null);
+
+    try {
+      await updateManualCargo(cargoId, {
+        origin: payload.origin,
+        destination: payload.destination,
+        body_type: payload.bodyType,
+        weight: payload.weight,
+        price: payload.price,
+        load_date: payload.loadDate,
+        load_time: payload.loadTime ?? null,
+        description: payload.description ?? null,
+        payment_terms: payload.paymentTerms ?? null,
+      });
+      setEditingCargoId(null);
+      await Promise.all([loadMyCargos(), load(true)]);
+    } catch (err) {
+      setMyCargosError(err instanceof Error ? err.message : "Не удалось обновить груз");
+    } finally {
+      setAddingCargo(false);
+    }
+  }
+
+  async function handleArchiveCargo(cargoId: number) {
+    if (!window.confirm("Снять этот груз с публикации?")) {
+      return;
+    }
+    setMyCargosError(null);
+    try {
+      await archiveManualCargo(cargoId);
+      setEditingCargoId((current) => (current === cargoId ? null : current));
+      await Promise.all([loadMyCargos(), load(true)]);
+    } catch (err) {
+      setMyCargosError(err instanceof Error ? err.message : "Не удалось архивировать груз");
     }
   }
 
@@ -400,6 +478,122 @@ export function App() {
     );
   }
 
+  function renderMyCargos() {
+    return (
+      <div className="my-cargos-section">
+        <div className="fleet-header">
+          <h2>📦 Мои грузы</h2>
+          <button
+            className="action-btn primary"
+            onClick={() => {
+              setCargoError(null);
+              setMyCargosError(null);
+              setEditingCargoId(null);
+              setShowAddCargo((prev) => !prev);
+            }}
+          >
+            {showAddCargo ? "Скрыть форму" : "+ Добавить груз"}
+          </button>
+        </div>
+
+        {showAddCargo && (
+          <AddCargoForm
+            onSubmit={handleAddCargo}
+            onCancel={() => {
+              setCargoError(null);
+              setShowAddCargo(false);
+            }}
+            busy={addingCargo}
+            error={cargoError}
+          />
+        )}
+
+        {myCargosError && <div className="error">{myCargosError}</div>}
+
+        {myCargosLoading ? (
+          <p className="muted" style={{ textAlign: "center", padding: "20px" }}>Загружаем…</p>
+        ) : myCargos.length === 0 ? (
+          <p className="muted" style={{ textAlign: "center", padding: "20px" }}>
+            У вас пока нет опубликованных грузов
+          </p>
+        ) : (
+          <div className="my-cargo-list">
+            {myCargos.map((cargo) => {
+              const editing = editingCargoId === cargo.id;
+              return (
+                <div className={`my-cargo-card${cargo.is_published ? " published" : ""}`} key={cargo.id}>
+                  <div className="my-cargo-head">
+                    <div>
+                      <div className="my-cargo-route">{cargo.from_city} → {cargo.to_city}</div>
+                      <div className="my-cargo-meta">
+                        {cargo.body_type} • {cargo.weight}т • {cargo.price.toLocaleString("ru")} ₽
+                      </div>
+                    </div>
+                    <div className="my-cargo-statuses">
+                      <span className={`status-badge ${cargo.is_published ? "free" : ""}`}>
+                        {cargo.is_published ? "🟢 В ленте" : "⚪️ Не в ленте"}
+                      </span>
+                      <span className="muted">{cargo.status}</span>
+                    </div>
+                  </div>
+
+                  <div className="my-cargo-extra">
+                    <span>📅 {cargo.load_date}{cargo.load_time ? ` ${cargo.load_time}` : ""}</span>
+                    {cargo.payment_terms && <span>{cargo.payment_terms}</span>}
+                    {cargo.description && <span>{cargo.description}</span>}
+                  </div>
+
+                  <div className="card-actions">
+                    <button
+                      className="action-btn"
+                      onClick={() => {
+                        setShowAddCargo(false);
+                        setMyCargosError(null);
+                        setEditingCargoId((current) => (current === cargo.id ? null : cargo.id));
+                      }}
+                    >
+                      {editing ? "Скрыть" : "✏️ Редактировать"}
+                    </button>
+                    <button
+                      className="action-btn report"
+                      onClick={() => void handleArchiveCargo(cargo.id)}
+                    >
+                      🗄️ Архив
+                    </button>
+                  </div>
+
+                  {editing && (
+                    <AddCargoForm
+                      onSubmit={(payload) => handleEditCargo(cargo.id, payload)}
+                      onCancel={() => {
+                        setMyCargosError(null);
+                        setEditingCargoId(null);
+                      }}
+                      busy={addingCargo}
+                      error={myCargosError}
+                      submitLabel="💾 Сохранить"
+                      initialValues={{
+                        origin: cargo.from_city,
+                        destination: cargo.to_city,
+                        bodyType: cargo.body_type,
+                        weight: cargo.weight,
+                        price: cargo.price,
+                        loadDate: cargo.load_date,
+                        loadTime: cargo.load_time,
+                        description: cargo.description,
+                        paymentTerms: cargo.payment_terms,
+                      }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <main className="layout">
       <header className="topbar">
@@ -410,6 +604,7 @@ export function App() {
             <button className={`tab-btn${tab === "map" ? " active" : ""}`} onClick={() => setTab("map")}>🗺️</button>
             <button className={`tab-btn${tab === "dashboard" ? " active" : ""}`} onClick={() => setTab("dashboard")}>⭐</button>
             <button className={`tab-btn${tab === "fleet" ? " active" : ""}`} onClick={() => setTab("fleet")}>🚛</button>
+            <button className={`tab-btn${tab === "cargos" ? " active" : ""}`} onClick={() => setTab("cargos")}>📦</button>
           </div>
         </div>
 
@@ -591,6 +786,8 @@ export function App() {
           )}
         </div>
       )}
+
+      {tab === "cargos" && renderMyCargos()}
     </main>
   );
 }

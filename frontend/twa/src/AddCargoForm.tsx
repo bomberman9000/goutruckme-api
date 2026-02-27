@@ -15,6 +15,18 @@ type AddCargoFormProps = {
   onCancel: () => void;
   busy?: boolean;
   error?: string | null;
+  initialValues?: {
+    origin?: string;
+    destination?: string;
+    bodyType?: string;
+    weight?: number;
+    price?: number;
+    loadDate?: string;
+    loadTime?: string | null;
+    description?: string | null;
+    paymentTerms?: string | null;
+  };
+  submitLabel?: string;
 };
 
 const BODY_TYPES = [
@@ -35,16 +47,18 @@ export function AddCargoForm({
   onCancel,
   busy = false,
   error = null,
+  initialValues,
+  submitLabel,
 }: AddCargoFormProps) {
-  const [origin, setOrigin] = useState("");
-  const [destination, setDestination] = useState("");
-  const [bodyType, setBodyType] = useState("тент");
-  const [weight, setWeight] = useState("20");
-  const [price, setPrice] = useState("120000");
-  const [loadDate, setLoadDate] = useState(defaultDate);
-  const [loadTime, setLoadTime] = useState("");
-  const [description, setDescription] = useState("");
-  const [paymentTerms, setPaymentTerms] = useState("");
+  const [origin, setOrigin] = useState(initialValues?.origin ?? "");
+  const [destination, setDestination] = useState(initialValues?.destination ?? "");
+  const [bodyType, setBodyType] = useState(initialValues?.bodyType ?? "тент");
+  const [weight, setWeight] = useState(String(initialValues?.weight ?? 20));
+  const [price, setPrice] = useState(String(initialValues?.price ?? 120000));
+  const [loadDate, setLoadDate] = useState(initialValues?.loadDate ?? defaultDate);
+  const [loadTime, setLoadTime] = useState(initialValues?.loadTime ?? "");
+  const [description, setDescription] = useState(initialValues?.description ?? "");
+  const [paymentTerms, setPaymentTerms] = useState(initialValues?.paymentTerms ?? "");
 
   const canSubmit = useMemo(() => {
     const weightNumber = Number.parseFloat(weight);
@@ -195,7 +209,7 @@ export function AddCargoForm({
 
       <div className="truck-form-actions">
         <button type="submit" className="action-btn primary" disabled={busy || !canSubmit}>
-          {busy ? "⏳ Публикуем" : "✅ Добавить груз"}
+          {busy ? "⏳ Сохраняем" : (submitLabel ?? "✅ Добавить груз")}
         </button>
         <button
           type="button"

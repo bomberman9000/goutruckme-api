@@ -317,3 +317,38 @@ body { background: var(--bg); color: var(--text); }
 }
 .match-route { font-size: 14px; margin-bottom: 4px; }
 .match-details { font-size: 13px; color: var(--muted); }
+
+.my-cargos-section { margin-top: 10px; }
+.my-cargo-list { display: flex; flex-direction: column; gap: 10px; }
+.my-cargo-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.my-cargo-card.published { border-color: var(--green); }
+.my-cargo-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.my-cargo-route { font-size: 15px; font-weight: 700; }
+.my-cargo-meta { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.my-cargo-statuses {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+  font-size: 12px;
+}
+.my-cargo-extra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}

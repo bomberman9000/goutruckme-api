@@ -170,6 +170,29 @@ export type ManualCargoResponse = {
   feed_id: number;
 };
 
+export type MyCargoItem = {
+  id: number;
+  from_city: string;
+  to_city: string;
+  body_type: string;
+  weight: number;
+  price: number;
+  load_date: string;
+  load_time: string | null;
+  description: string | null;
+  payment_terms: string | null;
+  status: string;
+  feed_id: number | null;
+  feed_status: string | null;
+  is_published: boolean;
+  created_at: string;
+};
+
+type MyCargoResponse = {
+  items: MyCargoItem[];
+  limit: number;
+};
+
 export async function fetchVehicles(): Promise<VehicleItem[]> {
   const headers: Record<string, string> = {};
   const initData = (window as any)?.Telegram?.WebApp?.initData || null;
@@ -253,4 +276,63 @@ export async function createManualCargo(payload: ManualCargoPayload): Promise<Ma
   }
 
   return response.json();
+}
+
+export async function fetchMyCargos(limit = 50): Promise<MyCargoItem[]> {
+  const headers: Record<string, string> = {};
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+
+  const response = await fetch(`/api/v1/cargos/my?limit=${limit}`, {
+    credentials: "include",
+    headers,
+  });
+  if (!response.ok) {
+    throw new Error(`My cargos request failed: ${response.status}`);
+  }
+
+  const data = (await response.json()) as MyCargoResponse;
+  return data.items ?? [];
+}
+
+export async function updateManualCargo(
+  cargoId: number,
+  payload: Partial<ManualCargoPayload>,
+): Promise<void> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+
+  const response = await fetch(`/api/v1/cargos/${cargoId}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers,
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Update cargo failed: ${response.status}`);
+  }
+}
+
+export async function archiveManualCargo(cargoId: number): Promise<void> {
+  const headers: Record<string, string> = {};
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+
+  const response = await fetch(`/api/v1/cargos/${cargoId}/archive`, {
+    method: "POST",
+    credentials: "include",
+    headers,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Archive cargo failed: ${response.status}`);
+  }
 }
