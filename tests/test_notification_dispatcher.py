@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.core.models import Cargo, CargoStatus, RouteSubscription, UserVehicle
+from src.core.models import AuditEvent, Cargo, CargoStatus, RouteSubscription, UserVehicle
 from src.core.services import notification_dispatcher as dispatcher
 
 
@@ -23,6 +23,7 @@ class _FakeSession:
         self.subs = subs
         self.vehicles = vehicles
         self.commits = 0
+        self.audit: list[AuditEvent] = []
 
     async def get(self, model, key):
         if model is Cargo and int(key) == int(self.cargo.id):
@@ -36,6 +37,10 @@ class _FakeSession:
         if "FROM user_vehicles" in sql:
             return _FakeExecuteResult(self.vehicles)
         return _FakeExecuteResult([])
+
+    def add(self, obj):
+        if isinstance(obj, AuditEvent):
+            self.audit.append(obj)
 
     async def commit(self):
         self.commits += 1
@@ -92,8 +97,15 @@ async def test_notify_matching_carriers_combines_subscriptions_and_fleet(monkeyp
     ]
     fake_session = _FakeSession(cargo, subs, vehicles)
     sent_to: list[int] = []
+    fake_redis = SimpleNamespace(set=None)
 
     monkeypatch.setattr(dispatcher, "async_session", lambda: fake_session)
+    async def _redis_set(*args, **kwargs):
+        return True
+    fake_redis.set = _redis_set
+    async def _get_redis():
+        return fake_redis
+    monkeypatch.setattr(dispatcher, "get_redis", _get_redis)
 
     async def _dispatch(cargo_obj: Cargo, user_ids: list[int]) -> int:
         assert cargo_obj.id == 7
@@ -108,3 +120,43 @@ async def test_notify_matching_carriers_combines_subscriptions_and_fleet(monkeyp
     assert sorted(sent_to) == [200, 300]
     assert fake_session.cargo.notified_at is not None
     assert fake_session.commits == 1
+    assert fake_session.audit[-1].action == "notification_dispatch"
+
+
+@pytest.mark.asyncio
+async def test_notify_matching_carriers_throttles_duplicates(monkeypatch):
+    cargo = Cargo(
+        id=9,
+        owner_id=100,
+        from_city="Москва",
+        to_city="Казань",
+        cargo_type="тент",
+        weight=10,
+        price=120000,
+        load_date=datetime(2026, 2, 27),
+        status=CargoStatus.NEW,
+    )
+    subs = [RouteSubscription(id=1, user_id=200, from_city="Москва", to_city="Казань", is_active=True)]
+    fake_session = _FakeSession(cargo, subs, [])
+    fake_redis = SimpleNamespace(set=None)
+
+    monkeypatch.setattr(dispatcher, "async_session", lambda: fake_session)
+
+    async def _redis_set(*args, **kwargs):
+        return False
+
+    fake_redis.set = _redis_set
+    async def _get_redis():
+        return fake_redis
+    monkeypatch.setattr(dispatcher, "get_redis", _get_redis)
+
+    async def _dispatch(_cargo_obj: Cargo, _user_ids: list[int]) -> int:
+        raise AssertionError("dispatch should not run when throttled")
+
+    monkeypatch.setattr(dispatcher, "dispatch_cargo_notification", _dispatch)
+
+    sent = await dispatcher.notify_matching_carriers(9)
+
+    assert sent == 0
+    assert fake_session.cargo.notified_at is None
+    assert fake_session.audit[-1].action == "notification_dispatch_throttled"

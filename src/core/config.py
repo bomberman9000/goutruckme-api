@@ -110,6 +110,7 @@ class Settings(BaseSettings):
     premium_stars_7d: int = 700
     premium_stars_30d: int = 2400
     referral_reward_days: int = 7
+    manual_cargo_notify_dedupe_sec: int = 300
 
     @field_validator("admin_id", "parser_tg_api_id", "parser_default_user_id", mode="before")
     @classmethod
