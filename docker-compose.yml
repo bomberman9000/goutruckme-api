@@ -88,8 +88,6 @@ services:
 
   redis:
     image: redis:alpine
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     networks:
@@ -102,8 +100,6 @@ services:
       POSTGRES_USER: bot
       POSTGRES_PASSWORD: botpass
       POSTGRES_DB: botdb
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
