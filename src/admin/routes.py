@@ -9,6 +9,7 @@ from src.admin.auth import (
 )
 from src.core.config import settings
 from src.core.database import async_session
+from src.core.services.watchdog import watchdog
 from src.core.models import (
     User,
     Cargo,
@@ -51,6 +52,8 @@ async def logout():
 
 @router.get("", response_class=HTMLResponse)
 async def dashboard(request: Request, admin: dict = Depends(get_current_admin)):
+    parser_metrics = await watchdog.collect_parser_metrics()
+
     async with async_session() as session:
         # Stats
         users_count = await session.scalar(select(func.count()).select_from(User))
@@ -101,7 +104,8 @@ async def dashboard(request: Request, admin: dict = Depends(get_current_admin)):
             "new_cargos": new_cargos,
             "revenue": total_revenue
         },
-        "recent_cargos": recent_cargos
+        "recent_cargos": recent_cargos,
+        "parser_metrics": parser_metrics,
     })
 
 @router.get("/users", response_class=HTMLResponse)

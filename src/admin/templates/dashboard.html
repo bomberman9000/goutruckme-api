@@ -61,12 +61,51 @@
             </div>
         </div>
         
-        <div class="grid grid-cols-2 gap-6">
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
             <!-- Revenue -->
             <div class="bg-white p-6 rounded-lg shadow">
                 <h2 class="text-xl font-bold mb-4">💰 Оборот</h2>
                 <div class="text-4xl font-bold text-green-600">{{ "{:,}".format(stats.revenue) }} ₽</div>
                 <div class="text-gray-500">Завершённые грузы</div>
+            </div>
+
+            <!-- Parser runtime -->
+            <div class="bg-white p-6 rounded-lg shadow">
+                <h2 class="text-xl font-bold mb-4">📡 Парсер</h2>
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                        <div class="text-gray-500">Очередь</div>
+                        <div class="text-2xl font-bold">{{ parser_metrics.queue_depth if parser_metrics.queue_depth is not none else "—" }}</div>
+                    </div>
+                    <div>
+                        <div class="text-gray-500">Lag</div>
+                        <div class="text-2xl font-bold">{{ parser_metrics.lag if parser_metrics.lag is not none else "—" }}</div>
+                    </div>
+                    <div>
+                        <div class="text-gray-500">Pending</div>
+                        <div class="text-xl font-semibold">{{ parser_metrics.pending if parser_metrics.pending is not none else "—" }}</div>
+                    </div>
+                    <div>
+                        <div class="text-gray-500">Consumers</div>
+                        <div class="text-xl font-semibold">{{ parser_metrics.consumers if parser_metrics.consumers is not none else "—" }}</div>
+                    </div>
+                    <div>
+                        <div class="text-gray-500">Synced 24ч</div>
+                        <div class="text-xl font-semibold text-green-600">{{ parser_metrics.synced_24h if parser_metrics.synced_24h is not none else "—" }}</div>
+                    </div>
+                    <div>
+                        <div class="text-gray-500">Ignored 24ч</div>
+                        <div class="text-xl font-semibold text-amber-600">{{ parser_metrics.ignored_24h if parser_metrics.ignored_24h is not none else "—" }}</div>
+                    </div>
+                </div>
+                <div class="mt-4 text-sm text-gray-500">
+                    Последнее событие:
+                    {% if parser_metrics.last_event_age_min is not none %}
+                    {{ parser_metrics.last_event_age_min }} мин назад
+                    {% else %}
+                    —
+                    {% endif %}
+                </div>
             </div>
             
             <!-- Recent Cargos -->

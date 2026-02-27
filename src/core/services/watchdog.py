@@ -38,6 +38,85 @@ class BotWatchdog:
         if self.error_count >= 5:
             self.is_healthy = False
 
+    async def collect_parser_metrics(self) -> dict:
+        """Collect parser queue + moderation metrics for health/admin views."""
+        metrics = {
+            "stream": settings.parser_stream_name,
+            "group": settings.parser_stream_group,
+            "queue_depth": None,
+            "pending": None,
+            "lag": None,
+            "consumers": None,
+            "manual_review": None,
+            "synced_24h": None,
+            "ignored_24h": None,
+            "last_event_age_min": None,
+        }
+
+        try:
+            from src.core.redis import get_redis
+
+            redis = await get_redis()
+            metrics["queue_depth"] = await redis.xlen(settings.parser_stream_name)
+            try:
+                groups = await redis.xinfo_groups(settings.parser_stream_name)
+                group = next(
+                    (item for item in groups if item.get("name") == settings.parser_stream_group),
+                    None,
+                )
+                if group:
+                    metrics["pending"] = group.get("pending")
+                    metrics["lag"] = group.get("lag")
+                    metrics["consumers"] = group.get("consumers")
+            except Exception:
+                # Stream may exist without a group, or xinfo may not be available yet.
+                pass
+        except Exception:
+            pass
+
+        try:
+            from datetime import timedelta
+            from sqlalchemy import select, func
+            from src.core.database import async_session
+            from src.core.models import ParserIngestEvent
+
+            since = datetime.utcnow() - timedelta(hours=24)
+
+            async with async_session() as session:
+                latest = await session.scalar(
+                    select(func.max(ParserIngestEvent.created_at))
+                )
+                metrics["manual_review"] = await session.scalar(
+                    select(func.count())
+                    .select_from(ParserIngestEvent)
+                    .where(ParserIngestEvent.status == "manual_review")
+                )
+                metrics["synced_24h"] = await session.scalar(
+                    select(func.count())
+                    .select_from(ParserIngestEvent)
+                    .where(
+                        ParserIngestEvent.status == "synced",
+                        ParserIngestEvent.created_at >= since,
+                    )
+                )
+                metrics["ignored_24h"] = await session.scalar(
+                    select(func.count())
+                    .select_from(ParserIngestEvent)
+                    .where(
+                        ParserIngestEvent.status.in_(["ignored", "spam_filtered"]),
+                        ParserIngestEvent.created_at >= since,
+                    )
+                )
+
+            if latest:
+                metrics["last_event_age_min"] = round(
+                    (datetime.utcnow() - latest).total_seconds() / 60
+                )
+        except Exception:
+            pass
+
+        return metrics
+
     async def check_health(self) -> dict:
         """Проверка здоровья системы"""
         results = {
@@ -47,6 +126,7 @@ class BotWatchdog:
             "error_count": self.error_count,
             "restart_count": self.restart_count,
             "checks": {},
+            "metrics": {},
         }
 
         # Redis
@@ -110,26 +190,30 @@ class BotWatchdog:
 
         # Parser freshness
         try:
-            from src.core.database import async_session
-            from src.core.models import ParserIngestEvent
-            from sqlalchemy import select, func
+            parser_metrics = await self.collect_parser_metrics()
+            results["metrics"]["parser"] = parser_metrics
 
-            async with async_session() as session:
-                latest = await session.scalar(
-                    select(func.max(ParserIngestEvent.created_at))
+            last_event_age_min = parser_metrics.get("last_event_age_min")
+            if last_event_age_min is None:
+                results["checks"]["parser"] = "⚠️ No events yet"
+            elif last_event_age_min > 30:
+                results["checks"]["parser"] = (
+                    f"⚠️ No new events for {last_event_age_min:.0f}m"
                 )
-            if latest:
-                parser_idle = (datetime.utcnow() - latest).total_seconds()
-                if parser_idle > 1800:
-                    results["checks"]["parser"] = (
-                        f"⚠️ No new events for {parser_idle / 60:.0f}m"
+            else:
+                results["checks"]["parser"] = (
+                    f"✅ Last event {last_event_age_min:.0f}m ago"
+                )
+
+            lag = parser_metrics.get("lag")
+            queue_depth = parser_metrics.get("queue_depth")
+            if lag is not None and queue_depth is not None:
+                if lag > 0 or queue_depth > 0:
+                    results["checks"]["parser_queue"] = (
+                        f"⚠️ depth={queue_depth} lag={lag}"
                     )
                 else:
-                    results["checks"]["parser"] = (
-                        f"✅ Last event {parser_idle / 60:.0f}m ago"
-                    )
-            else:
-                results["checks"]["parser"] = "⚠️ No events yet"
+                    results["checks"]["parser_queue"] = "✅ depth=0 lag=0"
         except Exception:
             results["checks"]["parser"] = "⚠️ Unable to check"
 
