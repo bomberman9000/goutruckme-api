@@ -144,6 +144,7 @@ from src.api.favorites import router as favorites_router
 from src.api.bridge import router as bridge_router
 from src.api.company import router as company_router
 from src.api.fleet import router as fleet_router
+from src.api.cargos import router as cargos_router
 from src.api.admin_stats import router as admin_stats_router
 from src.api.docs_gen import router as docs_gen_router
 from src.api.finance import router as finance_router
@@ -162,6 +163,7 @@ app.include_router(favorites_router)
 app.include_router(bridge_router)
 app.include_router(company_router)
 app.include_router(fleet_router)
+app.include_router(cargos_router)
 app.include_router(admin_stats_router)
 app.include_router(docs_gen_router)
 app.include_router(finance_router)

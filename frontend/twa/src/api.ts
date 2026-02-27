@@ -152,6 +152,24 @@ export type VehicleItem = {
   sts_verified: boolean;
 };
 
+export type ManualCargoPayload = {
+  origin: string;
+  destination: string;
+  body_type: string;
+  weight: number;
+  price: number;
+  load_date: string;
+  load_time?: string | null;
+  description?: string | null;
+  payment_terms?: string | null;
+};
+
+export type ManualCargoResponse = {
+  ok: boolean;
+  cargo_id: number;
+  feed_id: number;
+};
+
 export async function fetchVehicles(): Promise<VehicleItem[]> {
   const headers: Record<string, string> = {};
   const initData = (window as any)?.Telegram?.WebApp?.initData || null;
@@ -214,4 +232,25 @@ export async function trackClick(feedId: number): Promise<void> {
   if (!response.ok) {
     throw new Error(`Click tracking failed: ${response.status}`);
   }
+}
+
+export async function createManualCargo(payload: ManualCargoPayload): Promise<ManualCargoResponse> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+
+  const response = await fetch("/api/v1/cargos/manual", {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Create cargo failed: ${response.status}`);
+  }
+
+  return response.json();
 }

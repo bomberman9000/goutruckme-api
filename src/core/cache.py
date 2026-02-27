@@ -36,3 +36,13 @@ async def set_cached(prefix: str, params: dict, value: str, ttl: int = FEED_CACH
         await redis.set(key, value, ex=ttl)
     except Exception as exc:
         logger.debug("cache set failed: %s", exc)
+
+
+async def clear_cached(prefix: str) -> None:
+    try:
+        redis = await get_redis()
+        pattern = f"cache:{prefix}:*"
+        async for key in redis.scan_iter(match=pattern):
+            await redis.delete(key)
+    except Exception as exc:
+        logger.debug("cache clear failed: %s", exc)

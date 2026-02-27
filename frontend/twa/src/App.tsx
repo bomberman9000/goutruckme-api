@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   addFavorite,
   addVehicle,
+  createManualCargo,
   fetchFavorites,
   fetchFeed,
   fetchSimilar,
@@ -17,6 +18,7 @@ import {
 
 import { CargoMap } from "./CargoMap";
 import { AddTruckForm } from "./AddTruckForm";
+import { AddCargoForm } from "./AddCargoForm";
 
 type Verdict = "green" | "yellow" | "red";
 type Tab = "feed" | "map" | "dashboard" | "fleet";
@@ -51,6 +53,9 @@ export function App() {
   const [showAddTruck, setShowAddTruck] = useState(false);
   const [addingVehicle, setAddingVehicle] = useState(false);
   const [fleetError, setFleetError] = useState<string | null>(null);
+  const [showAddCargo, setShowAddCargo] = useState(false);
+  const [addingCargo, setAddingCargo] = useState(false);
+  const [cargoError, setCargoError] = useState<string | null>(null);
   const [initData] = useState<string | null>(() => {
     const value = (window as any)?.Telegram?.WebApp?.initData || "";
     return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -189,6 +194,50 @@ export function App() {
       setFleetError(err instanceof Error ? err.message : "Не удалось добавить машину");
     } finally {
       setAddingVehicle(false);
+    }
+  }
+
+  async function handleAddCargo(payload: {
+    origin: string;
+    destination: string;
+    bodyType: string;
+    weight: number;
+    price: number;
+    loadDate: string;
+    loadTime?: string;
+    description?: string;
+    paymentTerms?: string;
+  }) {
+    setAddingCargo(true);
+    setCargoError(null);
+
+    try {
+      await createManualCargo({
+        origin: payload.origin,
+        destination: payload.destination,
+        body_type: payload.bodyType,
+        weight: payload.weight,
+        price: payload.price,
+        load_date: payload.loadDate,
+        load_time: payload.loadTime ?? null,
+        description: payload.description ?? null,
+        payment_terms: payload.paymentTerms ?? null,
+      });
+
+      setShowAddCargo(false);
+      setTab("feed");
+      await load(true);
+
+      const tg = (window as any)?.Telegram?.WebApp;
+      if (tg?.showAlert) {
+        tg.showAlert("Груз опубликован");
+      } else {
+        window.alert("Груз опубликован");
+      }
+    } catch (err) {
+      setCargoError(err instanceof Error ? err.message : "Не удалось добавить груз");
+    } finally {
+      setAddingCargo(false);
     }
   }
 
@@ -390,11 +439,31 @@ export function App() {
                 </button>
               ))}
             </div>
+            <button
+              className="action-btn primary topbar-action"
+              onClick={() => {
+                setCargoError(null);
+                setShowAddCargo((prev) => !prev);
+              }}
+            >
+              {showAddCargo ? "Скрыть груз" : "+ Груз"}
+            </button>
           </>
         )}
       </header>
 
       {error && <div className="error">{error}</div>}
+      {showAddCargo && (tab === "feed" || tab === "map") && (
+        <AddCargoForm
+          onSubmit={handleAddCargo}
+          onCancel={() => {
+            setCargoError(null);
+            setShowAddCargo(false);
+          }}
+          busy={addingCargo}
+          error={cargoError}
+        />
+      )}
 
       {tab === "feed" && (
         <>
