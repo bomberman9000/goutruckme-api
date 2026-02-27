@@ -87,10 +87,12 @@ def test_parse_cargo_message_skips_non_city_stopword_route():
 def test_parse_cargo_message_skips_invalid_geo_blacklist_route():
     assert parse_cargo_message("Оплата - Ташкент, 20т, 100к", keywords=["тент"]) is None
     assert parse_cargo_message("Верхняя - Ташкент, 20т, 100к", keywords=["тент"]) is None
+    assert parse_cargo_message("Без нала - Ташкент, 20т, 100к", keywords=["тент"]) is None
 
 
 def test_contains_invalid_geo_token_detects_payment_noise():
     assert contains_invalid_geo_token("Оплата наличными, Москва - Ташкент") is True
+    assert contains_invalid_geo_token("Без нала, Москва - Ташкент") is True
     assert contains_invalid_geo_token("Москва - Ташкент, 20т, 120к") is False
 
 
