@@ -51,6 +51,12 @@ type EscrowIssueDraft = {
   cargoId: number;
   source: EscrowIssueSource;
 } | null;
+type ActionGuideTone = "success" | "warning" | "info";
+type ActionGuide = {
+  title: string;
+  steps: string[];
+  tone: ActionGuideTone;
+} | null;
 
 const BODY_TYPES = ["тент", "рефрижератор", "трал", "борт", "контейнер", "изотерм"];
 
@@ -68,9 +74,9 @@ function paymentStatusLabel(status: string | null | undefined): string {
     case "payment_pending":
       return "🟡 Ожидает оплату";
     case "funded":
-      return "💰 Оплата гарантирована";
+      return "🛡️ Честный рейс";
     case "delivery_marked":
-      return "🚚 Доставка отмечена";
+      return "🚚 Разгрузка отмечена";
     case "released":
       return "✅ Выплачено";
     case "disputed":
@@ -78,7 +84,7 @@ function paymentStatusLabel(status: string | null | undefined): string {
     case "cancelled":
       return "⛔️ Отменено";
     default:
-      return "⚪️ Без escrow";
+      return "⚪️ Без Честного рейса";
   }
 }
 
@@ -95,7 +101,7 @@ function paymentStatusHint(status: string | null | undefined): string {
     case "disputed":
       return "По сделке открыт спор. Средства остаются под защитой до решения.";
     default:
-      return "Без резервирования оплаты. Для безопасной сделки включи escrow.";
+      return "Честный рейс не включен. Чтобы защитить оплату, включите резервирование средств.";
   }
 }
 
@@ -107,6 +113,24 @@ function disputeStatusHint(status: string | null | undefined): string {
       return "Идет разбор спорной ситуации. Средства остаются под защитой.";
     default:
       return "Событие зафиксировано в журнале безопасных сделок.";
+  }
+}
+
+function cargoStatusLabel(status: string | null | undefined): string {
+  switch (status) {
+    case "new":
+    case "active":
+      return "🆕 Новый";
+    case "in_progress":
+      return "🚛 В работе";
+    case "completed":
+      return "✅ Завершён";
+    case "archived":
+      return "🗄️ Архив";
+    case "cancelled":
+      return "❌ Отменён";
+    default:
+      return status || "—";
   }
 }
 
@@ -172,11 +196,16 @@ export function App() {
   const [issueReason, setIssueReason] = useState("");
   const [issueNote, setIssueNote] = useState("");
   const [issueSubmitting, setIssueSubmitting] = useState(false);
+  const [actionGuide, setActionGuide] = useState<ActionGuide>(null);
   const [initData] = useState<string | null>(() => {
     const value = (window as any)?.Telegram?.WebApp?.initData || "";
     return typeof value === "string" && value.trim() ? value.trim() : null;
   });
   const canUseTelegramOnlyActions = Boolean(initData);
+
+  function showActionGuide(title: string, steps: string[], tone: ActionGuideTone = "info") {
+    setActionGuide({ title, steps, tone });
+  }
 
   const parsedSearch = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -393,6 +422,17 @@ export function App() {
 
       setVehicles(await fetchVehicles());
       setShowAddTruck(false);
+      showActionGuide(
+        "🚛 Машина добавлена",
+        [
+          payload.markAvailable && payload.locationCity
+            ? "Проверь блок “🎯 Совпадения” — подбор уже выполнен."
+            : "Если машина готова к рейсу, отметь её как свободную.",
+          "Открой вкладку “🚛” и проверь подходящие грузы.",
+          "Если маршрутов мало, включи подписки на нужные направления.",
+        ],
+        "success",
+      );
     } catch (err) {
       setFleetError(err instanceof Error ? err.message : "Не удалось добавить машину");
     } finally {
@@ -459,12 +499,15 @@ export function App() {
         await load(true);
       }
 
-      const tg = (window as any)?.Telegram?.WebApp;
-      if (tg?.showAlert) {
-        tg.showAlert("Груз опубликован");
-      } else {
-        window.alert("Груз опубликован");
-      }
+      showActionGuide(
+        "📦 Груз создан",
+        [
+          "Проверь карточку в ленте и убедись, что маршрут и ставка выглядят корректно.",
+          "При необходимости включи “🛡️ Честный рейс”, чтобы защитить оплату.",
+          "Дальше жди отклики или открой “🎯 Совпадения” для подходящей техники.",
+        ],
+        "success",
+      );
     } catch (err) {
       setCargoError(err instanceof Error ? err.message : "Не удалось добавить груз");
     } finally {
@@ -642,6 +685,21 @@ export function App() {
       setIssueDraft(null);
       setIssueReason("");
       setIssueNote("");
+      showActionGuide(
+        issueDraft.kind === "refund" ? "↩️ Запрос на возврат отправлен" : "⚠️ Спор открыт",
+        issueDraft.kind === "refund"
+          ? [
+              "Сделка переведена в разбор, средства остаются под защитой.",
+              "Следи за обновлениями в “💼 Кошелек” и разделе Честного рейса.",
+              "Не подтверждай выплату до решения по возврату.",
+            ]
+          : [
+              "Сделка переведена в спорный статус, средства заморожены до решения.",
+              "Проверь комментарий и историю в “💼 Кошелек”.",
+              "Если нужны детали, дождись решения админа и не закрывай сделку вручную.",
+            ],
+        issueDraft.kind === "refund" ? "warning" : "info",
+      );
     } catch (err) {
       const message = err instanceof Error
         ? err.message
@@ -1144,7 +1202,7 @@ export function App() {
             {inProgress.map(kanbanCard)}
           </div>
           <div className="kanban-col">
-            <div className="kanban-header done">✅ Завершено <span className="count">{completed.length}</span></div>
+            <div className="kanban-header done">✅ Завершён <span className="count">{completed.length}</span></div>
             {completed.map(kanbanCard)}
           </div>
         </div>
@@ -1207,7 +1265,7 @@ export function App() {
                       <span className={`status-badge ${cargo.is_published ? "free" : ""}`}>
                         {cargo.is_published ? "🟢 В ленте" : "⚪️ Не в ленте"}
                       </span>
-                      <span className="muted">{cargo.status}</span>
+                      <span className="muted">{cargoStatusLabel(cargo.status)}</span>
                     </div>
                   </div>
 
@@ -1226,7 +1284,7 @@ export function App() {
                         className="action-btn primary"
                         onClick={() => void handleCreateEscrow(cargo)}
                       >
-                        💰 Забронировать
+                        🛡️ Включить Честный рейс
                       </button>
                     )}
                     {cargo.payment_status === "payment_pending" && (
@@ -1234,7 +1292,7 @@ export function App() {
                         className="action-btn primary"
                         onClick={() => void handleCreateEscrow(cargo)}
                       >
-                        🔗 Оплатить
+                        🔗 Оплатить Честный рейс
                       </button>
                     )}
                     {cargo.payment_status === "funded" && (
@@ -1242,7 +1300,7 @@ export function App() {
                         className="action-btn primary"
                         onClick={() => void handleMarkEscrowDelivered(cargo.id)}
                       >
-                        🚚 Доставлено
+                        🚚 Отметить разгрузку
                       </button>
                     )}
                     {cargo.payment_status === "delivery_marked" && (
@@ -1426,7 +1484,7 @@ export function App() {
                         className="action-btn primary"
                         onClick={() => void handleCreateEscrowById(cargo.id, cargo.price, "wallet")}
                       >
-                        🔗 Оплатить
+                        🔗 Оплатить Честный рейс
                       </button>
                     )}
                     {cargo.payment_status === "funded" && (
@@ -1434,7 +1492,7 @@ export function App() {
                         className="action-btn primary"
                         onClick={() => void handleMarkEscrowDelivered(cargo.id)}
                       >
-                        🚚 Доставлено
+                        🚚 Отметить разгрузку
                       </button>
                     )}
                     {cargo.payment_status === "delivery_marked" && (
@@ -1642,6 +1700,21 @@ export function App() {
       </header>
 
       {error && <div className="error">{error}</div>}
+      {actionGuide && (
+        <section className={`action-guide ${actionGuide.tone}`}>
+          <div className="action-guide-head">
+            <strong>{actionGuide.title}</strong>
+            <button className="action-guide-close" onClick={() => setActionGuide(null)} aria-label="Закрыть">
+              ✕
+            </button>
+          </div>
+          <ol className="action-guide-steps">
+            {actionGuide.steps.map((step, index) => (
+              <li key={`${index}-${step}`}>{step}</li>
+            ))}
+          </ol>
+        </section>
+      )}
       {showAddCargo && (tab === "feed" || tab === "map") && (
         <AddCargoForm
           onSubmit={handleAddCargo}

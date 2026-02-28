@@ -149,7 +149,7 @@
                         {% endif %}
                         {% if deal.status.value in ["payment_pending", "funded", "delivery_marked", "disputed"] %}
                         <form action="/admin/escrow/{{ deal.id }}/cancel" method="POST" class="w-full border rounded-lg p-3 bg-red-50">
-                            <div class="text-xs font-semibold text-red-800 mb-2">Отмена / refund</div>
+                            <div class="text-xs font-semibold text-red-800 mb-2">↩️ Возврат / отмена</div>
                             <input
                                 type="text"
                                 name="reason"
@@ -163,7 +163,7 @@
                                 class="w-full px-3 py-2 text-sm border rounded mb-2"
                             ></textarea>
                             <button type="submit" class="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
-                                Отменить и вернуть
+                                Отменить сделку и вернуть
                             </button>
                         </form>
                         {% endif %}

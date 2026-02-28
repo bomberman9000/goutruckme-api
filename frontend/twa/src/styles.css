@@ -28,6 +28,67 @@ body {
 
 .layout { max-width: 920px; margin: 0 auto; padding: 12px; }
 
+.action-guide {
+  margin: 10px 0 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(96, 132, 182, 0.22);
+  background: rgba(14, 24, 42, 0.68);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 8px 24px rgba(2, 8, 23, 0.18);
+}
+.action-guide.success {
+  border-color: rgba(34, 197, 94, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 8px 24px rgba(34, 197, 94, 0.12);
+}
+.action-guide.warning {
+  border-color: rgba(234, 179, 8, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 8px 24px rgba(234, 179, 8, 0.12);
+}
+.action-guide.info {
+  border-color: rgba(59, 130, 246, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 8px 24px rgba(59, 130, 246, 0.12);
+}
+.action-guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.action-guide-head strong {
+  font-size: 14px;
+}
+.action-guide-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.action-guide-close:hover {
+  color: var(--text);
+}
+.action-guide-steps {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  color: #d6e1ed;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 /* ─── Top bar ───────────────────────────────────── */
 .topbar {
   position: sticky;

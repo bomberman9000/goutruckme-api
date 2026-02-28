@@ -97,11 +97,11 @@ async def render_cargo_card(session, cargo: Cargo, viewer_id: int) -> tuple[str,
 
     status_map = {
         "new": "🆕 Новый",
-        "in_progress": "🚚 В пути",
+        "in_progress": "🚛 В работе",
         "completed": "✅ Завершён",
         "cancelled": "❌ Отменён",
-        "archived": "🗄 Архив",
-        "active": "✅ Активный",
+        "archived": "🗄️ Архив",
+        "active": "🆕 Новый",
     }
 
     text = f"📦 <b>Груз #{cargo.id}</b>\n\n"
@@ -172,11 +172,11 @@ async def send_cargo_details(message: Message, cargo_id: int) -> bool:
 
     status_map = {
         "new": "🆕 Новый",
-        "in_progress": "🚚 В пути",
+        "in_progress": "🚛 В работе",
         "completed": "✅ Завершён",
         "cancelled": "❌ Отменён",
-        "archived": "🗄 Архив",
-        "active": "✅ Активный",
+        "archived": "🗄️ Архив",
+        "active": "🆕 Новый",
     }
 
     is_owner = cargo.owner_id == message.from_user.id

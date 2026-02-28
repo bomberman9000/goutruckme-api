@@ -236,7 +236,7 @@ async def cmd_start(message: Message, state: FSMContext):
 
             await message.answer(
                 "✅ Аккаунт успешно привязан.\n\n"
-                "Откройте WebApp или используйте меню бота.",
+                "Откройте Mini App или используйте меню бота.",
                 reply_markup=webapp_entry_kb(),
             )
             return

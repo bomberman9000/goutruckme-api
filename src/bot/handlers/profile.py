@@ -169,7 +169,7 @@ async def show_history(cb: CallbackQuery):
         status = {
             CargoStatus.COMPLETED: "✅ Завершён",
             CargoStatus.CANCELLED: "❌ Отменён",
-            CargoStatus.ARCHIVED: "🗄 Архив",
+            CargoStatus.ARCHIVED: "🗄️ Архив",
         }.get(c.status, c.status.value)
 
         text = f"{role} {c.from_city} → {c.to_city}\n"
