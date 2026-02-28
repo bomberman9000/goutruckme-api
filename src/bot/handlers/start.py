@@ -6,6 +6,7 @@ from aiogram.types import (
     ReplyKeyboardRemove,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    WebAppInfo,
 )
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
@@ -16,6 +17,7 @@ from src.core.database import async_session
 from src.core.models import User, Reminder, UserProfile, UserRole
 from src.core.services.cross_sync import (
     confirm_gruzpotok_telegram_link,
+    create_gruzpotok_login_link,
     verify_gruzpotok_login_token,
 )
 from src.core.services.referral import attach_referral_invite
@@ -326,8 +328,37 @@ async def open_webapp(message: Message):
 
 @router.message(Command("link"))
 async def legacy_link(message: Message):
+    login_url = await create_gruzpotok_login_link(
+        telegram_user_id=message.from_user.id,
+        redirect_path="/webapp",
+    )
+
+    if login_url:
+        rows: list[list[InlineKeyboardButton]] = [
+            [InlineKeyboardButton(text="🌐 Открыть площадку", url=login_url)]
+        ]
+        webapp_base = (settings.webapp_url or "").rstrip("/")
+        if webapp_base:
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        text="📱 Открыть WebApp",
+                        web_app=WebAppInfo(url=f"{webapp_base}/webapp"),
+                    )
+                ]
+            )
+        rows.append([InlineKeyboardButton(text="◀️ Меню", callback_data="menu")])
+
+        await message.answer(
+            "🔗 Вход по старому сценарию доступен.\n\n"
+            "Откройте площадку по кнопке ниже — вход выполнится автоматически.\n"
+            "Личный кабинет в Telegram тоже доступен из WebApp.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+        )
+        return
+
     await message.answer(
-        "🔗 Отдельная команда привязки больше не нужна.\n\n"
+        "🔗 Авто-вход через сайт сейчас недоступен.\n\n"
         "Откройте WebApp из этого бота — Telegram-сессия подтянется автоматически.\n"
         "Если доступ устарел, обновите его в кабинете.",
         reply_markup=webapp_entry_kb(),
