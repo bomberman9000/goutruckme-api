@@ -1,7 +1,8 @@
 from pathlib import Path
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from src.core.config import settings
 from src.core.logger import logger
@@ -239,8 +240,11 @@ async def api_cargos(from_city: str = None, to_city: str = None):
     return [{"id": c.id, "from": c.from_city, "to": c.to_city, "weight": c.weight, "price": c.price} for c in cargos]
 
 @app.get("/")
-async def root():
-    return {"message": "Logistics Bot API", "admin": "/admin"}
+async def root(request: Request):
+    accept = (request.headers.get("accept") or "").lower()
+    if "text/html" in accept:
+        return RedirectResponse(url="/webapp", status_code=302)
+    return {"message": "Logistics Bot API", "admin": "/admin", "webapp": "/webapp"}
 
 if __name__ == "__main__":
     import uvicorn
