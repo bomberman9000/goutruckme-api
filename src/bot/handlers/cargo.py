@@ -601,6 +601,28 @@ async def my_responses(cb: CallbackQuery):
         pass
     await cb.answer()
 
+
+@router.message(Command("applications"))
+async def legacy_applications(message: Message):
+    """Legacy alias for old bot users: /applications -> my responses."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(CargoResponse).where(CargoResponse.carrier_id == message.from_user.id).limit(10)
+        )
+        responses = result.scalars().all()
+
+    if not responses:
+        await message.answer("📭 Нет откликов")
+        return
+
+    text = "🚛 <b>Мои отклики:</b>\n\n"
+    for r in responses:
+        status = "⏳" if r.is_accepted is None else ("✅" if r.is_accepted else "❌")
+        link = cargo_deeplink(r.cargo_id)
+        text += f"{status} Груз #{r.cargo_id} — {r.price_offer or 'без цены'}₽ {link}\n"
+
+    await message.answer(text, parse_mode="HTML")
+
 @router.callback_query(F.data == "add_cargo")
 async def add_cargo_start(cb: CallbackQuery, state: FSMContext):
     await cb.message.edit_text(

@@ -183,6 +183,18 @@ async def feed_search(message: Message):
     await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
 
 
+@router.message(Command("loads"))
+async def legacy_loads(message: Message):
+    """Legacy alias for old bot users: /loads -> /feed."""
+    return await feed_search(message)
+
+
+@router.message(Command("cargos"))
+async def legacy_cargos(message: Message):
+    """Legacy alias for old bot users: /cargos -> /feed."""
+    return await feed_search(message)
+
+
 @router.message(Command("myfeed"))
 async def my_feed(message: Message):
     """Show user's saved cargos (favorites)."""

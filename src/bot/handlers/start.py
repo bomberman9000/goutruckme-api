@@ -280,6 +280,16 @@ async def open_webapp(message: Message):
         reply_markup=webapp_entry_kb(),
     )
 
+
+@router.message(Command("link"))
+async def legacy_link(message: Message):
+    await message.answer(
+        "🔗 Отдельная команда привязки больше не нужна.\n\n"
+        "Откройте WebApp из этого бота — Telegram-сессия подтянется автоматически.\n"
+        "Если доступ устарел, обновите его в кабинете.",
+        reply_markup=webapp_entry_kb(),
+    )
+
 @router.callback_query(Onboarding.role, F.data.startswith("role_"))
 async def onboarding_role(cb: CallbackQuery, state: FSMContext):
     role_key = cb.data.replace("role_", "")
