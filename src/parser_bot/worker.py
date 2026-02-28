@@ -240,6 +240,20 @@ def _is_spam(trust: ScoreResult | None) -> bool:
     return int(trust.score) < int(settings.parser_score_min_trust)
 
 
+def _has_min_signal(parsed: ParsedCargo) -> bool:
+    return any(
+        value not in (None, "", 0, 0.0)
+        for value in (
+            parsed.rate_rub,
+            parsed.weight_t,
+            parsed.phone,
+            parsed.inn,
+            parsed.body_type,
+            parsed.dimensions,
+        )
+    )
+
+
 def _is_unrealistic_rate(parsed: ParsedCargo) -> bool:
     rate = parsed.rate_rub
     if not isinstance(rate, int) or rate <= 0:
@@ -461,11 +475,7 @@ async def _process_message(
             )
             return
 
-        has_min_signal = any(
-            value not in (None, "", 0, 0.0)
-            for value in (parsed.rate_rub, parsed.weight_t, parsed.phone, parsed.inn)
-        )
-        if not has_min_signal:
+        if not _has_min_signal(parsed):
             await _save_ingest_event(
                 message=message,
                 parsed=parsed,

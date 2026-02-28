@@ -2,7 +2,7 @@ import src.core.geo as geo
 from src.core.config import settings
 
 from src.parser_bot.extractor import ParsedCargo
-from src.parser_bot.worker import _is_unrealistic_rate, _rate_review_reason
+from src.parser_bot.worker import _has_min_signal, _is_unrealistic_rate, _rate_review_reason
 
 
 def make_parsed(from_city: str, to_city: str, rate_rub: int) -> ParsedCargo:
@@ -56,3 +56,19 @@ def test_rate_review_reason_allows_reasonable_caps(monkeypatch):
 
     parsed = make_parsed("Москва", "Екатеринбург", 120000)
     assert _rate_review_reason(parsed) is None
+
+
+def test_has_min_signal_accepts_body_only_route_offer():
+    parsed = ParsedCargo(
+        from_city="Уфа",
+        to_city="Ташкент",
+        body_type="рефрижератор",
+        rate_rub=None,
+        weight_t=None,
+        phone=None,
+        inn=None,
+        matched_keywords=["auto"],
+        raw_text="stub",
+    )
+
+    assert _has_min_signal(parsed) is True

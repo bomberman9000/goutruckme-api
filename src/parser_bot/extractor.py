@@ -14,6 +14,7 @@ PHONE_RE = re.compile(
     r"(?:"
     r"(?:\+7|7|8)\D{0,3}\d{3}\D{0,3}\d{3}\D{0,3}\d{2}\D{0,3}\d{2}"
     r"|(?:\+998)\D{0,3}\d{2}\D{0,3}\d{3}\D{0,3}\d{2}\D{0,3}\d{2}"
+    r"|(?:\b9\d)\D{0,3}\d{3}\D{0,3}\d{2}\D{0,3}\d{2}\b"
     r")"
 )
 INN_RE = re.compile(r"\b\d{10}(?:\d{2})?\b")
@@ -76,18 +77,25 @@ CITY_STOP_WORDS = {
     "на",
     "в",
     "тент",
+    "tent",
     "реф",
+    "ref",
     "рефрижератор",
     "изотерм",
     "контейнер",
     "борт",
     "трал",
+    "фура",
+    "fura",
     "догруз",
     "растаможка",
     "растоможка",
     "таможня",
     "перецепка",
     "перегруз",
+    "kerak",
+    "керак",
+    "yuk",
 }
 
 CITY_INVALID_EXACT = {
@@ -183,6 +191,7 @@ CITY_ALIASES = {
     "сырдаря": "Сырдарья",
     "сирдарё": "Сырдарья",
     "бухоро": "Бухара",
+    "buxoro": "Бухара",
     "самарқанд": "Самарканд",
     "самарканд": "Самарканд",
     "samarqand": "Самарканд",
@@ -330,6 +339,8 @@ def _normalize_city(value: str) -> str:
     words = [w for w in words if w]
     while words and words[0].lower() in CITY_STOP_WORDS:
         words.pop(0)
+    while words and words[-1].lower() in CITY_STOP_WORDS:
+        words.pop()
     if len(words) > 2:
         words = words[-2:]
     raw = " ".join(words).strip()
@@ -362,6 +373,8 @@ def _is_invalid_city_name(value: str) -> bool:
 
 def _normalize_phone(value: str) -> str:
     digits = "".join(ch for ch in value if ch.isdigit())
+    if len(digits) == 9 and digits.startswith("9"):
+        return f"+998{digits}"
     if len(digits) == 12 and digits.startswith("998"):
         return f"+{digits}"
     if len(digits) == 10:

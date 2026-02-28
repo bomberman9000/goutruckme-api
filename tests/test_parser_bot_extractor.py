@@ -135,6 +135,16 @@ def test_parse_cargo_message_parses_uzbek_suffix_route():
     assert parsed.weight_t == 25.0
 
 
+def test_parse_cargo_message_parses_local_uzbek_phone_without_country_code():
+    text = "Buxoro - Qashqadaryo tent kerak 90-478-28-11"
+    parsed = parse_cargo_message(text, keywords=["тент"])
+
+    assert parsed is not None
+    assert parsed.from_city == "Бухара"
+    assert parsed.to_city == "Кашкадарья"
+    assert parsed.phone == "+998904782811"
+
+
 def test_split_cargo_message_blocks_splits_multiload_posts():
     text = (
         "Москва - Ташкент\n"
