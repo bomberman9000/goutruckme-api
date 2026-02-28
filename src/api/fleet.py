@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
+from src.core.audit import log_audit_event
 from src.core.database import async_session
 from src.core.models import UserVehicle
 from src.core.services.matching_engine import find_matches_for_vehicle
@@ -87,6 +88,16 @@ async def add_vehicle(
             plate_number=body.plate_number,
         )
         session.add(v)
+        await session.flush()
+        log_audit_event(
+            session,
+            entity_type="vehicle",
+            entity_id=int(v.id),
+            action="vehicle_create",
+            actor_user_id=tma_user.user_id,
+            actor_role="user",
+            meta={"body_type": body.body_type},
+        )
         await session.commit()
         await session.refresh(v)
     return VehicleResponse(
@@ -138,6 +149,15 @@ async def set_available(
             raise HTTPException(status_code=404, detail="vehicle not found")
         v.is_available = True
         v.location_city = city.strip()
+        log_audit_event(
+            session,
+            entity_type="vehicle",
+            entity_id=int(v.id),
+            action="vehicle_available",
+            actor_user_id=tma_user.user_id,
+            actor_role="user",
+            meta={"city": v.location_city},
+        )
         await session.commit()
         await session.refresh(v)
 

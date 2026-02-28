@@ -422,6 +422,7 @@ export function App() {
 
       setTab("fleet");
       setVehicles(await fetchVehicles());
+      await loadProfileSummary();
       setShowAddTruck(false);
       showActionGuide(
         "🚛 Машина добавлена",
@@ -446,6 +447,7 @@ export function App() {
       const result = await fetchVehicleMatches(vehicleId);
       setVehicleMatchMap((prev) => ({ ...prev, [vehicleId]: result }));
       setMatchResult(result);
+      await loadProfileSummary();
     } catch (err) {
       setFleetError(err instanceof Error ? err.message : "Не удалось загрузить совпадения");
     }
@@ -455,6 +457,7 @@ export function App() {
     try {
       const result = await fetchCargoMatches(cargoId);
       setCargoMatchMap((prev) => ({ ...prev, [cargoId]: result }));
+      await loadProfileSummary();
     } catch (err) {
       setMyCargosError(err instanceof Error ? err.message : "Не удалось загрузить совпадения");
     }
@@ -494,7 +497,7 @@ export function App() {
 
       setShowAddCargo(false);
       setTab("cargos");
-      await Promise.all([loadMyCargos(), load(true)]);
+      await Promise.all([loadMyCargos(), load(true), loadProfileSummary()]);
       await showCargoMatches(created.cargo_id);
 
       showActionGuide(
@@ -1189,6 +1192,22 @@ export function App() {
               </>
             ) : (
               <div className="cabinet-meta">{matchSummaryError || "Совпадения появятся после загрузки"}</div>
+            )}
+          </article>
+
+          <article className="cabinet-card">
+            <div className="cabinet-title">📈 Следующие шаги</div>
+            {profileSummary ? (
+              <>
+                <div className="cabinet-meta">Создано грузов: {profileSummary.engagement.created_cargos}</div>
+                <div className="cabinet-meta">Открыто совпадений по грузам: {profileSummary.engagement.opened_cargo_matches}</div>
+                <div className="cabinet-meta">Выведено машин на линию: {profileSummary.engagement.activated_vehicles}</div>
+                <div className="cabinet-meta">Открыто совпадений по машинам: {profileSummary.engagement.opened_vehicle_matches}</div>
+                <div className="cabinet-meta">Включён Честный рейс: {profileSummary.engagement.enabled_honest_route}</div>
+                <button className="action-btn" onClick={() => setTab("subscriptions")}>Смотреть подписки →</button>
+              </>
+            ) : (
+              <div className="cabinet-meta">{profileLoading ? "Загружаем…" : "Статистика появится после действий"}</div>
             )}
           </article>
         </section>

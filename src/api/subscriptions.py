@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
+from src.core.audit import log_audit_event
 from src.core.database import async_session
 from src.core.models import ParserIngestEvent, RouteSubscription
 from src.core.services.feed_notifications import _find_matching_subs
@@ -141,6 +142,15 @@ async def create_subscription(
 
         sub = RouteSubscription(user_id=tma_user.user_id, is_active=True, **payload)
         session.add(sub)
+        await session.flush()
+        log_audit_event(
+            session,
+            entity_type="subscription",
+            entity_id=int(sub.id),
+            action="subscription_create",
+            actor_user_id=tma_user.user_id,
+            actor_role="user",
+        )
         await session.commit()
         await session.refresh(sub)
 

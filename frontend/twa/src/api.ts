@@ -427,6 +427,16 @@ export type WebappProfileResponse = {
     ambassador_target: number;
     is_ambassador: boolean;
   };
+  engagement: {
+    window_days: number;
+    created_cargos: number;
+    opened_cargo_matches: number;
+    created_vehicles: number;
+    activated_vehicles: number;
+    opened_vehicle_matches: number;
+    created_subscriptions: number;
+    enabled_honest_route: number;
+  };
   cargos: WebappProfileCargo[];
   refund_journal: RefundJournalItem[];
 };

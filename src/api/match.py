@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
+from src.core.audit import log_audit_event
 from src.core.database import async_session
 from src.core.models import Cargo, UserVehicle
 from src.core.services.matching_engine import (
@@ -24,6 +25,21 @@ def _to_payload(value: object) -> dict:
     if hasattr(value, "__dict__"):
         return dict(vars(value))
     raise TypeError("unsupported match payload")
+
+
+async def _append_match_audit(session, *, entity_type: str, entity_id: int, action: str, user_id: int, meta: dict | None = None) -> None:
+    if not hasattr(session, "add"):
+        return
+    log_audit_event(
+        session,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action=action,
+        actor_user_id=user_id,
+        actor_role="user",
+        meta=meta,
+    )
+    await session.commit()
 
 
 class VehicleMatchItem(BaseModel):
@@ -91,6 +107,14 @@ async def get_vehicle_matches(
         if not vehicle:
             raise HTTPException(status_code=404, detail="vehicle not found")
         matches = await find_matches_for_vehicle(session, vehicle, limit=limit)
+        await _append_match_audit(
+            session,
+            entity_type="vehicle",
+            entity_id=int(vehicle.id),
+            action="vehicle_match_view",
+            user_id=tma_user.user_id,
+            meta={"count": len(matches)},
+        )
     return VehicleMatchResponse(
         vehicle_id=int(vehicle.id),
         location_city=vehicle.location_city,
@@ -115,6 +139,14 @@ async def get_cargo_matches(
         if not cargo:
             raise HTTPException(status_code=404, detail="cargo not found")
         matches = await find_matches_for_cargo(session, cargo, limit=limit)
+        await _append_match_audit(
+            session,
+            entity_type="cargo",
+            entity_id=int(cargo.id),
+            action="cargo_match_view",
+            user_id=tma_user.user_id,
+            meta={"count": len(matches)},
+        )
     return CargoMatchResponse(
         cargo_id=int(cargo.id),
         matched=[CargoMatchVehicleItem(**_to_payload(match)) for match in matches],
@@ -128,4 +160,11 @@ async def get_match_summary(
 ) -> MatchSummaryResponse:
     async with async_session() as session:
         summary = await build_match_summary(session, tma_user.user_id)
+        await _append_match_audit(
+            session,
+            entity_type="user",
+            entity_id=int(tma_user.user_id),
+            action="match_summary_view",
+            user_id=tma_user.user_id,
+        )
     return MatchSummaryResponse(**_to_payload(summary))

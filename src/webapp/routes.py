@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -24,6 +25,7 @@ from src.core.models import (
     User,
     Claim,
     ClaimStatus,
+    AuditEvent,
 )
 from src.core.services.referral import build_referral_deeplink
 
@@ -376,6 +378,28 @@ async def webapp_profile(
             )
             or 0
         )
+        engagement_actions = [
+            "cargo_manual_create",
+            "cargo_match_view",
+            "vehicle_create",
+            "vehicle_available",
+            "vehicle_match_view",
+            "subscription_create",
+            "escrow_created",
+        ]
+        engagement_cutoff = datetime.utcnow() - timedelta(days=7)
+        engagement_rows = (
+            await session.execute(
+                select(AuditEvent.action, func.count())
+                .where(
+                    AuditEvent.actor_user_id == user_id,
+                    AuditEvent.action.in_(engagement_actions),
+                    AuditEvent.created_at >= engagement_cutoff,
+                )
+                .group_by(AuditEvent.action)
+            )
+        ).all()
+        engagement_counts = {str(action): int(count) for action, count in engagement_rows}
         referral_link = build_referral_deeplink(settings.bot_username, user_id)
         ambassador_target = max(1, int(settings.referral_ambassador_threshold))
 
@@ -411,6 +435,16 @@ async def webapp_profile(
             "invited_bonus_days": activated_count * max(0, int(settings.referral_invited_reward_days)),
             "ambassador_target": ambassador_target,
             "is_ambassador": activated_count >= ambassador_target,
+        },
+        "engagement": {
+            "window_days": 7,
+            "created_cargos": engagement_counts.get("cargo_manual_create", 0),
+            "opened_cargo_matches": engagement_counts.get("cargo_match_view", 0),
+            "created_vehicles": engagement_counts.get("vehicle_create", 0),
+            "activated_vehicles": engagement_counts.get("vehicle_available", 0),
+            "opened_vehicle_matches": engagement_counts.get("vehicle_match_view", 0),
+            "created_subscriptions": engagement_counts.get("subscription_create", 0),
+            "enabled_honest_route": engagement_counts.get("escrow_created", 0),
         },
         "cargos": [
             {

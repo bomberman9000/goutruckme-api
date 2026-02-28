@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
+from src.core.audit import log_audit_event
 from src.core.cache import clear_cached
 from src.core.database import async_session
 from src.core.models import Cargo, CargoPaymentStatus, CargoStatus, EscrowDeal, EscrowStatus, ParserIngestEvent, User
@@ -304,6 +305,16 @@ async def create_manual_cargo(
         session.add(feed_event)
         await session.commit()
         await session.refresh(feed_event)
+        log_audit_event(
+            session,
+            entity_type="cargo",
+            entity_id=int(cargo.id),
+            action="cargo_manual_create",
+            actor_user_id=tma_user.user_id,
+            actor_role="user",
+            meta={"feed_id": int(feed_event.id)},
+        )
+        await session.commit()
 
     await clear_cached("feed")
     background_tasks.add_task(notify_matching_carriers, cargo.id)
