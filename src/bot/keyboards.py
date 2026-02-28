@@ -284,12 +284,12 @@ def deal_actions(cargo_id: int, is_owner: bool = False):
 
 
 def webapp_cargo_button(cargo_id: int):
-    """Inline button that opens a specific cargo in the WebApp."""
+    """Inline button that opens a specific cargo in the Mini App."""
     url = _webapp_url(f"#cargo/{cargo_id}")
     if not url:
         return None
     return InlineKeyboardButton(
-        text="📱 Открыть в WebApp",
+        text="📱 Открыть в Mini App",
         web_app=WebAppInfo(url=url),
     )
 

@@ -371,7 +371,7 @@ async def open_webapp(message: Message):
 
     await message.answer(
         "📱 Mini App открывается внутри Telegram.\n\n"
-        "Там доступны кабинет, кошелёк, грузы, флот и matching.",
+        "Там доступны кабинет, кошелёк, грузы, флот и подбор рейсов.",
         reply_markup=webapp_entry_kb(),
     )
 
@@ -392,7 +392,7 @@ async def legacy_link(message: Message):
             rows.append(
                 [
                     InlineKeyboardButton(
-                        text="📱 Открыть WebApp",
+                        text="📱 Открыть Mini App",
                         web_app=WebAppInfo(url=f"{webapp_base}/webapp"),
                     )
                 ]
@@ -402,14 +402,14 @@ async def legacy_link(message: Message):
         await message.answer(
             "🔗 Вход по старому сценарию доступен.\n\n"
             "Откройте площадку по кнопке ниже — вход выполнится автоматически.\n"
-            "Личный кабинет в Telegram тоже доступен из WebApp.",
+            "Кабинет в Telegram также доступен через Mini App.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
         )
         return
 
     await message.answer(
         "🔗 Авто-вход через сайт сейчас недоступен.\n\n"
-        "Откройте WebApp из этого бота — Telegram-сессия подтянется автоматически.\n"
+        "Откройте Mini App из этого бота — Telegram-сессия подтянется автоматически.\n"
         "Если доступ устарел, обновите его в кабинете.",
         reply_markup=webapp_entry_kb(),
     )
@@ -564,7 +564,7 @@ async def cmd_help(message: Message):
         "📚 <b>Как пользоваться ГрузПотоком</b>\n\n"
         "<b>Что где находится:</b>\n"
         "• Бот — быстрые команды, поиск, отклики, уведомления\n"
-        "• Mini App — кабинет, кошелёк, Safe Deal, флот, мои грузы\n"
+        "• Mini App — кабинет, кошелёк, Честный рейс / Safe Deal, флот, мои грузы\n"
         "• Сайт — полная площадка и работа через браузер\n\n"
         "<b>Основные действия в боте:</b>\n"
         "🚛 Найти груз\n"
@@ -580,7 +580,7 @@ async def cmd_help(message: Message):
         "<b>Основные команды:</b>\n"
         "/start — меню\n"
         "/help — помощь\n"
-        "/webapp — личный кабинет\n"
+        "/webapp — открыть Mini App\n"
         "/buy_premium — купить premium\n"
         "/referral — пригласить коллегу\n"
         "/me — мой профиль\n"
@@ -600,7 +600,7 @@ async def cmd_help(message: Message):
         "• /find из казани до 100к — из Казани, до 100,000₽\n"
         "• /find ростов 10-15т — из Ростова, 10-15 тонн\n\n"
         "<b>Совет:</b>\n"
-        "Для кабинета и Safe Deal используйте Mini App через кнопку в меню."
+        "Для кабинета и Честного рейса используйте Mini App через кнопку в меню."
     )
 
 @router.message(Command("me"))

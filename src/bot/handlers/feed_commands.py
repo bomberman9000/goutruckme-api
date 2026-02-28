@@ -97,7 +97,7 @@ async def feed_search(message: Message):
             "• <code>/feed Самара тент</code>\n"
             "• <code>/feed Сибирь</code> (по региону)\n"
             "• <code>/feed</code> — последние 5 грузов\n\n"
-            "Полная лента: откройте WebApp 📱",
+            "Полная лента: откройте Mini App 📱",
             parse_mode="HTML",
         )
         async with async_session() as session:
@@ -213,7 +213,7 @@ async def my_feed(message: Message):
         if not favs:
             await message.answer(
                 "📋 <b>Мои рейсы</b>\n\n"
-                "Пусто. Сохраняйте грузы через WebApp (кнопка ⭐) "
+                "Пусто. Сохраняйте грузы через Mini App (кнопка ⭐) "
                 "или <code>/save_123</code> (где 123 — ID груза).",
                 parse_mode="HTML",
             )
