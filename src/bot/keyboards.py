@@ -27,12 +27,12 @@ def main_menu():
     b.row(InlineKeyboardButton(text="📦 Разместить груз", callback_data="add_cargo"))
     b.row(InlineKeyboardButton(text="🧾 Мои грузы", callback_data="my_cargos"))
     b.row(InlineKeyboardButton(text="🤝 Мои отклики", callback_data="my_responses"))
-    b.row(InlineKeyboardButton(text="⭐ Рейтинг / Профиль", callback_data="profile"))
+    b.row(InlineKeyboardButton(text="⭐ Кабинет / Профиль", callback_data="profile"))
     b.row(InlineKeyboardButton(text="🆘 Поддержка", callback_data="feedback"))
     url = _webapp_url()
     if url:
         b.row(InlineKeyboardButton(
-            text="📱 Открыть WebApp",
+            text="📱 Открыть Mini App",
             web_app=WebAppInfo(url=url),
         ))
     return b.as_markup()
@@ -44,7 +44,7 @@ def webapp_entry_kb(path: str = ""):
     if url:
         b.row(
             InlineKeyboardButton(
-                text="🌐 Открыть личный кабинет",
+                text="📱 Открыть Mini App",
                 web_app=WebAppInfo(url=url),
             )
         )
