@@ -1,4 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+
+import { searchCities, type CitySuggestion } from "./api";
 
 type AddCargoFormProps = {
   onSubmit: (payload: {
@@ -50,6 +52,8 @@ export function AddCargoForm({
   initialValues,
   submitLabel,
 }: AddCargoFormProps) {
+  const originListId = useId();
+  const destinationListId = useId();
   const [origin, setOrigin] = useState(initialValues?.origin ?? "");
   const [destination, setDestination] = useState(initialValues?.destination ?? "");
   const [bodyType, setBodyType] = useState(initialValues?.bodyType ?? "тент");
@@ -59,6 +63,8 @@ export function AddCargoForm({
   const [loadTime, setLoadTime] = useState(initialValues?.loadTime ?? "");
   const [description, setDescription] = useState(initialValues?.description ?? "");
   const [paymentTerms, setPaymentTerms] = useState(initialValues?.paymentTerms ?? "");
+  const [originSuggestions, setOriginSuggestions] = useState<CitySuggestion[]>([]);
+  const [destinationSuggestions, setDestinationSuggestions] = useState<CitySuggestion[]>([]);
 
   const canSubmit = useMemo(() => {
     const weightNumber = Number.parseFloat(weight);
@@ -73,6 +79,54 @@ export function AddCargoForm({
       && loadDate.trim().length === 10
     );
   }, [destination, loadDate, origin, price, weight]);
+
+  useEffect(() => {
+    if (origin.trim().length < 2) {
+      setOriginSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const items = await searchCities(origin, 5);
+        if (!cancelled) {
+          setOriginSuggestions(items);
+        }
+      } catch {
+        if (!cancelled) {
+          setOriginSuggestions([]);
+        }
+      }
+    }, 220);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [origin]);
+
+  useEffect(() => {
+    if (destination.trim().length < 2) {
+      setDestinationSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const items = await searchCities(destination, 5);
+        if (!cancelled) {
+          setDestinationSuggestions(items);
+        }
+      } catch {
+        if (!cancelled) {
+          setDestinationSuggestions([]);
+        }
+      }
+    }, 220);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [destination]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -103,9 +157,19 @@ export function AddCargoForm({
             value={origin}
             onChange={(event) => setOrigin(event.target.value)}
             placeholder="Москва"
+            list={originListId}
             disabled={busy}
             required
           />
+          <datalist id={originListId}>
+            {originSuggestions.map((item) => (
+              <option
+                key={`origin-${item.full_name}`}
+                value={item.name}
+                label={item.full_name}
+              />
+            ))}
+          </datalist>
         </label>
 
         <label className="truck-field">
@@ -115,9 +179,19 @@ export function AddCargoForm({
             value={destination}
             onChange={(event) => setDestination(event.target.value)}
             placeholder="Казань"
+            list={destinationListId}
             disabled={busy}
             required
           />
+          <datalist id={destinationListId}>
+            {destinationSuggestions.map((item) => (
+              <option
+                key={`destination-${item.full_name}`}
+                value={item.name}
+                label={item.full_name}
+              />
+            ))}
+          </datalist>
         </label>
 
         <label className="truck-field">

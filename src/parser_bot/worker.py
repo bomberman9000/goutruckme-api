@@ -29,6 +29,7 @@ from src.parser_bot.extractor import (
 )
 from src.parser_bot.stream import RedisLogisticsStream, StreamMessage
 from src.antifraud.scoring import ScoreResult, get_score
+from src.core.services.geo_service import get_geo_service
 
 
 logging.basicConfig(
@@ -216,13 +217,16 @@ def _fill_rate_by_distance(parsed: ParsedCargo) -> bool:
     if parsed.rate_rub:
         return True
     try:
-        from src.core.geo import city_coords, haversine_km
+        if parsed.route_distance_km:
+            distance_km = float(parsed.route_distance_km)
+        else:
+            from src.core.geo import city_coords, haversine_km
 
-        fc = city_coords(parsed.from_city)
-        tc = city_coords(parsed.to_city)
-        if not fc or not tc:
-            return False
-        distance_km = haversine_km(fc[0], fc[1], tc[0], tc[1])
+            fc = city_coords(parsed.from_city)
+            tc = city_coords(parsed.to_city)
+            if not fc or not tc:
+                return False
+            distance_km = haversine_km(fc[0], fc[1], tc[0], tc[1])
         if distance_km < 10:
             return False
 
@@ -273,14 +277,17 @@ def _is_unrealistic_rate(parsed: ParsedCargo) -> bool:
         return True
 
     try:
-        from src.core.geo import city_coords, haversine_km
+        if parsed.route_distance_km:
+            distance_km = float(parsed.route_distance_km)
+        else:
+            from src.core.geo import city_coords, haversine_km
 
-        fc = city_coords(parsed.from_city)
-        tc = city_coords(parsed.to_city)
-        if not fc or not tc:
-            return False
+            fc = city_coords(parsed.from_city)
+            tc = city_coords(parsed.to_city)
+            if not fc or not tc:
+                return False
 
-        distance_km = haversine_km(fc[0], fc[1], tc[0], tc[1])
+            distance_km = haversine_km(fc[0], fc[1], tc[0], tc[1])
         if distance_km < 50:
             return False
 
@@ -304,14 +311,17 @@ def _rate_review_reason(parsed: ParsedCargo) -> str | None:
         return "rate_above_cap"
 
     try:
-        from src.core.geo import city_coords, haversine_km
+        if parsed.route_distance_km:
+            distance_km = float(parsed.route_distance_km)
+        else:
+            from src.core.geo import city_coords, haversine_km
 
-        fc = city_coords(parsed.from_city)
-        tc = city_coords(parsed.to_city)
-        if not fc or not tc:
-            return None
+            fc = city_coords(parsed.from_city)
+            tc = city_coords(parsed.to_city)
+            if not fc or not tc:
+                return None
 
-        distance_km = haversine_km(fc[0], fc[1], tc[0], tc[1])
+            distance_km = haversine_km(fc[0], fc[1], tc[0], tc[1])
         if distance_km < 10:
             return None
 
@@ -380,11 +390,22 @@ async def _save_ingest_event(
             "provider": trust.provider,
             "details": trust.details,
         }
+    if parsed and parsed.route_distance_km:
+        details["distance_km"] = int(parsed.route_distance_km)
 
-    from src.core.geo import city_coords
-
-    from_coords = city_coords(parsed.from_city) if parsed else None
-    to_coords = city_coords(parsed.to_city) if parsed else None
+    from_coords = None
+    to_coords = None
+    if parsed:
+        if parsed.from_lat is not None and parsed.from_lon is not None:
+            from_coords = (parsed.from_lat, parsed.from_lon)
+        else:
+            from src.core.geo import city_coords
+            from_coords = city_coords(parsed.from_city)
+        if parsed.to_lat is not None and parsed.to_lon is not None:
+            to_coords = (parsed.to_lat, parsed.to_lon)
+        else:
+            from src.core.geo import city_coords
+            to_coords = city_coords(parsed.to_city)
 
     event = ParserIngestEvent(
         stream_entry_id=message.entry_id,
@@ -483,6 +504,32 @@ async def _process_message(
                 status="ignored",
             )
             return
+
+        route_geo = await get_geo_service().resolve_route(parsed.from_city, parsed.to_city)
+        if not route_geo:
+            await _save_ingest_event(
+                message=message,
+                parsed=parsed,
+                trust=None,
+                is_spam=False,
+                status="ignored",
+                error="invalid_cities",
+            )
+            logger.info(
+                "ignored invalid cities id=%s route=%s->%s",
+                message.entry_id,
+                parsed.from_city,
+                parsed.to_city,
+            )
+            return
+
+        parsed.from_city = route_geo.origin.name
+        parsed.to_city = route_geo.destination.name
+        parsed.from_lat = route_geo.origin.lat
+        parsed.from_lon = route_geo.origin.lon
+        parsed.to_lat = route_geo.destination.lat
+        parsed.to_lon = route_geo.destination.lon
+        parsed.route_distance_km = route_geo.distance_km
 
         if not _has_min_signal(parsed):
             await _save_ingest_event(

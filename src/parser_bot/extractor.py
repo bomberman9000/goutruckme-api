@@ -334,6 +334,11 @@ class ParsedCargo:
     is_hot_deal: bool = False
     suggested_response: str | None = None
     phone_blacklisted: bool = False
+    route_distance_km: int | None = None
+    from_lat: float | None = None
+    from_lon: float | None = None
+    to_lat: float | None = None
+    to_lon: float | None = None
 
 
 def _normalize_city(value: str) -> str:

@@ -35,12 +35,32 @@ export type FeedItem = {
   company_rating: number | null;
 };
 
+export type CitySuggestion = {
+  name: string;
+  full_name: string;
+  lat: number;
+  lon: number;
+  source: string;
+};
+
 function getRequiredInitData(actionLabel: string): string {
   const initData = (window as any)?.Telegram?.WebApp?.initData || null;
   if (!initData) {
     throw new Error(`${actionLabel} доступно только из Telegram Mini App`);
   }
   return initData;
+}
+
+async function buildApiError(response: Response, fallback: string): Promise<Error> {
+  try {
+    const payload = await response.json() as { detail?: string };
+    if (payload?.detail && typeof payload.detail === "string") {
+      return new Error(payload.detail);
+    }
+  } catch {
+    // ignore non-json bodies
+  }
+  return new Error(`${fallback}: ${response.status}`);
 }
 
 export type SimilarItem = {
@@ -94,6 +114,21 @@ export async function fetchFeed(params: {
     throw new Error(`Feed request failed: ${response.status}`);
   }
   return (await response.json()) as FeedResponse;
+}
+
+export async function searchCities(query: string, limit = 5): Promise<CitySuggestion[]> {
+  const q = query.trim();
+  if (q.length < 2) {
+    return [];
+  }
+  const response = await fetch(`/api/v1/geo/cities?q=${encodeURIComponent(q)}&limit=${limit}`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    return [];
+  }
+  const data = await response.json() as { items?: CitySuggestion[] };
+  return data.items ?? [];
 }
 
 export type FavoriteItem = {
@@ -394,7 +429,7 @@ export async function createManualCargo(payload: ManualCargoPayload): Promise<Ma
   });
 
   if (!response.ok) {
-    throw new Error(`Create cargo failed: ${response.status}`);
+    throw await buildApiError(response, "Create cargo failed");
   }
 
   return response.json();
@@ -437,7 +472,7 @@ export async function updateManualCargo(
   });
 
   if (!response.ok) {
-    throw new Error(`Update cargo failed: ${response.status}`);
+    throw await buildApiError(response, "Update cargo failed");
   }
 }
 

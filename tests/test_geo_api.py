@@ -1,0 +1,44 @@
+from __future__ import annotations
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from src.api import geo as geo_api
+
+
+class _FakeGeoService:
+    async def suggest_cities(self, query: str, *, limit: int = 5):
+        assert query == "Екат"
+        return [
+            {
+                "name": "Екатеринбург",
+                "full_name": "Екатеринбург, Свердловская область, Россия",
+                "lat": 56.84,
+                "lon": 60.61,
+                "source": "stub",
+            }
+        ][:limit]
+
+
+def test_geo_cities_returns_suggestions(monkeypatch):
+    app = FastAPI()
+    app.include_router(geo_api.router)
+    monkeypatch.setattr(geo_api, "get_geo_service", lambda: _FakeGeoService())
+    client = TestClient(app)
+
+    response = client.get("/api/v1/geo/cities?q=Екат&limit=3")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"][0]["name"] == "Екатеринбург"
+    assert body["items"][0]["source"] == "stub"
+
+
+def test_geo_cities_short_query_returns_empty():
+    app = FastAPI()
+    app.include_router(geo_api.router)
+    client = TestClient(app)
+
+    response = client.get("/api/v1/geo/cities?q=Е")
+
+    assert response.status_code == 422

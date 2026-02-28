@@ -12,6 +12,7 @@ from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
 from src.core.cache import clear_cached
 from src.core.database import async_session
 from src.core.models import Cargo, CargoPaymentStatus, CargoStatus, EscrowDeal, EscrowStatus, ParserIngestEvent, User
+from src.core.services.geo_service import get_geo_service
 from src.core.services.notification_dispatcher import notify_matching_carriers
 
 router = APIRouter(tags=["cargos"])
@@ -109,6 +110,16 @@ def _details_match_cargo_id(details_json: str | None, cargo_id: int) -> bool:
     return bool(details_json and f"\"cargo_id\": {cargo_id}" in details_json)
 
 
+def _load_details_payload(details_json: str | None) -> dict:
+    if not details_json:
+        return {}
+    try:
+        payload = json.loads(details_json)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
 def _build_manual_raw_text(
     origin: str,
     destination: str,
@@ -195,14 +206,18 @@ async def create_manual_cargo(
     background_tasks: BackgroundTasks,
     tma_user: TelegramTMAUser = Depends(get_required_tma_user),
 ) -> ManualCargoResponse:
-    from src.core.geo import city_coords
-
     origin = body.origin.strip()
     destination = body.destination.strip()
     body_type = body.body_type.strip()
     description = _normalize_text(body.description)
     payment_terms = _normalize_text(body.payment_terms)
     username, full_name = _ensure_user_full_name(tma_user.raw, tma_user.user_id)
+    route_geo = await get_geo_service().resolve_route(origin, destination)
+    if not route_geo:
+        raise HTTPException(status_code=422, detail="Invalid cities detected")
+
+    origin = route_geo.origin.name
+    destination = route_geo.destination.name
 
     async with async_session() as session:
         user = await session.get(User, tma_user.user_id)
@@ -236,8 +251,6 @@ async def create_manual_cargo(
         session.add(cargo)
         await session.flush()
 
-        from_coords = city_coords(origin)
-        to_coords = city_coords(destination)
         trust_score = int(user.trust_score or 50)
         feed_event = ParserIngestEvent(
             stream_entry_id=f"manual-{uuid.uuid4().hex}",
@@ -260,10 +273,10 @@ async def create_manual_cargo(
             is_hot_deal=False,
             suggested_response=None,
             phone_blacklisted=False,
-            from_lat=from_coords[0] if from_coords else None,
-            from_lon=from_coords[1] if from_coords else None,
-            to_lat=to_coords[0] if to_coords else None,
-            to_lon=to_coords[1] if to_coords else None,
+            from_lat=route_geo.origin.lat,
+            from_lon=route_geo.origin.lon,
+            to_lat=route_geo.destination.lat,
+            to_lon=route_geo.destination.lon,
             trust_score=trust_score,
             trust_verdict=_trust_verdict(trust_score),
             trust_comment="Ручное размещение через Mini App",
@@ -283,6 +296,7 @@ async def create_manual_cargo(
                     "created_via": "twa_manual_form",
                     "cargo_id": cargo.id,
                     "owner_id": tma_user.user_id,
+                    "distance_km": route_geo.distance_km,
                 },
                 ensure_ascii=False,
             ),
@@ -355,8 +369,6 @@ async def update_my_cargo(
     body: ManualCargoUpdate,
     tma_user: TelegramTMAUser = Depends(get_required_tma_user),
 ) -> CargoMutationResponse:
-    from src.core.geo import city_coords
-
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -369,10 +381,21 @@ async def update_my_cargo(
             raise HTTPException(status_code=409, detail="Archived cargo cannot be edited")
 
         event = await _find_manual_feed_event(session, tma_user.user_id, cargo.id)
+        route_geo = None
+        route_touched = "origin" in updates or "destination" in updates
+        if route_touched:
+            next_origin = (updates.get("origin") or cargo.from_city or "").strip()
+            next_destination = (updates.get("destination") or cargo.to_city or "").strip()
+            route_geo = await get_geo_service().resolve_route(next_origin, next_destination)
+            if not route_geo:
+                raise HTTPException(status_code=422, detail="Invalid cities detected")
 
-        if "origin" in updates:
+        if route_geo:
+            cargo.from_city = route_geo.origin.name
+            cargo.to_city = route_geo.destination.name
+        elif "origin" in updates:
             cargo.from_city = updates["origin"].strip()
-        if "destination" in updates:
+        elif "destination" in updates:
             cargo.to_city = updates["destination"].strip()
         if "body_type" in updates:
             cargo.cargo_type = updates["body_type"].strip()
@@ -388,16 +411,20 @@ async def update_my_cargo(
             cargo.comment = _normalize_text(updates["description"])
 
         if event:
-            if "origin" in updates:
+            if route_geo:
                 event.from_city = cargo.from_city
-                from_coords = city_coords(cargo.from_city)
-                event.from_lat = from_coords[0] if from_coords else None
-                event.from_lon = from_coords[1] if from_coords else None
-            if "destination" in updates:
                 event.to_city = cargo.to_city
-                to_coords = city_coords(cargo.to_city)
-                event.to_lat = to_coords[0] if to_coords else None
-                event.to_lon = to_coords[1] if to_coords else None
+                event.from_lat = route_geo.origin.lat
+                event.from_lon = route_geo.origin.lon
+                event.to_lat = route_geo.destination.lat
+                event.to_lon = route_geo.destination.lon
+                details = _load_details_payload(event.details_json)
+                details["distance_km"] = route_geo.distance_km
+                event.details_json = json.dumps(details, ensure_ascii=False)
+            elif "origin" in updates:
+                event.from_city = cargo.from_city
+            elif "destination" in updates:
+                event.to_city = cargo.to_city
             if "body_type" in updates:
                 event.body_type = cargo.cargo_type
             if "weight" in updates:

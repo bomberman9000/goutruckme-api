@@ -94,15 +94,30 @@ def _verified_payment(value: CargoPaymentStatus | str | None) -> bool:
 
 
 def _extract_manual_cargo_id(details_json: str | None) -> int | None:
-    if not details_json:
-        return None
-    try:
-        payload = json.loads(details_json)
-    except Exception:
-        return None
+    payload = _extract_details_payload(details_json)
     cargo_id = payload.get("cargo_id")
     if isinstance(cargo_id, int):
         return cargo_id
+    return None
+
+
+def _extract_details_payload(details_json: str | None) -> dict:
+    if not details_json:
+        return {}
+    try:
+        payload = json.loads(details_json)
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _extract_distance_km(details_json: str | None) -> int | None:
+    payload = _extract_details_payload(details_json)
+    distance_km = payload.get("distance_km")
+    if isinstance(distance_km, int) and distance_km > 0:
+        return distance_km
+    if isinstance(distance_km, float) and distance_km > 0:
+        return int(round(distance_km))
     return None
 
 
@@ -129,8 +144,20 @@ def _is_premium_active(user: User | None) -> bool:
     return user.premium_until >= datetime.now()
 
 
-def _calc_rate_per_km(from_city: str | None, to_city: str | None, rate: int | None) -> tuple[float | None, int | None]:
-    if not from_city or not to_city or not rate:
+def _calc_rate_per_km(
+    from_city: str | None,
+    to_city: str | None,
+    rate: int | None,
+    *,
+    distance_hint: int | None = None,
+) -> tuple[float | None, int | None]:
+    if not rate:
+        return None, None
+    if distance_hint and distance_hint > 0:
+        if distance_hint < 10:
+            return None, distance_hint
+        return round(rate / distance_hint, 1), distance_hint
+    if not from_city or not to_city:
         return None, None
     from src.core.geo import city_coords, haversine_km
     fc = city_coords(from_city)
@@ -299,7 +326,13 @@ async def get_feed(
 
     feed_items = []
     for item in items:
-        rpk, dist = _calc_rate_per_km(item.from_city, item.to_city, item.rate_rub)
+        distance_hint = _extract_distance_km(getattr(item, "details_json", None))
+        rpk, dist = _calc_rate_per_km(
+            item.from_city,
+            item.to_city,
+            item.rate_rub,
+            distance_hint=distance_hint,
+        )
         manual_cargo = manual_cargo_map.get(_extract_manual_cargo_id(getattr(item, "details_json", None)) or -1)
         owner_company = company_map.get(int(manual_cargo.owner_id)) if manual_cargo else None
         payment_status = _payment_status_value(getattr(manual_cargo, "payment_status", None)) if manual_cargo else None
@@ -411,7 +444,13 @@ async def get_cargo_detail(
                     select(CompanyDetails).where(CompanyDetails.user_id == manual_cargo.owner_id)
                 )
 
-    rpk, dist = _calc_rate_per_km(event.from_city, event.to_city, event.rate_rub)
+    distance_hint = _extract_distance_km(getattr(event, "details_json", None))
+    rpk, dist = _calc_rate_per_km(
+        event.from_city,
+        event.to_city,
+        event.rate_rub,
+        distance_hint=distance_hint,
+    )
     payment_status = _payment_status_value(getattr(manual_cargo, "payment_status", None)) if manual_cargo else None
 
     return CargoDetailResponse(

@@ -126,6 +126,7 @@ def _row(row_id: int, verdict: str = "green"):
         from_lon=None,
         to_lat=None,
         to_lon=None,
+        details_json=None,
     )
 
 
@@ -170,6 +171,19 @@ def test_feed_shows_phone_with_premium():
     assert item["phone_masked"] is False
     assert item["can_view_contact"] is True
     assert item["phone"] == "+79991112233"
+
+
+def test_feed_uses_distance_hint_from_details_json():
+    row = _row(10)
+    row.details_json = '{"distance_km": 2000}'
+    client = _build_client([row])
+
+    response = client.get("/api/v1/feed")
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["distance_km"] == 2000
+    assert item["rate_per_km"] == 50.0
 
 
 def test_feed_click_logs_event():

@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     # WebApp
     webapp_url: str | None = None  # e.g. https://yourdomain.com
     telegram_tma_max_age_sec: int = 86400
+    geo_http_timeout_sec: int = 5
+    geo_nominatim_url: str = "https://nominatim.openstreetmap.org/search"
+    geo_osrm_url: str = "https://router.project-osrm.org/route/v1/driving"
+    geo_user_agent: str = "GoTruck_AI_Bot/1.0"
 
     # AI
     groq_api_key: str | None = None

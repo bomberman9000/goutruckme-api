@@ -13,7 +13,6 @@ from fastapi.testclient import TestClient
 
 from src.api import cargos as cargos_api
 from src.core.config import settings
-from src.core import geo as geo_service
 from src.core.models import Cargo, CargoStatus, ParserIngestEvent, User
 
 
@@ -75,6 +74,15 @@ class _FakeSession:
         return None
 
 
+class _FakeGeoService:
+    async def resolve_route(self, origin: str, destination: str):
+        return SimpleNamespace(
+            origin=SimpleNamespace(name=origin.strip().title(), lat=55.75, lon=37.61),
+            destination=SimpleNamespace(name=destination.strip().title(), lat=55.79, lon=49.12),
+            distance_km=820,
+        )
+
+
 def _build_tma_header(user_id: int) -> dict[str, str]:
     payload_user = json.dumps(
         {"id": user_id, "first_name": "Alex", "last_name": "Logist"},
@@ -110,6 +118,7 @@ def test_create_manual_cargo_creates_cargo_and_feed_event(monkeypatch):
 
     monkeypatch.setattr(cargos_api, "clear_cached", _clear_cached)
     monkeypatch.setattr(cargos_api, "notify_matching_carriers", _notify)
+    monkeypatch.setattr(cargos_api, "get_geo_service", lambda: _FakeGeoService())
 
     client = TestClient(app)
     response = client.post(
@@ -151,6 +160,9 @@ def test_create_manual_cargo_creates_cargo_and_feed_event(monkeypatch):
     assert event.rate_rub == 120000
     assert event.trust_verdict == "yellow"
     assert event.details_json is not None
+    assert "\"distance_km\": 820" in event.details_json
+    assert event.from_lat == 55.75
+    assert event.to_lon == 49.12
 
     assert user.full_name == "Alex Logist"
     assert dispatched == [1]
@@ -301,7 +313,7 @@ def test_update_my_cargo_updates_cargo_and_feed_event(monkeypatch):
         return None
 
     monkeypatch.setattr(cargos_api, "clear_cached", _clear_cached)
-    monkeypatch.setattr(geo_service, "city_coords", lambda _c: None)
+    monkeypatch.setattr(cargos_api, "get_geo_service", lambda: _FakeGeoService())
 
     client = TestClient(app)
     response = client.patch(
@@ -315,3 +327,4 @@ def test_update_my_cargo_updates_cargo_and_feed_event(monkeypatch):
     assert fake_session.events[0].to_city == "Самара"
     assert fake_session.events[0].rate_rub == 150000
     assert fake_session.events[0].payment_terms == "безнал"
+    assert "\"distance_km\": 820" in fake_session.events[0].details_json
