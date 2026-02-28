@@ -18,11 +18,14 @@ from src.core.models import (
     EscrowDeal,
     EscrowEvent,
     EscrowStatus,
+    ReferralInvite,
+    ReferralReward,
     UserWallet,
     User,
     Claim,
     ClaimStatus,
 )
+from src.core.services.referral import build_referral_deeplink
 
 router = APIRouter(tags=["webapp"])
 templates = Jinja2Templates(directory="src/webapp/templates")
@@ -340,6 +343,41 @@ async def webapp_profile(
             for deal in escrow_by_cargo_id.values()
             if deal.status == EscrowStatus.RELEASED
         )
+        invited_count = int(
+            await session.scalar(
+                select(func.count()).select_from(ReferralInvite).where(
+                    ReferralInvite.inviter_user_id == user_id
+                )
+            )
+            or 0
+        )
+        activated_count = int(
+            await session.scalar(
+                select(func.count()).select_from(ReferralInvite).where(
+                    ReferralInvite.inviter_user_id == user_id,
+                    ReferralInvite.rewarded_at.is_not(None),
+                )
+            )
+            or 0
+        )
+        rewards_count = int(
+            await session.scalar(
+                select(func.count()).select_from(ReferralReward).where(
+                    ReferralReward.inviter_user_id == user_id
+                )
+            )
+            or 0
+        )
+        reward_days_total = int(
+            await session.scalar(
+                select(func.coalesce(func.sum(ReferralReward.reward_days), 0)).where(
+                    ReferralReward.inviter_user_id == user_id
+                )
+            )
+            or 0
+        )
+        referral_link = build_referral_deeplink(settings.bot_username, user_id)
+        ambassador_target = max(1, int(settings.referral_ambassador_threshold))
 
     return {
         "user": {
@@ -363,6 +401,16 @@ async def webapp_profile(
             "released_payment_count": released_payment_count,
             "secured_amount_rub": secured_amount_rub,
             "released_amount_rub": released_amount_rub,
+        },
+        "referral": {
+            "link": referral_link,
+            "invited_count": invited_count,
+            "activated_count": activated_count,
+            "rewards_count": rewards_count,
+            "reward_days_total": reward_days_total,
+            "invited_bonus_days": activated_count * max(0, int(settings.referral_invited_reward_days)),
+            "ambassador_target": ambassador_target,
+            "is_ambassador": activated_count >= ambassador_target,
         },
         "cargos": [
             {

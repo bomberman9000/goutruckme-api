@@ -401,6 +401,16 @@ export type WebappProfileResponse = {
     secured_amount_rub: number;
     released_amount_rub: number;
   };
+  referral: {
+    link: string | null;
+    invited_count: number;
+    activated_count: number;
+    rewards_count: number;
+    reward_days_total: number;
+    invited_bonus_days: number;
+    ambassador_target: number;
+    is_ambassador: boolean;
+  };
   cargos: WebappProfileCargo[];
   refund_journal: RefundJournalItem[];
 };

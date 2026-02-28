@@ -170,6 +170,12 @@ async def successful_payment_handler(message: Message):
     )
 
     if referral_reward:
+        invited_reward_days = max(0, int(settings.referral_invited_reward_days))
+        if invited_reward_days:
+            await message.answer(
+                "🎁 Реферальный бонус активирован.\n"
+                f"Тебе начислено +{invited_reward_days} дней Premium за первую оплату по приглашению."
+            )
         try:
             await message.bot.send_message(
                 referral_reward.inviter_user_id,

@@ -78,12 +78,17 @@ async def grant_referral_reward_if_applicable(
         return None
 
     inviter = await session.get(User, invite.inviter_user_id)
-    if not inviter:
+    invited = await session.get(User, invited_user_id)
+    if not inviter or not invited:
         return None
 
     reward_days = max(1, int(settings.referral_reward_days))
+    invited_reward_days = max(0, int(settings.referral_invited_reward_days))
     inviter.is_premium = True
     inviter.premium_until = extend_premium_until(inviter.premium_until, reward_days)
+    if invited_reward_days:
+        invited.is_premium = True
+        invited.premium_until = extend_premium_until(invited.premium_until, invited_reward_days)
 
     now = datetime.now()
     invite.rewarded_at = now

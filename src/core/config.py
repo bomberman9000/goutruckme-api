@@ -114,6 +114,8 @@ class Settings(BaseSettings):
     premium_stars_7d: int = 700
     premium_stars_30d: int = 2400
     referral_reward_days: int = 7
+    referral_invited_reward_days: int = 3
+    referral_ambassador_threshold: int = 10
     manual_cargo_notify_dedupe_sec: int = 300
     admin_notification_mute_sec: int = 86400
 

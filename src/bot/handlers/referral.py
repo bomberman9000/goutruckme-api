@@ -36,7 +36,9 @@ async def referral_info(message: Message):
 
     await message.answer(
         "🎁 <b>Реферальная программа</b>\n\n"
-        f"Приглашай коллег: за первую оплату приглашенного тебе начисляется +{settings.referral_reward_days} дней Premium.\n\n"
+        "Приглашай коллег: за первую оплату приглашенного бонус получают оба.\n"
+        f"• Тебе: +{settings.referral_reward_days} дней Premium\n"
+        f"• Другу: +{settings.referral_invited_reward_days} дней Premium\n\n"
         f"🔗 Твоя ссылка:\n{link}\n\n"
         f"👥 Приглашено: {invited_count or 0}\n"
         f"🏆 Начислено бонусов: {rewards_count or 0}"

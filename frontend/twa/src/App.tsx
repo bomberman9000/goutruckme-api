@@ -110,6 +110,18 @@ function disputeStatusHint(status: string | null | undefined): string {
   }
 }
 
+async function copyText(value: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 export function App() {
   const [tab, setTab] = useState<Tab>("feed");
   const [items, setItems] = useState<FeedItem[]>([]);
@@ -303,6 +315,22 @@ export function App() {
     navigator.clipboard?.writeText(item.suggested_response);
     setCopied(item.id);
     setTimeout(() => setCopied(null), 2000);
+  }
+
+  async function handleInviteColleague() {
+    const link = profileSummary?.referral.link;
+    const tg = (window as any)?.Telegram?.WebApp;
+    if (!link) {
+      const text = "Реферальная ссылка пока недоступна";
+      if (tg?.showAlert) tg.showAlert(text);
+      else window.alert(text);
+      return;
+    }
+
+    const copiedOk = await copyText(link);
+    const text = copiedOk ? "Ссылка приглашения скопирована" : `Скопируй ссылку вручную:\n${link}`;
+    if (tg?.showAlert) tg.showAlert(text);
+    else window.alert(text);
   }
 
   async function reportItem(id: number) {
@@ -1034,6 +1062,17 @@ export function App() {
                   {profileSummary.user.is_verified ? " • ✅ Проверен" : " • ⚠️ Не проверен"}
                 </div>
                 <div className="cabinet-meta">Размещено грузов: {profileSummary.stats.cargo_count}</div>
+                <div className="cabinet-meta">👥 Приглашено: {profileSummary.referral.invited_count}</div>
+                <div className="cabinet-meta">✅ Активировано: {profileSummary.referral.activated_count}</div>
+                <div className="cabinet-meta">🎁 Бонусов: {profileSummary.referral.reward_days_total} дн.</div>
+                <div className="cabinet-meta">
+                  {profileSummary.referral.is_ambassador
+                    ? "🏅 Амбассадор"
+                    : `До амбассадора: ${profileSummary.referral.activated_count}/${profileSummary.referral.ambassador_target}`}
+                </div>
+                <button className="action-btn primary" onClick={() => void handleInviteColleague()}>
+                  Пригласить коллегу
+                </button>
               </>
             ) : (
               <>
