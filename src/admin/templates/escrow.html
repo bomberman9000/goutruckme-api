@@ -62,6 +62,7 @@
             {% set cargo = cargos.get(deal.cargo_id|int) %}
             {% set client = users.get(deal.client_id|int) %}
             {% set carrier = users.get(deal.carrier_id|int) if deal.carrier_id else None %}
+            {% set deal_note = deal_event_notes.get(deal.id|int) %}
             <div class="bg-white rounded-lg shadow border border-gray-200 p-5">
                 <div class="flex items-start justify-between gap-4">
                     <div class="space-y-2 min-w-0">
@@ -91,6 +92,23 @@
                         {% if deal.payment_link %}
                         <div class="text-sm">
                             <a href="{{ deal.payment_link }}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">Открыть ссылку оплаты</a>
+                        </div>
+                        {% endif %}
+                        {% if deal_note %}
+                        <div class="rounded-lg border {% if deal_note.event_type == 'admin_cancelled' %}border-red-200 bg-red-50{% else %}border-amber-200 bg-amber-50{% endif %} p-3 text-sm">
+                            <div class="font-semibold {% if deal_note.event_type == 'admin_cancelled' %}text-red-800{% else %}text-amber-800{% endif %}">
+                                {% if deal_note.event_type == "admin_cancelled" %}Последняя отмена{% else %}Последний спор{% endif %}
+                                <span class="font-normal text-xs text-gray-500 ml-2">{{ deal_note.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
+                            </div>
+                            {% if deal_note.reason %}
+                            <div class="mt-1"><span class="text-gray-500">Причина:</span> {{ deal_note.reason }}</div>
+                            {% endif %}
+                            {% if deal_note.note %}
+                            <div class="mt-1 whitespace-pre-wrap"><span class="text-gray-500">Заметка:</span> {{ deal_note.note }}</div>
+                            {% endif %}
+                            {% if deal_note.refund_amount_rub %}
+                            <div class="mt-1"><span class="text-gray-500">Возврат:</span> {{ "{:,}".format(deal_note.refund_amount_rub) }} ₽</div>
+                            {% endif %}
                         </div>
                         {% endif %}
                     </div>

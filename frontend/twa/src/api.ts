@@ -238,6 +238,19 @@ export type WebappProfileCargo = {
   load_date: string;
 };
 
+export type RefundJournalItem = {
+  escrow_id: number;
+  cargo_id: number;
+  from_city: string | null;
+  to_city: string | null;
+  role: "client" | "carrier";
+  status: string;
+  reason: string | null;
+  note: string | null;
+  refund_amount_rub: number | null;
+  updated_at: string;
+};
+
 export type WebappProfileResponse = {
   user: {
     id: number;
@@ -267,6 +280,7 @@ export type WebappProfileResponse = {
     released_amount_rub: number;
   };
   cargos: WebappProfileCargo[];
+  refund_journal: RefundJournalItem[];
 };
 
 type MyCargoResponse = {

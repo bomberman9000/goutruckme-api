@@ -1,9 +1,10 @@
+import json
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_, desc
 
 from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
 from src.core.config import settings
@@ -15,6 +16,7 @@ from src.core.models import (
     CargoResponse,
     CompanyDetails,
     EscrowDeal,
+    EscrowEvent,
     EscrowStatus,
     UserWallet,
     User,
@@ -26,6 +28,16 @@ router = APIRouter(tags=["webapp"])
 templates = Jinja2Templates(directory="src/webapp/templates")
 TWA_DIST_DIR = Path("frontend/twa/dist")
 TWA_INDEX_FILE = TWA_DIST_DIR / "index.html"
+
+
+def _safe_meta_json(value: str | None) -> dict:
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
 
 
 def _get_webapp_url() -> str:
@@ -249,6 +261,46 @@ async def webapp_profile(
                 if cargo_key not in escrow_by_cargo_id:
                     escrow_by_cargo_id[cargo_key] = deal
         wallet = await session.get(UserWallet, user_id)
+        participant_deals = (
+            await session.execute(
+                select(EscrowDeal)
+                .where(
+                    or_(
+                        EscrowDeal.client_id == user_id,
+                        EscrowDeal.carrier_id == user_id,
+                    )
+                )
+                .order_by(EscrowDeal.id.desc())
+                .limit(20)
+            )
+        ).scalars().all()
+        participant_deal_map = {int(deal.id): deal for deal in participant_deals}
+        participant_cargo_ids = sorted({int(deal.cargo_id) for deal in participant_deals})
+        participant_cargos = {}
+        if participant_cargo_ids:
+            participant_cargo_rows = (
+                await session.execute(select(Cargo).where(Cargo.id.in_(participant_cargo_ids)))
+            ).scalars().all()
+            participant_cargos = {int(c.id): c for c in participant_cargo_rows}
+
+        note_events_by_deal: dict[int, EscrowEvent] = {}
+        if participant_deal_map:
+            note_rows = (
+                await session.execute(
+                    select(EscrowEvent)
+                    .where(EscrowEvent.escrow_deal_id.in_(participant_deal_map.keys()))
+                    .where(EscrowEvent.event_type.in_(["admin_disputed", "admin_cancelled"]))
+                    .order_by(desc(EscrowEvent.created_at))
+                )
+            ).scalars().all()
+            for row in note_rows:
+                deal_key = int(row.escrow_deal_id)
+                if deal_key not in note_events_by_deal:
+                    note_events_by_deal[deal_key] = row
+        note_meta_by_deal = {
+            deal_id: _safe_meta_json(row.payload_json)
+            for deal_id, row in note_events_by_deal.items()
+        }
 
         company_data = None
         if company:
@@ -339,5 +391,25 @@ async def webapp_profile(
                 "load_date": c.load_date.strftime("%d.%m.%Y"),
             }
             for c in user_cargos
+        ],
+        "refund_journal": [
+            {
+                "escrow_id": int(deal.id),
+                "cargo_id": int(deal.cargo_id),
+                "from_city": participant_cargos.get(int(deal.cargo_id)).from_city if participant_cargos.get(int(deal.cargo_id)) else None,
+                "to_city": participant_cargos.get(int(deal.cargo_id)).to_city if participant_cargos.get(int(deal.cargo_id)) else None,
+                "role": "client" if int(deal.client_id) == user_id else "carrier",
+                "status": deal.status.value if isinstance(deal.status, EscrowStatus) else str(deal.status),
+                "reason": note_meta_by_deal.get(int(deal.id), {}).get("reason"),
+                "note": note_meta_by_deal.get(int(deal.id), {}).get("note"),
+                "refund_amount_rub": note_meta_by_deal.get(int(deal.id), {}).get("refund_amount_rub"),
+                "updated_at": (
+                    note_events_by_deal[int(deal.id)].created_at.isoformat()
+                    if int(deal.id) in note_events_by_deal
+                    else deal.updated_at.isoformat()
+                ),
+            }
+            for deal in participant_deals
+            if deal.status in {EscrowStatus.DISPUTED, EscrowStatus.CANCELLED}
         ],
     }

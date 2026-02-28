@@ -754,6 +754,29 @@ async def escrow_console(
             )
         ).scalars().all()
 
+        deal_event_notes: dict[int, dict] = {}
+        if deals:
+            note_rows = (
+                await session.execute(
+                    select(EscrowEvent)
+                    .where(EscrowEvent.escrow_deal_id.in_([int(d.id) for d in deals]))
+                    .where(EscrowEvent.event_type.in_(["admin_disputed", "admin_cancelled"]))
+                    .order_by(desc(EscrowEvent.created_at))
+                )
+            ).scalars().all()
+            for row in note_rows:
+                deal_key = int(row.escrow_deal_id)
+                if deal_key in deal_event_notes:
+                    continue
+                meta = _safe_meta(row.payload_json)
+                deal_event_notes[deal_key] = {
+                    "event_type": row.event_type,
+                    "reason": str(meta.get("reason") or "").strip(),
+                    "note": str(meta.get("note") or "").strip(),
+                    "refund_amount_rub": meta.get("refund_amount_rub"),
+                    "created_at": row.created_at,
+                }
+
     muted_cargo_ids = set()
     for row in notification_rows:
         cargo_id = int(row.entity_id)
@@ -766,6 +789,7 @@ async def escrow_console(
         "deals": deals,
         "cargos": cargos,
         "users": users,
+        "deal_event_notes": deal_event_notes,
         "page": page,
         "total_pages": (total + limit - 1) // limit if total else 1,
         "total": total,

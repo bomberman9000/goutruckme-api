@@ -84,6 +84,17 @@ function paymentStatusHint(status: string | null | undefined): string {
   }
 }
 
+function disputeStatusHint(status: string | null | undefined): string {
+  switch (status) {
+    case "cancelled":
+      return "Сделка отменена, возврат уже отражен в журнале.";
+    case "disputed":
+      return "Идет разбор спорной ситуации. Средства остаются под защитой.";
+    default:
+      return "Событие зафиксировано в журнале безопасных сделок.";
+  }
+}
+
 export function App() {
   const [tab, setTab] = useState<Tab>("feed");
   const [items, setItems] = useState<FeedItem[]>([]);
@@ -1023,6 +1034,7 @@ export function App() {
     const securedHistory = (profileSummary?.cargos ?? []).filter(
       (cargo) => cargo.payment_status !== "unsecured",
     );
+    const refundJournal = profileSummary?.refund_journal ?? [];
 
     return (
       <div className="wallet-page">
@@ -1128,6 +1140,48 @@ export function App() {
                       </button>
                     )}
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="wallet-history">
+          <div className="fleet-header">
+            <h2>↩️ Журнал возвратов и споров</h2>
+          </div>
+          {refundJournal.length === 0 ? (
+            <p className="muted" style={{ textAlign: "center", padding: "20px" }}>
+              Возвратов и спорных сделок пока нет
+            </p>
+          ) : (
+            <div className="my-cargo-list">
+              {refundJournal.map((entry) => (
+                <div className="my-cargo-card" key={`${entry.escrow_id}-${entry.updated_at}`}>
+                  <div className="my-cargo-head">
+                    <div>
+                      <div className="my-cargo-route">{entry.from_city || "—"} → {entry.to_city || "—"}</div>
+                      <div className="my-cargo-meta">
+                        Сделка #{entry.escrow_id} • {entry.role === "client" ? "Заказчик" : "Перевозчик"}
+                      </div>
+                    </div>
+                    <span className={`escrow-status${entry.status === "cancelled" ? "" : " verified"}`}>
+                      {paymentStatusLabel(entry.status)}
+                    </span>
+                  </div>
+                  <div className="wallet-safe-breakdown">
+                    {entry.refund_amount_rub != null && (
+                      <span>Возврат: {entry.refund_amount_rub.toLocaleString("ru")} ₽</span>
+                    )}
+                    <span>{new Date(entry.updated_at).toLocaleString("ru-RU")}</span>
+                  </div>
+                  <div className="wallet-safe-note">{disputeStatusHint(entry.status)}</div>
+                  {entry.reason && (
+                    <div className="wallet-refund-note"><strong>Причина:</strong> {entry.reason}</div>
+                  )}
+                  {entry.note && (
+                    <div className="wallet-refund-note"><strong>Комментарий:</strong> {entry.note}</div>
+                  )}
                 </div>
               ))}
             </div>
