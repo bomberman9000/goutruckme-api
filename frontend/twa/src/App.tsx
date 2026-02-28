@@ -239,7 +239,16 @@ export function App() {
     try {
       setProfileSummary(await fetchWebappProfile());
     } catch (err) {
-      setProfileError(err instanceof Error ? err.message : "Не удалось загрузить кабинет");
+      const message = err instanceof Error ? err.message : "Не удалось загрузить кабинет";
+      if (
+        /401/.test(message)
+        || /Missing Authorization/i.test(message)
+        || /Invalid Telegram initData/i.test(message)
+      ) {
+        setProfileError("Не удалось подтвердить Telegram-сессию. Обновите доступ или откройте Mini App заново из бота.");
+      } else {
+        setProfileError(message);
+      }
     } finally {
       setProfileLoading(false);
     }
@@ -928,7 +937,14 @@ export function App() {
                 <div className="cabinet-meta">Размещено грузов: {profileSummary.stats.cargo_count}</div>
               </>
             ) : (
-              <div className="cabinet-meta">{profileError || "Кабинет недоступен"}</div>
+              <>
+                <div className="cabinet-meta">{profileError || "Кабинет недоступен"}</div>
+                {profileError && (
+                  <button className="action-btn" onClick={() => void loadProfileSummary()}>
+                    Обновить доступ
+                  </button>
+                )}
+              </>
             )}
           </article>
 
@@ -945,7 +961,14 @@ export function App() {
                 <button className="action-btn" onClick={() => setTab("wallet")}>Подробнее →</button>
               </>
             ) : (
-              <div className="cabinet-meta">{profileLoading ? "Загружаем…" : "Нет данных"}</div>
+              <>
+                <div className="cabinet-meta">{profileLoading ? "Загружаем…" : "Нет данных"}</div>
+                {profileError && !profileLoading && (
+                  <button className="action-btn" onClick={() => void loadProfileSummary()}>
+                    Обновить доступ
+                  </button>
+                )}
+              </>
             )}
           </article>
         </section>
@@ -1143,7 +1166,16 @@ export function App() {
 
     return (
       <div className="wallet-page">
-        {profileError && !profileSummary && <div className="error">{profileError}</div>}
+        {profileError && !profileSummary && (
+          <div className="error">
+            {profileError}
+            <div style={{ marginTop: "10px" }}>
+              <button className="action-btn" onClick={() => void loadProfileSummary()}>
+                Обновить доступ
+              </button>
+            </div>
+          </div>
+        )}
 
         <section className="wallet-hero">
           <div className="wallet-hero-label">💼 Кошелек</div>

@@ -44,9 +44,39 @@ export type CitySuggestion = {
 };
 
 function getRequiredInitData(actionLabel: string): string {
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  const initData = readTelegramInitData();
   if (!initData) {
     throw new Error(`${actionLabel} доступно только из Telegram Mini App`);
+  }
+  return initData;
+}
+
+function readTelegramInitData(): string | null {
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (typeof initData !== "string") {
+    return null;
+  }
+  const normalized = initData.trim();
+  return normalized || null;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function resolveOptionalInitData(retries = 2, delayMs = 180): Promise<string | null> {
+  const tg = (window as any)?.Telegram?.WebApp;
+  try {
+    tg?.ready?.();
+    tg?.expand?.();
+  } catch {
+    // ignore WebApp bridge quirks
+  }
+
+  let initData = readTelegramInitData();
+  for (let attempt = 0; !initData && attempt < retries; attempt += 1) {
+    await sleep(delayMs);
+    initData = readTelegramInitData();
   }
   return initData;
 }
@@ -337,24 +367,33 @@ type SubscriptionListResponse = {
 
 export async function fetchWebappProfile(): Promise<WebappProfileResponse> {
   const headers: Record<string, string> = {};
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  const initData = await resolveOptionalInitData(3, 220);
   if (initData) {
     headers.Authorization = `tma ${initData}`;
   }
 
-  const response = await fetch("/api/webapp/profile", {
+  let response = await fetch("/api/webapp/profile", {
     credentials: "include",
     headers,
   });
+  if (response.status === 401) {
+    const refreshedInitData = await resolveOptionalInitData(4, 260);
+    if (refreshedInitData) {
+      response = await fetch("/api/webapp/profile", {
+        credentials: "include",
+        headers: { Authorization: `tma ${refreshedInitData}` },
+      });
+    }
+  }
   if (!response.ok) {
-    throw new Error(`Profile request failed: ${response.status}`);
+    throw await buildApiError(response, "Profile request failed");
   }
   return response.json();
 }
 
 export async function fetchVehicles(): Promise<VehicleItem[]> {
   const headers: Record<string, string> = {};
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  const initData = await resolveOptionalInitData();
   if (initData) headers.Authorization = `tma ${initData}`;
   const response = await fetch("/api/v1/fleet/vehicles", { credentials: "include", headers });
   if (!response.ok) return [];
@@ -437,7 +476,7 @@ export async function createManualCargo(payload: ManualCargoPayload): Promise<Ma
 
 export async function fetchMyCargos(limit = 50): Promise<MyCargoItem[]> {
   const headers: Record<string, string> = {};
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  const initData = await resolveOptionalInitData();
   if (initData) {
     headers.Authorization = `tma ${initData}`;
   }
