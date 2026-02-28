@@ -211,3 +211,6 @@ def test_mock_payment_funds_and_release(monkeypatch):
     assert fake_session.cargos[1].payment_status == CargoPaymentStatus.RELEASED
     assert fake_session.wallets[555].frozen_balance_rub == 0
     assert fake_session.wallets[777].balance_rub == 117600
+    released_payload = json.loads(fake_session.events[-1].payload_json or "{}")
+    assert released_payload["provider"] == "mock_tochka"
+    assert released_payload["provider_payout_id"].startswith("mockout_")

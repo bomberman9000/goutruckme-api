@@ -22,7 +22,7 @@ from src.core.models import (
     EscrowStatus,
     UserWallet,
 )
-from src.core.services.banking import MockTochkaBankClient, get_bank_client
+from src.core.services.banking import get_bank_client
 
 router = APIRouter(prefix="/api/v1/escrow", tags=["escrow"])
 
@@ -280,9 +280,9 @@ async def complete_mock_payment(
     amount: int = Query(..., gt=0),
 ) -> HTMLResponse:
     bank_client = get_bank_client()
-    if not isinstance(bank_client, MockTochkaBankClient):
+    if not getattr(bank_client, "supports_mock_checkout", False):
         raise HTTPException(status_code=409, detail="Mock payment is unavailable")
-    if not bank_client.verify_token(escrow_id, payment_id, token):
+    if not hasattr(bank_client, "verify_token") or not bank_client.verify_token(escrow_id, payment_id, token):
         raise HTTPException(status_code=403, detail="Invalid payment token")
 
     async with async_session() as session:
@@ -371,6 +371,13 @@ async def release_escrow(
         if deal.status != EscrowStatus.DELIVERY_MARKED:
             raise HTTPException(status_code=409, detail="Escrow is not ready for release")
 
+        payout = await get_bank_client(deal.provider).release_funds(
+            escrow_id=int(deal.id),
+            cargo_id=int(cargo.id),
+            amount_rub=int(deal.carrier_amount_rub),
+            carrier_user_id=int(deal.carrier_id or cargo.carrier_id or deal.client_id),
+        )
+
         client_wallet = await _ensure_wallet(session, int(deal.client_id))
         carrier_wallet = await _ensure_wallet(session, int(deal.carrier_id or cargo.carrier_id or deal.client_id))
 
@@ -392,6 +399,8 @@ async def release_escrow(
                 "amount_rub": int(deal.amount_rub),
                 "carrier_amount_rub": int(deal.carrier_amount_rub),
                 "platform_fee_rub": int(deal.platform_fee_rub),
+                "provider": payout.provider,
+                "provider_payout_id": payout.provider_payout_id,
             },
         )
         await _append_audit(
@@ -403,6 +412,8 @@ async def release_escrow(
                 "escrow_id": int(deal.id),
                 "amount_rub": int(deal.amount_rub),
                 "carrier_amount_rub": int(deal.carrier_amount_rub),
+                "provider": payout.provider,
+                "provider_payout_id": payout.provider_payout_id,
             },
         )
         await session.commit()
@@ -420,21 +431,21 @@ async def handle_tochka_webhook(
         if x_internal_token != settings.internal_token:
             raise HTTPException(status_code=401, detail="Invalid internal token")
 
-    normalized = await get_bank_client().handle_webhook(payload)
-    if normalized.get("status") != "funded":
+    normalized = await get_bank_client(str(payload.get("provider") or None)).parse_webhook(payload)
+    if normalized.status != "funded":
         raise HTTPException(status_code=409, detail="Unsupported webhook status")
 
     async with async_session() as session:
-        deal = await session.get(EscrowDeal, int(normalized["escrow_id"]))
-        cargo = await session.get(Cargo, int(normalized["cargo_id"]))
+        deal = await session.get(EscrowDeal, int(normalized.escrow_id))
+        cargo = await session.get(Cargo, int(normalized.cargo_id))
         if not deal or not cargo or int(deal.cargo_id) != int(cargo.id):
             raise HTTPException(status_code=404, detail="Escrow not found")
         await _apply_funded(
             session,
             cargo=cargo,
             deal=deal,
-            amount_rub=int(normalized["amount_rub"]),
-            payment_id=str(normalized["payment_id"]),
+            amount_rub=int(normalized.amount_rub),
+            payment_id=str(normalized.payment_id),
             actor_user_id=None,
         )
         await session.commit()
