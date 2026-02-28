@@ -22,6 +22,10 @@ class FeedItem(BaseModel):
     stream_entry_id: str
     from_city: str | None
     to_city: str | None
+    from_lat: float | None = None
+    from_lon: float | None = None
+    to_lat: float | None = None
+    to_lon: float | None = None
     body_type: str | None
     rate_rub: int | None
     weight_t: float | None
@@ -341,6 +345,10 @@ async def get_feed(
             stream_entry_id=item.stream_entry_id,
             from_city=item.from_city,
             to_city=item.to_city,
+            from_lat=item.from_lat,
+            from_lon=item.from_lon,
+            to_lat=item.to_lat,
+            to_lon=item.to_lon,
             body_type=item.body_type,
             rate_rub=item.rate_rub,
             weight_t=item.weight_t,

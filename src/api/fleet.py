@@ -16,6 +16,7 @@ from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
 from src.core.audit import log_audit_event
 from src.core.database import async_session
 from src.core.models import UserVehicle
+from src.core.services.geo_service import get_geo_service
 from src.core.services.matching_engine import find_matches_for_vehicle
 
 router = APIRouter(tags=["fleet"])
@@ -48,6 +49,22 @@ class VehicleResponse(BaseModel):
 
 class VehicleListResponse(BaseModel):
     vehicles: list[VehicleResponse] = Field(default_factory=list)
+
+
+class VehicleMapItem(BaseModel):
+    id: int
+    body_type: str
+    capacity_tons: float
+    location_city: str
+    plate_number: str | None = None
+    status: str
+    lat: float
+    lon: float
+
+
+class VehicleMapResponse(BaseModel):
+    items: list[VehicleMapItem] = Field(default_factory=list)
+    total: int = 0
 
 
 class MatchedCargo(BaseModel):
@@ -129,6 +146,45 @@ async def list_vehicles(
             for v in rows
         ]
     )
+
+
+@router.get("/api/v1/fleet/vehicles/map", response_model=VehicleMapResponse)
+async def list_vehicles_for_map(
+    tma_user: TelegramTMAUser = Depends(get_required_tma_user),
+):
+    _ = tma_user  # endpoint is protected, but map shows the shared live fleet
+    async with async_session() as session:
+        rows = (
+            await session.execute(
+                select(UserVehicle)
+                .where(UserVehicle.location_city.isnot(None))
+                .order_by(UserVehicle.is_available.desc(), UserVehicle.id.desc())
+            )
+        ).scalars().all()
+
+    geo = get_geo_service()
+    items: list[VehicleMapItem] = []
+    for vehicle in rows:
+        city_name = (vehicle.location_city or "").strip()
+        if not city_name:
+            continue
+        city = await geo.get_city_data(city_name)
+        if not city:
+            continue
+        items.append(
+            VehicleMapItem(
+                id=vehicle.id,
+                body_type=vehicle.body_type,
+                capacity_tons=vehicle.capacity_tons,
+                location_city=city.name or city_name,
+                plate_number=vehicle.plate_number,
+                status="available" if vehicle.is_available else "in_work",
+                lat=city.lat,
+                lon=city.lon,
+            )
+        )
+
+    return VehicleMapResponse(items=items, total=len(items))
 
 
 @router.post("/api/v1/fleet/vehicles/{vehicle_id}/available")

@@ -3,6 +3,10 @@ export type FeedItem = {
   stream_entry_id: string;
   from_city: string | null;
   to_city: string | null;
+  from_lat: number | null;
+  from_lon: number | null;
+  to_lat: number | null;
+  to_lon: number | null;
   body_type: string | null;
   rate_rub: number | null;
   weight_t: number | null;
@@ -245,6 +249,17 @@ export type VehicleItem = {
   sts_verified: boolean;
 };
 
+export type VehicleMapItem = {
+  id: number;
+  body_type: string;
+  capacity_tons: number;
+  location_city: string;
+  plate_number: string | null;
+  status: "available" | "in_work";
+  lat: number;
+  lon: number;
+};
+
 export type VehicleMatchItem = {
   id: number;
   from_city: string | null;
@@ -480,6 +495,16 @@ export async function fetchVehicles(): Promise<VehicleItem[]> {
   if (!response.ok) return [];
   const data = await response.json();
   return data.vehicles ?? [];
+}
+
+export async function fetchVehicleMap(): Promise<VehicleMapItem[]> {
+  const headers = await buildRequiredTmaHeaders("Карта машин");
+  const response = await fetch("/api/v1/fleet/vehicles/map", { credentials: "include", headers });
+  if (!response.ok) {
+    throw await buildApiError(response, "Vehicle map failed");
+  }
+  const data = await response.json() as { items?: VehicleMapItem[] };
+  return data.items ?? [];
 }
 
 export async function addVehicle(

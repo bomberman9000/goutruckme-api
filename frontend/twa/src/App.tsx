@@ -18,6 +18,7 @@ import {
   fetchFeed,
   fetchSimilar,
   fetchVehicles,
+  fetchVehicleMap,
   fetchVehicleMatches,
   fetchCargoMatches,
   fetchMatchSummary,
@@ -33,6 +34,7 @@ import {
   type SimilarItem,
   type SubscriptionItem,
   type VehicleItem,
+  type VehicleMapItem,
   type VehicleMatchResponse,
   type WebappProfileResponse,
 } from "./api";
@@ -157,6 +159,7 @@ export function App() {
   const [similarMap, setSimilarMap] = useState<Record<number, SimilarItem[]>>({});
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [selectedMapId, setSelectedMapId] = useState<number | null>(null);
+  const [selectedVehicleMapId, setSelectedVehicleMapId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [vehicles, setVehicles] = useState<VehicleItem[]>([]);
@@ -165,6 +168,8 @@ export function App() {
   const [cargoMatchMap, setCargoMatchMap] = useState<Record<number, CargoMatchResponse>>({});
   const [matchSummary, setMatchSummary] = useState<MatchSummary | null>(null);
   const [matchSummaryError, setMatchSummaryError] = useState<string | null>(null);
+  const [vehicleMapItems, setVehicleMapItems] = useState<VehicleMapItem[]>([]);
+  const [vehicleMapError, setVehicleMapError] = useState<string | null>(null);
   const [copied, setCopied] = useState<number | null>(null);
   const [showAddTruck, setShowAddTruck] = useState(false);
   const [addingVehicle, setAddingVehicle] = useState(false);
@@ -328,7 +333,24 @@ export function App() {
       void loadMyCargos();
       void loadMatchSummary();
     }
-  }, [tab, loadMyCargos, loadProfileSummary, loadMatchSummary]);
+    if (tab === "map") {
+      if (!selectedMapId && items[0]) {
+        setSelectedMapId(items[0].id);
+      }
+      setVehicleMapError(null);
+      void fetchVehicleMap()
+        .then((rows) => {
+          setVehicleMapItems(rows);
+          if (!selectedVehicleMapId && rows[0]) {
+            setSelectedVehicleMapId(rows[0].id);
+          }
+        })
+        .catch((err) => {
+          setVehicleMapItems([]);
+          setVehicleMapError(err instanceof Error ? err.message : "Не удалось загрузить карту машин");
+        });
+    }
+  }, [tab, items, selectedMapId, loadMyCargos, loadProfileSummary, loadMatchSummary, selectedVehicleMapId]);
 
   function onCallClick(item: FeedItem) {
     void trackClick(item.id).catch(() => {});
@@ -1826,9 +1848,31 @@ export function App() {
       {tab === "map" && (
         <div className="split-view">
           <div className="split-map">
-            <CargoMap items={items} onSelect={setSelectedMapId} selectedId={selectedMapId} />
+            <CargoMap
+              items={items}
+              vehicles={vehicleMapItems}
+              onSelect={setSelectedMapId}
+              selectedId={selectedMapId}
+              onSelectVehicle={setSelectedVehicleMapId}
+              selectedVehicleId={selectedVehicleMapId}
+            />
           </div>
           <div className="split-list">
+            <div className="split-summary-card">
+              <div className="split-summary-title">🚛 Живой мониторинг</div>
+              <div className="split-summary-line">
+                <span>🟢 Свободны</span>
+                <strong>{vehicleMapItems.filter((row) => row.status === "available").length}</strong>
+              </div>
+              <div className="split-summary-line">
+                <span>🔴 В работе</span>
+                <strong>{vehicleMapItems.filter((row) => row.status === "in_work").length}</strong>
+              </div>
+              <div className="split-summary-hint">
+                Выберите груз в списке и постройте маршрут из балуна машины на карте.
+              </div>
+            </div>
+            {vehicleMapError && <div className="error">{vehicleMapError}</div>}
             {items.slice(0, 10).map((item) => (
               <div
                 key={item.id}

@@ -1,104 +1,192 @@
-import { useEffect, useRef } from "react";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
-import type { FeedItem } from "./api";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { Map, Placemark, YMaps, ZoomControl } from "@pbe/react-yandex-maps";
+
+import type { FeedItem, VehicleMapItem } from "./api";
 
 const RUSSIA_CENTER: [number, number] = [55.75, 49.0];
 const DEFAULT_ZOOM = 4;
 
-const hotIcon = L.divIcon({
-  className: "map-marker hot-marker",
-  html: "🔥",
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
-});
-
-const normalIcon = L.divIcon({
-  className: "map-marker",
-  html: "📦",
-  iconSize: [20, 20],
-  iconAnchor: [10, 10],
-});
+type CargoMapProps = {
+  items: FeedItem[];
+  vehicles: VehicleMapItem[];
+  onSelect: (id: number) => void;
+  selectedId: number | null;
+  onSelectVehicle: (id: number) => void;
+  selectedVehicleId: number | null;
+};
 
 export function CargoMap({
   items,
+  vehicles,
   onSelect,
   selectedId,
-}: {
-  items: FeedItem[];
-  onSelect: (id: number) => void;
-  selectedId: number | null;
-}) {
-  const mapRef = useRef<L.Map | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const layerRef = useRef<L.LayerGroup | null>(null);
+  onSelectVehicle,
+  selectedVehicleId,
+}: CargoMapProps) {
+  const shellRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<any>(null);
+  const routeRef = useRef<any>(null);
 
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
-    const map = L.map(containerRef.current, {
-      center: RUSSIA_CENTER,
-      zoom: DEFAULT_ZOOM,
-      zoomControl: false,
-    });
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OSM",
-      maxZoom: 15,
-    }).addTo(map);
-    L.control.zoom({ position: "bottomright" }).addTo(map);
-    mapRef.current = map;
-    layerRef.current = L.layerGroup().addTo(map);
-
-    return () => { map.remove(); mapRef.current = null; };
-  }, []);
-
-  useEffect(() => {
-    const layer = layerRef.current;
-    if (!layer) return;
-    layer.clearLayers();
-
-    const cityCoords: Record<string, [number, number]> = {};
-
-    for (const item of items) {
-      if (item.from_city) {
-        const fromKey = item.from_city.toLowerCase();
-        if (!cityCoords[fromKey]) {
-          const lat = 55 + Math.random() * 10 - 5;
-          const lon = 45 + Math.random() * 40 - 10;
-          cityCoords[fromKey] = [lat, lon];
-        }
-      }
+  const selectedCargo = useMemo(
+    () => items.find((item) => item.id === selectedId) ?? null,
+    [items, selectedId],
+  );
+  const selectedCargoPoint = useMemo(() => {
+    if (
+      selectedCargo?.from_lat == null
+      || selectedCargo?.from_lon == null
+    ) {
+      return null;
     }
+    return [selectedCargo.from_lat, selectedCargo.from_lon] as [number, number];
+  }, [selectedCargo]);
 
-    for (const item of items) {
-      const fromCoord = item.from_city ? cityCoords[item.from_city.toLowerCase()] : null;
-      if (!fromCoord) continue;
+  const selectedVehicle = useMemo(
+    () => vehicles.find((vehicle) => vehicle.id === selectedVehicleId) ?? null,
+    [vehicles, selectedVehicleId],
+  );
 
-      const icon = item.is_hot_deal ? hotIcon : normalIcon;
-      const marker = L.marker(fromCoord, { icon });
-
-      const price = item.rate_rub ? `${item.rate_rub.toLocaleString("ru")} ₽` : "?";
-      const rpk = item.rate_per_km ? ` (${item.rate_per_km} ₽/км)` : "";
-
-      marker.bindPopup(
-        `<div style="font-size:13px;min-width:180px">` +
-        `<b>${item.from_city} → ${item.to_city}</b><br>` +
-        `${item.body_type ?? "?"} • ${item.weight_t ?? 0}т<br>` +
-        `<span style="color:#22c55e;font-weight:700">${price}${rpk}</span><br>` +
-        (item.load_date ? `📅 ${item.load_date}<br>` : "") +
-        (item.freshness ? `⏱ ${item.freshness}` : "") +
-        `</div>`,
-        { closeButton: false }
+  const buildRouteToCargo = useCallback(async (vehicleId: number) => {
+    const ymapsApi = (window as any)?.ymaps;
+    if (!ymapsApi || !mapRef.current || !selectedCargoPoint) {
+      return;
+    }
+    const vehicle = vehicles.find((row) => row.id === vehicleId);
+    if (!vehicle) {
+      return;
+    }
+    try {
+      if (routeRef.current) {
+        mapRef.current.geoObjects.remove(routeRef.current);
+        routeRef.current = null;
+      }
+      const route = await ymapsApi.route(
+        [
+          [vehicle.lat, vehicle.lon],
+          selectedCargoPoint,
+        ],
+        { mapStateAutoApply: true },
       );
-
-      marker.on("click", () => onSelect(item.id));
-
-      if (selectedId === item.id) {
-        marker.openPopup();
-      }
-
-      marker.addTo(layer);
+      route.getPaths?.().options?.set({
+        strokeColor: "#60a5fa",
+        opacity: 0.85,
+        strokeWidth: 4,
+      });
+      route.getWayPoints?.().options?.set("visible", false);
+      route.getViaPoints?.().options?.set("visible", false);
+      mapRef.current.geoObjects.add(route);
+      routeRef.current = route;
+      onSelectVehicle(vehicleId);
+    } catch {
+      // keep the map usable even if the Yandex routing API fails
     }
-  }, [items, selectedId, onSelect]);
+  }, [onSelectVehicle, selectedCargoPoint, vehicles]);
 
-  return <div ref={containerRef} className="cargo-map" />;
+  useEffect(() => {
+    const node = shellRef.current;
+    if (!node) {
+      return;
+    }
+
+    const onClick = (event: Event) => {
+      const target = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(".ymap-route-btn");
+      if (!target) {
+        return;
+      }
+      const value = Number(target.dataset.vehicleId);
+      if (!Number.isFinite(value)) {
+        return;
+      }
+      event.preventDefault();
+      void buildRouteToCargo(value);
+    };
+
+    node.addEventListener("click", onClick);
+    return () => node.removeEventListener("click", onClick);
+  }, [buildRouteToCargo]);
+
+  useEffect(() => {
+    if (!mapRef.current) {
+      return;
+    }
+    const center =
+      selectedCargoPoint
+      ?? (selectedVehicle ? [selectedVehicle.lat, selectedVehicle.lon] as [number, number] : null)
+      ?? (vehicles[0] ? [vehicles[0].lat, vehicles[0].lon] as [number, number] : null)
+      ?? RUSSIA_CENTER;
+    mapRef.current.setCenter(center, selectedCargoPoint || selectedVehicle ? 8 : DEFAULT_ZOOM, {
+      duration: 200,
+    });
+  }, [selectedCargoPoint, selectedVehicle, vehicles]);
+
+  return (
+    <div ref={shellRef} className="cargo-map-shell">
+      <YMaps query={{ lang: "ru_RU", load: "package.full" }}>
+        <Map
+          className="cargo-map"
+          defaultState={{ center: RUSSIA_CENTER, zoom: DEFAULT_ZOOM }}
+          options={{ suppressMapOpenBlock: true }}
+          modules={["geoObject.addon.balloon"]}
+          instanceRef={(value: any) => { mapRef.current = value; }}
+        >
+          <ZoomControl options={{ position: { right: 12, bottom: 16 } }} />
+
+          {selectedCargoPoint && (
+            <Placemark
+              geometry={selectedCargoPoint}
+              properties={{
+                balloonContentHeader: "📦 Точка погрузки",
+                balloonContentBody: `
+                  <div class="ymap-balloon">
+                    <strong>${selectedCargo?.from_city ?? "Груз"}</strong><br/>
+                    ${selectedCargo?.to_city ? `→ ${selectedCargo.to_city}<br/>` : ""}
+                    ${selectedCargo?.rate_rub ? `💰 ${selectedCargo.rate_rub.toLocaleString("ru-RU")} ₽` : ""}
+                  </div>
+                `,
+              }}
+              options={{ preset: "islands#blueCircleDotIcon" }}
+              onClick={() => selectedCargo && onSelect(selectedCargo.id)}
+            />
+          )}
+
+          {vehicles.map((vehicle) => {
+            const canBuildRoute = Boolean(selectedCargoPoint);
+            const isSelected = vehicle.id === selectedVehicleId;
+            return (
+              <Placemark
+                key={vehicle.id}
+                geometry={[vehicle.lat, vehicle.lon]}
+                properties={{
+                  balloonContentHeader: `${vehicle.status === "available" ? "🟢" : "🔴"} ${vehicle.location_city}`,
+                  balloonContentBody: `
+                    <div class="ymap-balloon">
+                      <strong>${vehicle.body_type}</strong> • ${vehicle.capacity_tons}т<br/>
+                      ${vehicle.plate_number ? `<span class="ymap-muted">${vehicle.plate_number}</span><br/>` : ""}
+                      <span class="ymap-muted">${vehicle.status === "available" ? "Свободен" : "В работе"}</span><br/>
+                      ${
+                        canBuildRoute
+                          ? `<button type="button" class="ymap-route-btn" data-vehicle-id="${vehicle.id}">Построить маршрут</button>`
+                          : `<span class="ymap-muted">Выберите груз справа, чтобы построить маршрут.</span>`
+                      }
+                    </div>
+                  `,
+                }}
+                options={{
+                  preset: vehicle.status === "available" ? "islands#greenCircleDotIcon" : "islands#redCircleDotIcon",
+                  zIndex: isSelected ? 1200 : 800,
+                }}
+                onClick={() => onSelectVehicle(vehicle.id)}
+              />
+            );
+          })}
+        </Map>
+      </YMaps>
+
+      <div className="cargo-map-legend">
+        <span><i className="dot free" /> Свободен</span>
+        <span><i className="dot busy" /> В работе</span>
+        <span><i className="dot cargo" /> Точка груза</span>
+      </div>
+    </div>
+  );
 }
