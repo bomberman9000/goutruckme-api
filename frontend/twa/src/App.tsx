@@ -420,6 +420,7 @@ export function App() {
         setVehicleMatchMap((prev) => ({ ...prev, [created.id]: result }));
       }
 
+      setTab("fleet");
       setVehicles(await fetchVehicles());
       setShowAddTruck(false);
       showActionGuide(
@@ -479,7 +480,7 @@ export function App() {
     setCargoError(null);
 
     try {
-      await createManualCargo({
+      const created = await createManualCargo({
         origin: payload.origin,
         destination: payload.destination,
         body_type: payload.bodyType,
@@ -492,17 +493,16 @@ export function App() {
       });
 
       setShowAddCargo(false);
-      if (returnToCargos) {
-        await Promise.all([loadMyCargos(), load(true)]);
-      } else {
-        setTab("feed");
-        await load(true);
-      }
+      setTab("cargos");
+      await Promise.all([loadMyCargos(), load(true)]);
+      await showCargoMatches(created.cargo_id);
 
       showActionGuide(
         "📦 Груз создан",
         [
-          "Проверь карточку в ленте и убедись, что маршрут и ставка выглядят корректно.",
+          returnToCargos
+            ? "Проверь блок “🎯 Совпадения” у нового груза — подбор уже открыт."
+            : "Мы уже открыли “📦 Мои грузы” и загрузили подходящие машины.",
           "При необходимости включи “🛡️ Честный рейс”, чтобы защитить оплату.",
           "Дальше жди отклики или открой “🎯 Совпадения” для подходящей техники.",
         ],
@@ -700,6 +700,7 @@ export function App() {
             ],
         issueDraft.kind === "refund" ? "warning" : "info",
       );
+      setTab("wallet");
     } catch (err) {
       const message = err instanceof Error
         ? err.message
