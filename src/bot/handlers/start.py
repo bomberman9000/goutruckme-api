@@ -34,6 +34,36 @@ ROLE_MAP = {
 
 CANCEL_HINT = "\n\n❌ Отмена: /cancel"
 
+
+def _site_link_url() -> str | None:
+    base = (settings.gruzpotok_public_url or "").strip().rstrip("/")
+    if not base:
+        return None
+    return f"{base}/telegram-link"
+
+
+def _guest_entry_kb() -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton(text="🚀 Начать в Telegram", callback_data="begin_onboarding")]
+    ]
+
+    site_url = _site_link_url()
+    if site_url:
+        rows.append([InlineKeyboardButton(text="🔗 Привязать через сайт", url=site_url)])
+
+    webapp_base = (settings.webapp_url or "").rstrip("/")
+    if webapp_base:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="📱 Открыть Mini App",
+                    web_app=WebAppInfo(url=f"{webapp_base}/webapp"),
+                )
+            ]
+        )
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
 async def upsert_text(obj, text: str, reply_markup=None, disable_web_page_preview=True):
     """
     Унифицирует вывод: если это CallbackQuery — редактируем его message.
@@ -288,11 +318,24 @@ async def cmd_start(message: Message, state: FSMContext):
 
     if user and user.is_verified:
         await state.clear()
-        await message.answer("Меню:", reply_markup=main_menu())
+        await message.answer(
+            "👋 <b>ГрузПоток готов к работе</b>\n\n"
+            "Используйте меню ниже для поиска грузов, размещения заявок и работы с Mini App.",
+            reply_markup=main_menu(),
+        )
         return
 
     if await needs_onboarding(message.from_user.id):
-        await start_onboarding(message, state)
+        await state.clear()
+        await message.answer(
+            "👋 <b>Добро пожаловать в ГрузПоток</b>\n\n"
+            "Чтобы сайт, бот и Mini App работали как единое целое, сначала свяжите аккаунт.\n\n"
+            "Выберите удобный сценарий:\n"
+            "• начать регистрацию прямо в Telegram\n"
+            "• открыть сайт для привязки\n"
+            "• зайти в Mini App",
+            reply_markup=_guest_entry_kb(),
+        )
         return
 
     await message.answer(
@@ -300,6 +343,12 @@ async def cmd_start(message: Message, state: FSMContext):
         "Выбери действие в меню ниже.",
         reply_markup=main_menu(),
     )
+
+
+@router.callback_query(F.data == "begin_onboarding")
+async def begin_onboarding(cb: CallbackQuery, state: FSMContext):
+    await cb.answer()
+    await start_onboarding(cb, state)
 
 @router.callback_query(F.data == "menu")
 async def show_menu(cb: CallbackQuery):
@@ -519,12 +568,13 @@ async def cmd_help(message: Message):
         "🤝 Мои отклики\n"
         "⭐ Рейтинг / Профиль\n"
         "🆘 Поддержка\n\n"
+        "<b>Если вы переходите со старого бота:</b>\n"
+        "/link — открыть площадку по магической ссылке\n"
+        "/loads — открыть ленту грузов\n"
+        "/applications — показать мои отклики\n\n"
         "<b>Команды:</b>\n"
         "/start — меню\n"
         "/help — помощь\n"
-        "/link — открыть привязку/WebApp\n"
-        "/loads — лента грузов (legacy alias)\n"
-        "/applications — мои отклики (legacy alias)\n"
         "/webapp — личный кабинет\n"
         "/buy_premium — купить premium\n"
         "/referral — пригласить коллегу\n"
