@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.security import create_access_token, get_current_user, verify_password
 from app.db.database import get_db
 from app.models.models import User
+from app.services.telegram_link import confirm_link as confirm_telegram_link
 
 router = APIRouter()
 
@@ -17,6 +18,12 @@ router = APIRouter()
 class LinkRequest(BaseModel):
     phone: str
     password: str
+    telegram_id: int
+    telegram_username: Optional[str] = None
+
+
+class ConfirmLinkRequest(BaseModel):
+    code: str
     telegram_id: int
     telegram_username: Optional[str] = None
 
@@ -63,3 +70,27 @@ async def get_me(current_user: User = Depends(get_current_user)):
         "name": current_user.organization_name or current_user.fullname,
         "role": current_user.role
     }
+
+
+@router.post("/confirm-link")
+async def confirm_link_route(data: ConfirmLinkRequest, db: Session = Depends(get_db)):
+    """Подтвердить привязку Telegram по одноразовому коду."""
+    user = confirm_telegram_link(
+        db=db,
+        code=data.code,
+        telegram_id=data.telegram_id,
+        telegram_username=data.telegram_username or "",
+    )
+    token = create_access_token(data={"sub": str(user.id)})
+    return {
+        "success": True,
+        "user_id": user.id,
+        "access_token": token,
+        "message": f"Telegram успешно привязан к {user.organization_name or user.fullname}!",
+    }
+
+
+@router.post("/confirm_link")
+async def confirm_link_route_legacy(data: ConfirmLinkRequest, db: Session = Depends(get_db)):
+    """Legacy alias for old Telegram bot clients."""
+    return await confirm_link_route(data, db)
