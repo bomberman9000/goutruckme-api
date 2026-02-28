@@ -26,6 +26,10 @@ def _throttle_key(cargo: Cargo) -> str:
     )
 
 
+def _mute_key(cargo_id: int) -> str:
+    return f"notify:mute:cargo:{int(cargo_id)}"
+
+
 async def _is_throttled(cargo: Cargo) -> bool:
     try:
         redis = await get_redis()
@@ -41,12 +45,47 @@ async def _is_throttled(cargo: Cargo) -> bool:
         return False
 
 
-async def notify_matching_carriers(cargo_id: int) -> int:
+async def is_dispatch_muted(cargo_id: int) -> bool:
+    try:
+        redis = await get_redis()
+        return bool(await redis.exists(_mute_key(cargo_id)))
+    except Exception as exc:
+        logger.debug("Notification dispatcher mute check failed: %s", exc)
+        return False
+
+
+async def mute_dispatch(cargo_id: int, *, ttl_sec: int | None = None) -> None:
+    try:
+        redis = await get_redis()
+        await redis.set(
+            _mute_key(cargo_id),
+            "1",
+            ex=max(60, int(ttl_sec or settings.admin_notification_mute_sec)),
+        )
+    except Exception as exc:
+        logger.debug("Notification dispatcher mute set failed: %s", exc)
+
+
+async def notify_matching_carriers(cargo_id: int, *, force: bool = False) -> int:
     """Notify carriers matched by route subscriptions and available fleet."""
     async with async_session() as session:
         cargo = await session.get(Cargo, cargo_id)
         if not cargo:
             logger.warning("Notification dispatcher: cargo #%s not found", cargo_id)
+            return 0
+
+        if not force and await is_dispatch_muted(cargo_id):
+            log_audit_event(
+                session,
+                entity_type="cargo",
+                entity_id=cargo_id,
+                action="notification_dispatch_skipped",
+                actor_user_id=int(cargo.owner_id),
+                actor_role="customer",
+                meta={"reason": "muted", "target_count": 0},
+            )
+            await session.commit()
+            logger.info("Notification dispatcher muted cargo #%s", cargo_id)
             return 0
 
         route_user_ids = await collect_matching_route_subscriber_ids(session, cargo)
@@ -69,7 +108,7 @@ async def notify_matching_carriers(cargo_id: int) -> int:
         logger.info("Notification dispatcher: no matches for cargo #%s", cargo_id)
         return 0
 
-    if await _is_throttled(cargo):
+    if not force and await _is_throttled(cargo):
         async with async_session() as session:
             log_audit_event(
                 session,

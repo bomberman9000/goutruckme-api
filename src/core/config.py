@@ -111,6 +111,7 @@ class Settings(BaseSettings):
     premium_stars_30d: int = 2400
     referral_reward_days: int = 7
     manual_cargo_notify_dedupe_sec: int = 300
+    admin_notification_mute_sec: int = 86400
 
     # Escrow prototype
     escrow_enabled: bool = True

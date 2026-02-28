@@ -15,6 +15,7 @@ from src.core.config import settings
 from src.core.database import async_session
 from src.core.audit import log_audit_event
 from src.core.services.banking import get_bank_client
+from src.core.services.notification_dispatcher import mute_dispatch, notify_matching_carriers
 from src.core.services.watchdog import watchdog
 from src.core.models import (
     AuditEvent,
@@ -864,6 +865,45 @@ async def admin_dispute_escrow(deal_id: int, admin: dict = Depends(get_current_a
             action="escrow_disputed",
             actor_role="admin",
             meta={"escrow_id": int(deal.id)},
+        )
+        await session.commit()
+
+    return RedirectResponse(url="/admin/escrow", status_code=302)
+
+
+@router.post("/notifications/{cargo_id}/retry")
+async def admin_retry_notification_dispatch(cargo_id: int, admin: dict = Depends(get_current_admin)):
+    sent = await notify_matching_carriers(cargo_id, force=True)
+
+    async with async_session() as session:
+        log_audit_event(
+            session,
+            entity_type="cargo",
+            entity_id=int(cargo_id),
+            action="notification_dispatch_retried",
+            actor_role="admin",
+            meta={"sent_count": int(sent), "actor": admin.get("username")},
+        )
+        await session.commit()
+
+    return RedirectResponse(url="/admin/escrow", status_code=302)
+
+
+@router.post("/notifications/{cargo_id}/mute")
+async def admin_mute_notification_dispatch(cargo_id: int, admin: dict = Depends(get_current_admin)):
+    await mute_dispatch(cargo_id, ttl_sec=settings.admin_notification_mute_sec)
+
+    async with async_session() as session:
+        log_audit_event(
+            session,
+            entity_type="cargo",
+            entity_id=int(cargo_id),
+            action="notification_dispatch_muted_by_admin",
+            actor_role="admin",
+            meta={
+                "mute_sec": int(settings.admin_notification_mute_sec),
+                "actor": admin.get("username"),
+            },
         )
         await session.commit()
 
