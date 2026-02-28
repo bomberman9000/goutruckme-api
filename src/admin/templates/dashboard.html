@@ -135,6 +135,59 @@
                 </div>
             </div>
         </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-6">
+            <div class="bg-white p-6 rounded-lg shadow">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-bold">📈 Продуктовая воронка</h2>
+                    <div class="text-sm text-gray-500">за {{ engagement.window_days }} дней</div>
+                </div>
+                <div class="space-y-3">
+                    {% for row in engagement.funnel %}
+                    <div class="border rounded-lg p-3">
+                        <div class="flex items-center justify-between">
+                            <div class="font-medium">{{ row.label }}</div>
+                            <div class="text-sm text-gray-500">{{ row.users }} пользователей</div>
+                        </div>
+                        <div class="mt-2 flex items-center justify-between text-sm">
+                            <div class="text-gray-500">Событий</div>
+                            <div class="font-semibold">{{ row.events }}</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-lg shadow">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-bold">🏅 Самые активные пользователи</h2>
+                    <div class="text-sm text-gray-500">действия за {{ engagement.window_days }} дней</div>
+                </div>
+                {% if engagement.top_users %}
+                <div class="space-y-3">
+                    {% for user in engagement.top_users %}
+                    <div class="flex items-center justify-between border-b pb-2">
+                        <div>
+                            <div class="font-medium">{{ user.full_name }}</div>
+                            <div class="text-sm text-gray-500">
+                                ID {{ user.user_id }}
+                                {% if user.username %}
+                                • @{{ user.username }}
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-lg font-bold text-blue-600">{{ user.actions_count }}</div>
+                            <div class="text-xs text-gray-500">действий</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-gray-500">За выбранное окно активности ещё нет.</div>
+                {% endif %}
+            </div>
+        </div>
     </main>
 </div>
 {% endblock %}

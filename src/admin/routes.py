@@ -223,6 +223,24 @@ async def logout():
 @router.get("", response_class=HTMLResponse)
 async def dashboard(request: Request, admin: dict = Depends(get_current_admin)):
     parser_metrics = await watchdog.collect_parser_metrics()
+    engagement_actions = [
+        "cargo_manual_create",
+        "cargo_match_view",
+        "vehicle_create",
+        "vehicle_available",
+        "vehicle_match_view",
+        "subscription_create",
+        "escrow_created",
+    ]
+    engagement_labels = {
+        "cargo_manual_create": "Создали груз",
+        "cargo_match_view": "Открыли совпадения по грузу",
+        "vehicle_create": "Добавили машину",
+        "vehicle_available": "Вывели машину на линию",
+        "vehicle_match_view": "Открыли совпадения по машине",
+        "subscription_create": "Создали подписку",
+        "escrow_created": "Включили Честный рейс",
+    }
 
     async with async_session() as session:
         # Stats
@@ -254,6 +272,55 @@ async def dashboard(request: Request, admin: dict = Depends(get_current_admin)):
             .where(Cargo.status == CargoStatus.COMPLETED)
         )
         total_revenue = revenue_result.scalar() or 0
+
+        engagement_rows = (
+            await session.execute(
+                select(
+                    AuditEvent.action,
+                    func.count(AuditEvent.id),
+                    func.count(func.distinct(AuditEvent.actor_user_id)),
+                )
+                .where(
+                    AuditEvent.action.in_(engagement_actions),
+                    AuditEvent.created_at >= week_ago,
+                )
+                .group_by(AuditEvent.action)
+            )
+        ).all()
+        engagement_by_action = {
+            str(action): {
+                "events": int(events or 0),
+                "users": int(users or 0),
+            }
+            for action, events, users in engagement_rows
+        }
+        engagement_funnel = [
+            {
+                "action": action,
+                "label": engagement_labels[action],
+                "events": engagement_by_action.get(action, {}).get("events", 0),
+                "users": engagement_by_action.get(action, {}).get("users", 0),
+            }
+            for action in engagement_actions
+        ]
+        engaged_users_rows = (
+            await session.execute(
+                select(
+                    User.id,
+                    User.full_name,
+                    User.username,
+                    func.count(AuditEvent.id).label("actions_count"),
+                )
+                .join(AuditEvent, AuditEvent.actor_user_id == User.id)
+                .where(
+                    AuditEvent.action.in_(engagement_actions),
+                    AuditEvent.created_at >= week_ago,
+                )
+                .group_by(User.id, User.full_name, User.username)
+                .order_by(desc("actions_count"), desc(User.id))
+                .limit(8)
+            )
+        ).all()
         
         # Recent cargos
         recent_cargos = await session.execute(
@@ -276,6 +343,19 @@ async def dashboard(request: Request, admin: dict = Depends(get_current_admin)):
         },
         "recent_cargos": recent_cargos,
         "parser_metrics": parser_metrics,
+        "engagement": {
+            "window_days": 7,
+            "funnel": engagement_funnel,
+            "top_users": [
+                {
+                    "user_id": int(user_id),
+                    "full_name": full_name or f"User {user_id}",
+                    "username": username,
+                    "actions_count": int(actions_count or 0),
+                }
+                for user_id, full_name, username, actions_count in engaged_users_rows
+            ],
+        },
     })
 
 @router.get("/users", response_class=HTMLResponse)
