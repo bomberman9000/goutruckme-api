@@ -11,7 +11,8 @@ import redis.asyncio as redis
 from telethon import TelegramClient, events, utils
 from telethon.errors import AuthKeyDuplicatedError, FloodWaitError
 from telethon.sessions import StringSession
-from telethon.tl.types import User
+from telethon.tl import functions
+from telethon.tl.types import PeerChannel, User
 
 from src.core.config import settings
 from src.parser_bot.extractor import split_cargo_message_blocks
@@ -81,6 +82,38 @@ async def _resolve_chat_filters(
             getattr(entity, "title", None) or getattr(entity, "first_name", None),
             getattr(entity, "username", None),
             type(entity).__name__,
+        )
+
+        # If the configured channel has a linked discussion chat, watch it too.
+        # Many logistics channels post into the broadcast channel, while the real
+        # live traffic happens in the linked discussion group.
+        try:
+            full = await client(functions.channels.GetFullChannelRequest(channel=entity))
+            linked_chat_id = getattr(getattr(full, "full_chat", None), "linked_chat_id", None)
+        except Exception:
+            linked_chat_id = None
+
+        if not linked_chat_id:
+            continue
+
+        try:
+            linked_entity = await client.get_entity(PeerChannel(linked_chat_id))
+        except Exception as exc:
+            logger.warning("skip linked chat target=%s error=%s", item, str(exc)[:200])
+            continue
+
+        linked_peer_id = int(utils.get_peer_id(linked_entity))
+        if linked_peer_id in resolved:
+            continue
+
+        resolved.append(linked_peer_id)
+        logger.info(
+            "watch linked target=%s peer_id=%s title=%s username=%s type=%s",
+            item,
+            linked_peer_id,
+            getattr(linked_entity, "title", None) or getattr(linked_entity, "first_name", None),
+            getattr(linked_entity, "username", None),
+            type(linked_entity).__name__,
         )
 
     return resolved
