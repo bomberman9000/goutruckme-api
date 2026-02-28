@@ -206,14 +206,15 @@ class BotWatchdog:
                 )
 
             lag = parser_metrics.get("lag")
+            pending = parser_metrics.get("pending")
             queue_depth = parser_metrics.get("queue_depth")
-            if lag is not None and queue_depth is not None:
-                if lag > 0 or queue_depth > 0:
+            if lag is not None and pending is not None and queue_depth is not None:
+                if lag > 0 or pending > 0:
                     results["checks"]["parser_queue"] = (
-                        f"⚠️ depth={queue_depth} lag={lag}"
+                        f"⚠️ depth={queue_depth} pending={pending} lag={lag}"
                     )
                 else:
-                    results["checks"]["parser_queue"] = "✅ depth=0 lag=0"
+                    results["checks"]["parser_queue"] = f"✅ OK (depth={queue_depth})"
         except Exception:
             results["checks"]["parser"] = "⚠️ Unable to check"
 
