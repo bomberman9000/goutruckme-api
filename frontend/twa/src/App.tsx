@@ -18,16 +18,22 @@ import {
   fetchFeed,
   fetchSimilar,
   fetchVehicles,
+  fetchVehicleMatches,
+  fetchCargoMatches,
+  fetchMatchSummary,
   setVehicleAvailable,
   trackClick,
   updateManualCargo,
   updateFavoriteStatus,
   type FavoriteItem,
+  type CargoMatchResponse,
+  type MatchSummary,
   type FeedItem,
   type MyCargoItem,
   type SimilarItem,
   type SubscriptionItem,
   type VehicleItem,
+  type VehicleMatchResponse,
   type WebappProfileResponse,
 } from "./api";
 
@@ -119,6 +125,10 @@ export function App() {
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [vehicles, setVehicles] = useState<VehicleItem[]>([]);
   const [matchResult, setMatchResult] = useState<any>(null);
+  const [vehicleMatchMap, setVehicleMatchMap] = useState<Record<number, VehicleMatchResponse>>({});
+  const [cargoMatchMap, setCargoMatchMap] = useState<Record<number, CargoMatchResponse>>({});
+  const [matchSummary, setMatchSummary] = useState<MatchSummary | null>(null);
+  const [matchSummaryError, setMatchSummaryError] = useState<string | null>(null);
   const [copied, setCopied] = useState<number | null>(null);
   const [showAddTruck, setShowAddTruck] = useState(false);
   const [addingVehicle, setAddingVehicle] = useState(false);
@@ -254,18 +264,30 @@ export function App() {
     }
   }, []);
 
+  const loadMatchSummary = useCallback(async () => {
+    setMatchSummaryError(null);
+    try {
+      setMatchSummary(await fetchMatchSummary());
+    } catch (err) {
+      setMatchSummaryError(err instanceof Error ? err.message : "Не удалось загрузить совпадения");
+    }
+  }, []);
+
   useEffect(() => {
     if (tab === "dashboard" || tab === "wallet") {
       void fetchFavorites().then(setFavorites).catch(() => setFavorites([]));
       void loadProfileSummary();
+      void loadMatchSummary();
     }
     if (tab === "fleet") {
       void fetchVehicles().then(setVehicles).catch(() => setVehicles([]));
+      void loadMatchSummary();
     }
     if (tab === "cargos") {
       void loadMyCargos();
+      void loadMatchSummary();
     }
-  }, [tab, loadMyCargos, loadProfileSummary]);
+  }, [tab, loadMyCargos, loadProfileSummary, loadMatchSummary]);
 
   function onCallClick(item: FeedItem) {
     void trackClick(item.id).catch(() => {});
@@ -338,6 +360,7 @@ export function App() {
       if (payload.markAvailable && payload.locationCity) {
         const result = await setVehicleAvailable(created.id, payload.locationCity);
         setMatchResult(result);
+        setVehicleMatchMap((prev) => ({ ...prev, [created.id]: result }));
       }
 
       setVehicles(await fetchVehicles());
@@ -346,6 +369,25 @@ export function App() {
       setFleetError(err instanceof Error ? err.message : "Не удалось добавить машину");
     } finally {
       setAddingVehicle(false);
+    }
+  }
+
+  async function showVehicleMatches(vehicleId: number) {
+    try {
+      const result = await fetchVehicleMatches(vehicleId);
+      setVehicleMatchMap((prev) => ({ ...prev, [vehicleId]: result }));
+      setMatchResult(result);
+    } catch (err) {
+      setFleetError(err instanceof Error ? err.message : "Не удалось загрузить совпадения");
+    }
+  }
+
+  async function showCargoMatches(cargoId: number) {
+    try {
+      const result = await fetchCargoMatches(cargoId);
+      setCargoMatchMap((prev) => ({ ...prev, [cargoId]: result }));
+    } catch (err) {
+      setMyCargosError(err instanceof Error ? err.message : "Не удалось загрузить совпадения");
     }
   }
 
@@ -885,6 +927,63 @@ export function App() {
     );
   }
 
+  function renderVehicleMatchCards(vehicleId: number) {
+    const result = vehicleMatchMap[vehicleId];
+    if (!result || result.matched.length === 0) {
+      return null;
+    }
+    return (
+      <div className="match-results">
+        <h3>🎯 Подходящие грузы</h3>
+        {result.matched.slice(0, 3).map((m) => (
+          <div className="match-card" key={`vehicle-${vehicleId}-${m.id}`}>
+            <div className="match-route">
+              {m.verified_payment && "🛡️ "}
+              {m.is_hot_deal && "🔥 "}
+              <strong>{m.from_city} → {m.to_city}</strong>
+            </div>
+            <div className="match-details">
+              {m.body_type ?? "?"} • {m.weight_t ?? 0}т •{" "}
+              <span style={{ color: "var(--green)", fontWeight: 700 }}>
+                {(m.rate_rub ?? 0).toLocaleString("ru")}₽
+              </span>
+              {m.rate_per_km != null && ` (${m.rate_per_km} ₽/км)`}
+            </div>
+            <div className="muted">
+              Совпадение {m.match_score}%{m.distance_to_pickup_km != null ? ` • ${m.distance_to_pickup_km} км до погрузки` : ""}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  function renderCargoMatchCards(cargoId: number) {
+    const result = cargoMatchMap[cargoId];
+    if (!result || result.matched.length === 0) {
+      return null;
+    }
+    return (
+      <div className="match-results">
+        <h3>🚛 Подходящие машины</h3>
+        {result.matched.slice(0, 3).map((m) => (
+          <div className="match-card" key={`cargo-${cargoId}-${m.vehicle_id}`}>
+            <div className="match-route">
+              <strong>{m.body_type} • {m.capacity_tons}т</strong>
+              {m.plate_number && <span className="muted"> • {m.plate_number}</span>}
+            </div>
+            <div className="match-details">
+              {m.location_city ? `📍 ${m.location_city}` : "📍 Локация не указана"}
+            </div>
+            <div className="muted">
+              Совпадение {m.match_score}%{m.distance_to_pickup_km != null ? ` • ${m.distance_to_pickup_km} км до погрузки` : ""}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   function renderDashboard() {
     const saved = favorites.filter((f) => f.status === "saved");
     const inProgress = favorites.filter((f) => f.status === "in_progress");
@@ -969,6 +1068,29 @@ export function App() {
                   </button>
                 )}
               </>
+            )}
+          </article>
+
+          <article className="cabinet-card">
+            <div className="cabinet-title">🎯 Матчинг</div>
+            {matchSummary ? (
+              <>
+                <div className="cabinet-user">
+                  Для вашей техники: {matchSummary.vehicle_match_count}
+                </div>
+                <div className="cabinet-meta">
+                  Для ваших грузов: {matchSummary.cargo_match_count}
+                </div>
+                <div className="cabinet-meta">
+                  Лучшая техника: {matchSummary.best_vehicle_match_score}%
+                </div>
+                <div className="cabinet-meta">
+                  Лучший груз: {matchSummary.best_cargo_match_score}%
+                </div>
+                <button className="action-btn" onClick={() => setTab("fleet")}>Смотреть флот →</button>
+              </>
+            ) : (
+              <div className="cabinet-meta">{matchSummaryError || "Совпадения появятся после загрузки"}</div>
             )}
           </article>
         </section>
@@ -1124,7 +1246,15 @@ export function App() {
                     >
                       🗄️ Архив
                     </button>
+                    <button
+                      className="action-btn"
+                      onClick={() => void showCargoMatches(cargo.id)}
+                    >
+                      🎯 Совпадения
+                    </button>
                   </div>
+
+                  {renderCargoMatchCards(cargo.id)}
 
                   {editing && (
                     <AddCargoForm
@@ -1635,17 +1765,24 @@ export function App() {
                   </div>
                   <div className="vehicle-status">
                     {v.is_available ? (
-                      <span className="status-badge free">🟢 Свободен</span>
+                      <>
+                        <span className="status-badge free">🟢 Свободен</span>
+                        <button className="action-btn" onClick={() => void showVehicleMatches(v.id)}>
+                          🎯 Совпадения
+                        </button>
+                      </>
                     ) : (
                       <button className="action-btn primary" onClick={async () => {
                         const city = window.prompt("Город, где свободна машина:", v.location_city || "");
                         if (!city) return;
                         const result = await setVehicleAvailable(v.id, city);
                         setMatchResult(result);
+                        setVehicleMatchMap((prev) => ({ ...prev, [v.id]: result }));
                         setVehicles(await fetchVehicles());
                       }}>Я свободен!</button>
                     )}
                   </div>
+                  {renderVehicleMatchCards(v.id)}
                 </div>
               ))}
             </div>

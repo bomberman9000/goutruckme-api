@@ -153,6 +153,7 @@ from src.api.currency import router as currency_router
 from src.api.subscriptions import router as subscriptions_router
 from src.api.escrow import router as escrow_router
 from src.api.geo import router as geo_router
+from src.api.match import router as match_router
 from src.core.services.watchdog import watchdog
 
 app.include_router(admin_panel_router)
@@ -175,6 +176,7 @@ app.include_router(currency_router)
 app.include_router(subscriptions_router)
 app.include_router(escrow_router)
 app.include_router(geo_router)
+app.include_router(match_router)
 app.include_router(antifraud_api_router)
 app.include_router(antifraud_admin_api_router)
 app.include_router(internal_api_router)

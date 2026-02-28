@@ -229,6 +229,55 @@ export type VehicleItem = {
   sts_verified: boolean;
 };
 
+export type VehicleMatchItem = {
+  id: number;
+  from_city: string | null;
+  to_city: string | null;
+  body_type: string | null;
+  weight_t: number | null;
+  rate_rub: number | null;
+  rate_per_km: number | null;
+  load_date: string | null;
+  is_hot_deal: boolean;
+  freshness: string | null;
+  match_score: number;
+  distance_to_pickup_km: number | null;
+  match_reasons: string[];
+  verified_payment: boolean;
+};
+
+export type VehicleMatchResponse = {
+  vehicle_id: number;
+  location_city: string | null;
+  matched: VehicleMatchItem[];
+  total: number;
+};
+
+export type CargoMatchVehicleItem = {
+  vehicle_id: number;
+  body_type: string;
+  capacity_tons: number;
+  location_city: string | null;
+  is_available: boolean;
+  plate_number: string | null;
+  match_score: number;
+  distance_to_pickup_km: number | null;
+  match_reasons: string[];
+};
+
+export type CargoMatchResponse = {
+  cargo_id: number;
+  matched: CargoMatchVehicleItem[];
+  total: number;
+};
+
+export type MatchSummary = {
+  vehicle_match_count: number;
+  cargo_match_count: number;
+  best_vehicle_match_score: number;
+  best_cargo_match_score: number;
+};
+
 export type ManualCargoPayload = {
   origin: string;
   destination: string;
@@ -434,6 +483,54 @@ export async function setVehicleAvailable(vehicleId: number, city: string): Prom
   });
   if (!resp.ok) return null;
   return resp.json();
+}
+
+export async function fetchVehicleMatches(vehicleId: number): Promise<VehicleMatchResponse> {
+  const headers: Record<string, string> = {};
+  const initData = await resolveOptionalInitData();
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+  const response = await fetch(`/api/v1/match/vehicle/${vehicleId}`, {
+    credentials: "include",
+    headers,
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, "Vehicle match failed");
+  }
+  return response.json();
+}
+
+export async function fetchCargoMatches(cargoId: number): Promise<CargoMatchResponse> {
+  const headers: Record<string, string> = {};
+  const initData = await resolveOptionalInitData();
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+  const response = await fetch(`/api/v1/match/cargo/${cargoId}`, {
+    credentials: "include",
+    headers,
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, "Cargo match failed");
+  }
+  return response.json();
+}
+
+export async function fetchMatchSummary(): Promise<MatchSummary> {
+  const headers: Record<string, string> = {};
+  const initData = await resolveOptionalInitData();
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+  const response = await fetch("/api/v1/match/summary", {
+    credentials: "include",
+    headers,
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, "Match summary failed");
+  }
+  return response.json();
 }
 
 export async function trackClick(feedId: number): Promise<void> {
