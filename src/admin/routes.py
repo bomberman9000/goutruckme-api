@@ -1,3 +1,4 @@
+import json
 import uuid
 
 import httpx
@@ -12,16 +13,24 @@ from src.admin.auth import (
 )
 from src.core.config import settings
 from src.core.database import async_session
+from src.core.audit import log_audit_event
+from src.core.services.banking import get_bank_client
 from src.core.services.watchdog import watchdog
 from src.core.models import (
+    AuditEvent,
     User,
     Cargo,
+    CargoPaymentStatus,
     CargoStatus,
+    EscrowDeal,
+    EscrowEvent,
+    EscrowStatus,
     Report,
     Rating,
     ChatMessage,
     Feedback,
     ParserIngestEvent,
+    UserWallet,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -112,6 +121,16 @@ def _build_retry_sync_payload(event: ParserIngestEvent) -> dict:
     }
 
 
+def _safe_meta(value: str | None) -> dict:
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, dict) else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+
+
 def _apply_parser_filters(query, *, status: str | None, source: str | None):
     if status:
         query = query.where(ParserIngestEvent.status == status)
@@ -155,6 +174,22 @@ async def _retry_sync_event(client: httpx.AsyncClient, event: ParserIngestEvent)
     except Exception as exc:
         event.status = "sync_failed"
         event.error = str(exc)[:255]
+
+
+async def _ensure_wallet(session, user_id: int) -> UserWallet:
+    wallet = await session.get(UserWallet, user_id)
+    if wallet:
+        return wallet
+    wallet = UserWallet(user_id=user_id, balance_rub=0, frozen_balance_rub=0)
+    session.add(wallet)
+    await session.flush()
+    return wallet
+
+
+def _escrow_status_label(status: EscrowStatus | str | None) -> str:
+    if isinstance(status, EscrowStatus):
+        return status.value
+    return str(status or "")
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
@@ -636,6 +671,203 @@ async def ignore_parser_event(event_id: int, admin: dict = Depends(get_current_a
             event.status = "ignored"
             await session.commit()
     return RedirectResponse(url="/admin/parser", status_code=302)
+
+
+@router.get("/escrow", response_class=HTMLResponse)
+async def escrow_console(
+    request: Request,
+    admin: dict = Depends(get_current_admin),
+    page: int = 1,
+    status: str | None = None,
+):
+    limit = 20
+    offset = (page - 1) * limit
+
+    async with async_session() as session:
+        counts_rows = await session.execute(
+            select(EscrowDeal.status, func.count())
+            .group_by(EscrowDeal.status)
+            .order_by(EscrowDeal.status)
+        )
+        status_counts = {
+            (row[0].value if isinstance(row[0], EscrowStatus) else str(row[0] or "unknown")): row[1]
+            for row in counts_rows.all()
+        }
+
+        query = select(EscrowDeal)
+        count_query = select(func.count()).select_from(EscrowDeal)
+        current_status = None
+        if status:
+            try:
+                current_status = EscrowStatus(status)
+            except ValueError:
+                current_status = None
+            if current_status is not None:
+                query = query.where(EscrowDeal.status == current_status)
+                count_query = count_query.where(EscrowDeal.status == current_status)
+
+        total = await session.scalar(count_query)
+        deals = (
+            await session.execute(
+                query.order_by(desc(EscrowDeal.created_at)).offset(offset).limit(limit)
+            )
+        ).scalars().all()
+
+        cargo_ids = [int(deal.cargo_id) for deal in deals]
+        user_ids = sorted({
+            int(user_id)
+            for deal in deals
+            for user_id in (deal.client_id, deal.carrier_id)
+            if user_id
+        })
+
+        cargos = {}
+        users = {}
+        if cargo_ids:
+            cargo_rows = (await session.execute(select(Cargo).where(Cargo.id.in_(cargo_ids)))).scalars().all()
+            cargos = {int(c.id): c for c in cargo_rows}
+        if user_ids:
+            user_rows = (await session.execute(select(User).where(User.id.in_(user_ids)))).scalars().all()
+            users = {int(u.id): u for u in user_rows}
+
+        notification_rows = (
+            await session.execute(
+                select(AuditEvent)
+                .where(AuditEvent.action.like("notification_dispatch%"))
+                .order_by(desc(AuditEvent.created_at))
+                .limit(20)
+            )
+        ).scalars().all()
+
+        escrow_audit_rows = (
+            await session.execute(
+                select(AuditEvent)
+                .where(AuditEvent.action.like("escrow_%"))
+                .order_by(desc(AuditEvent.created_at))
+                .limit(20)
+            )
+        ).scalars().all()
+
+    return templates.TemplateResponse("escrow.html", {
+        **_ctx(request),
+        "admin": admin,
+        "deals": deals,
+        "cargos": cargos,
+        "users": users,
+        "page": page,
+        "total_pages": (total + limit - 1) // limit if total else 1,
+        "total": total,
+        "current_status": current_status.value if current_status else None,
+        "status_counts": status_counts,
+        "notification_logs": [
+            {"row": row, "meta": _safe_meta(row.meta_json)}
+            for row in notification_rows
+        ],
+        "escrow_logs": [
+            {"row": row, "meta": _safe_meta(row.meta_json)}
+            for row in escrow_audit_rows
+        ],
+        "escrow_status_label": _escrow_status_label,
+    })
+
+
+@router.post("/escrow/{deal_id}/release")
+async def admin_release_escrow(deal_id: int, admin: dict = Depends(get_current_admin)):
+    async with async_session() as session:
+        deal = await session.get(EscrowDeal, deal_id)
+        if not deal:
+            raise HTTPException(status_code=404, detail="Escrow not found")
+        cargo = await session.get(Cargo, int(deal.cargo_id))
+        if not cargo:
+            raise HTTPException(status_code=404, detail="Cargo not found")
+        if deal.status != EscrowStatus.DELIVERY_MARKED:
+            return RedirectResponse(url="/admin/escrow", status_code=302)
+
+        payout = await get_bank_client(deal.provider).release_funds(
+            escrow_id=int(deal.id),
+            cargo_id=int(cargo.id),
+            amount_rub=int(deal.carrier_amount_rub),
+            carrier_user_id=int(deal.carrier_id or cargo.carrier_id or deal.client_id),
+        )
+
+        client_wallet = await _ensure_wallet(session, int(deal.client_id))
+        carrier_wallet = await _ensure_wallet(session, int(deal.carrier_id or cargo.carrier_id or deal.client_id))
+
+        client_wallet.balance_rub = max(int(client_wallet.balance_rub) - int(deal.amount_rub), 0)
+        client_wallet.frozen_balance_rub = max(int(client_wallet.frozen_balance_rub) - int(deal.amount_rub), 0)
+        carrier_wallet.balance_rub += int(deal.carrier_amount_rub)
+
+        deal.status = EscrowStatus.RELEASED
+        deal.released_at = datetime.utcnow()
+        cargo.payment_status = CargoPaymentStatus.RELEASED
+        cargo.payment_verified_at = cargo.payment_verified_at or datetime.utcnow()
+
+        session.add(
+            EscrowEvent(
+                escrow_deal_id=int(deal.id),
+                event_type="admin_released",
+                actor_user_id=None,
+                payload_json=json.dumps(
+                    {
+                        "provider": payout.provider,
+                        "provider_payout_id": payout.provider_payout_id,
+                        "actor": admin.get("username"),
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        )
+        log_audit_event(
+            session,
+            entity_type="cargo",
+            entity_id=int(cargo.id),
+            action="escrow_admin_released",
+            actor_role="admin",
+            meta={
+                "escrow_id": int(deal.id),
+                "provider": payout.provider,
+                "provider_payout_id": payout.provider_payout_id,
+                "carrier_amount_rub": int(deal.carrier_amount_rub),
+            },
+        )
+        await session.commit()
+
+    return RedirectResponse(url="/admin/escrow", status_code=302)
+
+
+@router.post("/escrow/{deal_id}/dispute")
+async def admin_dispute_escrow(deal_id: int, admin: dict = Depends(get_current_admin)):
+    async with async_session() as session:
+        deal = await session.get(EscrowDeal, deal_id)
+        if not deal:
+            raise HTTPException(status_code=404, detail="Escrow not found")
+        cargo = await session.get(Cargo, int(deal.cargo_id))
+        if not cargo:
+            raise HTTPException(status_code=404, detail="Cargo not found")
+        if deal.status in {EscrowStatus.RELEASED, EscrowStatus.CANCELLED, EscrowStatus.DISPUTED}:
+            return RedirectResponse(url="/admin/escrow", status_code=302)
+
+        deal.status = EscrowStatus.DISPUTED
+        cargo.payment_status = CargoPaymentStatus.DISPUTED
+        session.add(
+            EscrowEvent(
+                escrow_deal_id=int(deal.id),
+                event_type="admin_disputed",
+                actor_user_id=None,
+                payload_json=json.dumps({"actor": admin.get("username")}, ensure_ascii=False),
+            )
+        )
+        log_audit_event(
+            session,
+            entity_type="cargo",
+            entity_id=int(cargo.id),
+            action="escrow_disputed",
+            actor_role="admin",
+            meta={"escrow_id": int(deal.id)},
+        )
+        await session.commit()
+
+    return RedirectResponse(url="/admin/escrow", status_code=302)
 
 @router.post("/reports/{report_id}/review")
 async def review_report(report_id: int, admin: dict = Depends(get_current_admin)):
