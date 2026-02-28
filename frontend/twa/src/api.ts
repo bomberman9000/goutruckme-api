@@ -81,6 +81,28 @@ async function resolveOptionalInitData(retries = 2, delayMs = 180): Promise<stri
   return initData;
 }
 
+async function resolveRequiredInitData(actionLabel: string, retries = 6, delayMs = 250): Promise<string> {
+  const initData = await resolveOptionalInitData(retries, delayMs);
+  if (!initData) {
+    throw new Error(`${actionLabel}: не удалось подтвердить Telegram-сессию. Откройте Mini App заново из бота.`);
+  }
+  return initData;
+}
+
+async function buildOptionalTmaHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {};
+  const initData = await resolveOptionalInitData();
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+  return headers;
+}
+
+async function buildRequiredTmaHeaders(actionLabel: string): Promise<Record<string, string>> {
+  const initData = await resolveRequiredInitData(actionLabel);
+  return { Authorization: `tma ${initData}` };
+}
+
 async function buildApiError(response: Response, fallback: string): Promise<Error> {
   try {
     const payload = await response.json() as { detail?: string };
@@ -177,9 +199,7 @@ export type FavoriteItem = {
 };
 
 export async function fetchFavorites(): Promise<FavoriteItem[]> {
-  const headers: Record<string, string> = {};
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) headers.Authorization = `tma ${initData}`;
+  const headers = await buildRequiredTmaHeaders("Избранное");
   const response = await fetch("/api/v1/favorites?limit=50", { credentials: "include", headers });
   if (!response.ok) return [];
   const data = await response.json();
@@ -187,9 +207,7 @@ export async function fetchFavorites(): Promise<FavoriteItem[]> {
 }
 
 export async function updateFavoriteStatus(feedId: number, status: string): Promise<void> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) headers.Authorization = `tma ${initData}`;
+  const headers = { "Content-Type": "application/json", ...(await buildRequiredTmaHeaders("Обновление избранного")) };
   await fetch(`/api/v1/favorites/${feedId}`, {
     method: "PATCH",
     credentials: "include",
@@ -208,9 +226,7 @@ export async function fetchSimilar(feedId: number): Promise<SimilarItem[]> {
 }
 
 export async function addFavorite(feedId: number, note?: string): Promise<void> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) headers.Authorization = `tma ${initData}`;
+  const headers = { "Content-Type": "application/json", ...(await buildRequiredTmaHeaders("Добавление в избранное")) };
   await fetch(`/api/v1/favorites/${feedId}`, {
     method: "POST",
     credentials: "include",
@@ -425,23 +441,21 @@ type SubscriptionListResponse = {
 };
 
 export async function fetchWebappProfile(): Promise<WebappProfileResponse> {
-  const headers: Record<string, string> = {};
-  const initData = await resolveOptionalInitData(3, 220);
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = await buildRequiredTmaHeaders("Кабинет");
 
   let response = await fetch("/api/webapp/profile", {
     credentials: "include",
     headers,
   });
   if (response.status === 401) {
-    const refreshedInitData = await resolveOptionalInitData(4, 260);
-    if (refreshedInitData) {
+    try {
+      const refreshedHeaders = await buildRequiredTmaHeaders("Кабинет");
       response = await fetch("/api/webapp/profile", {
         credentials: "include",
-        headers: { Authorization: `tma ${refreshedInitData}` },
+        headers: refreshedHeaders,
       });
+    } catch {
+      // keep original 401 response handling below
     }
   }
   if (!response.ok) {
@@ -451,9 +465,7 @@ export async function fetchWebappProfile(): Promise<WebappProfileResponse> {
 }
 
 export async function fetchVehicles(): Promise<VehicleItem[]> {
-  const headers: Record<string, string> = {};
-  const initData = await resolveOptionalInitData();
-  if (initData) headers.Authorization = `tma ${initData}`;
+  const headers = await buildRequiredTmaHeaders("Флот");
   const response = await fetch("/api/v1/fleet/vehicles", { credentials: "include", headers });
   if (!response.ok) return [];
   const data = await response.json();
@@ -466,9 +478,7 @@ export async function addVehicle(
   city?: string,
   plate_number?: string,
 ): Promise<VehicleItem> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) headers.Authorization = `tma ${initData}`;
+  const headers = { "Content-Type": "application/json", ...(await buildRequiredTmaHeaders("Добавление машины")) };
   const response = await fetch("/api/v1/fleet/vehicles", {
     method: "POST", credentials: "include", headers,
     body: JSON.stringify({
@@ -485,9 +495,7 @@ export async function addVehicle(
 }
 
 export async function setVehicleAvailable(vehicleId: number, city: string): Promise<any> {
-  const headers: Record<string, string> = {};
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) headers.Authorization = `tma ${initData}`;
+  const headers = await buildRequiredTmaHeaders("Активация машины");
   const resp = await fetch(`/api/v1/fleet/vehicles/${vehicleId}/available?city=${encodeURIComponent(city)}`, {
     method: "POST", credentials: "include", headers,
   });
@@ -496,11 +504,7 @@ export async function setVehicleAvailable(vehicleId: number, city: string): Prom
 }
 
 export async function fetchVehicleMatches(vehicleId: number): Promise<VehicleMatchResponse> {
-  const headers: Record<string, string> = {};
-  const initData = await resolveOptionalInitData();
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = await buildRequiredTmaHeaders("Совпадения по машине");
   const response = await fetch(`/api/v1/match/vehicle/${vehicleId}`, {
     credentials: "include",
     headers,
@@ -512,11 +516,7 @@ export async function fetchVehicleMatches(vehicleId: number): Promise<VehicleMat
 }
 
 export async function fetchCargoMatches(cargoId: number): Promise<CargoMatchResponse> {
-  const headers: Record<string, string> = {};
-  const initData = await resolveOptionalInitData();
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = await buildRequiredTmaHeaders("Совпадения по грузу");
   const response = await fetch(`/api/v1/match/cargo/${cargoId}`, {
     credentials: "include",
     headers,
@@ -528,11 +528,7 @@ export async function fetchCargoMatches(cargoId: number): Promise<CargoMatchResp
 }
 
 export async function fetchMatchSummary(): Promise<MatchSummary> {
-  const headers: Record<string, string> = {};
-  const initData = await resolveOptionalInitData();
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = await buildRequiredTmaHeaders("Матчинг");
   const response = await fetch("/api/v1/match/summary", {
     credentials: "include",
     headers,
@@ -544,11 +540,7 @@ export async function fetchMatchSummary(): Promise<MatchSummary> {
 }
 
 export async function trackClick(feedId: number): Promise<void> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = { "Content-Type": "application/json", ...(await buildRequiredTmaHeaders("Клик по контакту")) };
 
   const response = await fetch(`/api/v1/feed/${feedId}/click`, {
     method: "POST",
@@ -563,9 +555,7 @@ export async function trackClick(feedId: number): Promise<void> {
 }
 
 export async function createManualCargo(payload: ManualCargoPayload): Promise<ManualCargoResponse> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const initData = getRequiredInitData("Публикация груза");
-  headers.Authorization = `tma ${initData}`;
+  const headers = { "Content-Type": "application/json", ...(await buildRequiredTmaHeaders("Публикация груза")) };
 
   const response = await fetch("/api/v1/cargos/manual", {
     method: "POST",
@@ -582,11 +572,7 @@ export async function createManualCargo(payload: ManualCargoPayload): Promise<Ma
 }
 
 export async function fetchMyCargos(limit = 50): Promise<MyCargoItem[]> {
-  const headers: Record<string, string> = {};
-  const initData = await resolveOptionalInitData();
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = await buildRequiredTmaHeaders("Мои грузы");
 
   const response = await fetch(`/api/v1/cargos/my?limit=${limit}`, {
     credentials: "include",
@@ -604,11 +590,7 @@ export async function updateManualCargo(
   cargoId: number,
   payload: Partial<ManualCargoPayload>,
 ): Promise<void> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = { "Content-Type": "application/json", ...(await buildRequiredTmaHeaders("Обновление груза")) };
 
   const response = await fetch(`/api/v1/cargos/${cargoId}`, {
     method: "PATCH",
@@ -623,11 +605,7 @@ export async function updateManualCargo(
 }
 
 export async function archiveManualCargo(cargoId: number): Promise<void> {
-  const headers: Record<string, string> = {};
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = await buildRequiredTmaHeaders("Архивация груза");
 
   const response = await fetch(`/api/v1/cargos/${cargoId}/archive`, {
     method: "POST",
@@ -641,11 +619,7 @@ export async function archiveManualCargo(cargoId: number): Promise<void> {
 }
 
 export async function createEscrow(cargoId: number, amount_rub?: number): Promise<EscrowActionResponse> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = { "Content-Type": "application/json", ...(await buildRequiredTmaHeaders("Запуск safe deal")) };
 
   const response = await fetch(`/api/v1/escrow/${cargoId}/create`, {
     method: "POST",
@@ -662,11 +636,7 @@ export async function createEscrow(cargoId: number, amount_rub?: number): Promis
 }
 
 export async function markEscrowDelivered(cargoId: number): Promise<EscrowActionResponse> {
-  const headers: Record<string, string> = {};
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = await buildRequiredTmaHeaders("Подтверждение доставки");
 
   const response = await fetch(`/api/v1/escrow/${cargoId}/mark-delivered`, {
     method: "POST",
@@ -682,11 +652,7 @@ export async function markEscrowDelivered(cargoId: number): Promise<EscrowAction
 }
 
 export async function releaseEscrow(cargoId: number): Promise<EscrowActionResponse> {
-  const headers: Record<string, string> = {};
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = await buildRequiredTmaHeaders("Разблокировка оплаты");
 
   const response = await fetch(`/api/v1/escrow/${cargoId}/release`, {
     method: "POST",
@@ -706,11 +672,7 @@ export async function disputeEscrow(
   reason?: string | null,
   note?: string | null,
 ): Promise<EscrowActionResponse> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = { "Content-Type": "application/json", ...(await buildRequiredTmaHeaders("Открытие спора")) };
 
   const response = await fetch(`/api/v1/escrow/${cargoId}/dispute`, {
     method: "POST",
@@ -731,11 +693,7 @@ export async function requestEscrowRefund(
   reason?: string | null,
   note?: string | null,
 ): Promise<EscrowActionResponse> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = { "Content-Type": "application/json", ...(await buildRequiredTmaHeaders("Запрос возврата")) };
 
   const response = await fetch(`/api/v1/escrow/${cargoId}/request-refund`, {
     method: "POST",
@@ -752,11 +710,7 @@ export async function requestEscrowRefund(
 }
 
 export async function fetchSubscriptions(): Promise<SubscriptionItem[]> {
-  const headers: Record<string, string> = {};
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = await buildRequiredTmaHeaders("Подписки");
   const response = await fetch("/api/v1/subscriptions", {
     credentials: "include",
     headers,
@@ -776,11 +730,7 @@ export async function createSubscription(payload: {
   max_weight?: number | null;
   region?: string | null;
 }): Promise<SubscriptionItem> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = { "Content-Type": "application/json", ...(await buildRequiredTmaHeaders("Создание подписки")) };
   const response = await fetch("/api/v1/subscriptions", {
     method: "POST",
     credentials: "include",
@@ -795,11 +745,7 @@ export async function createSubscription(payload: {
 }
 
 export async function deleteSubscription(subscriptionId: number): Promise<void> {
-  const headers: Record<string, string> = {};
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const headers = await buildRequiredTmaHeaders("Удаление подписки");
   const response = await fetch(`/api/v1/subscriptions/${subscriptionId}`, {
     method: "DELETE",
     credentials: "include",
