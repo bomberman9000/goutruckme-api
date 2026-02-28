@@ -159,7 +159,7 @@ async def test_notify_matching_carriers_throttles_duplicates(monkeypatch):
 
     assert sent == 0
     assert fake_session.cargo.notified_at is None
-    assert fake_session.audit[-1].action == "notification_dispatch_throttled"
+    assert fake_session.audit[-1].action == "notification_dispatch_throttle"
 
 
 @pytest.mark.asyncio

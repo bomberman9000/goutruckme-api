@@ -11,6 +11,7 @@ from src.admin.auth import (
     verify_password, create_access_token, get_current_admin,
     ADMIN_PASSWORD_HASH
 )
+from src.core.cache import clear_cached
 from src.core.config import settings
 from src.core.database import async_session
 from src.core.audit import log_audit_event
@@ -851,7 +852,12 @@ async def admin_release_escrow(deal_id: int, admin: dict = Depends(get_current_a
 
 
 @router.post("/escrow/{deal_id}/dispute")
-async def admin_dispute_escrow(deal_id: int, admin: dict = Depends(get_current_admin)):
+async def admin_dispute_escrow(
+    deal_id: int,
+    reason: str | None = Form(default=None),
+    note: str | None = Form(default=None),
+    admin: dict = Depends(get_current_admin),
+):
     async with async_session() as session:
         deal = await session.get(EscrowDeal, deal_id)
         if not deal:
@@ -862,6 +868,9 @@ async def admin_dispute_escrow(deal_id: int, admin: dict = Depends(get_current_a
         if deal.status in {EscrowStatus.RELEASED, EscrowStatus.CANCELLED, EscrowStatus.DISPUTED}:
             return RedirectResponse(url="/admin/escrow", status_code=302)
 
+        reason_value = (reason or "").strip()[:120]
+        note_value = (note or "").strip()[:500]
+
         deal.status = EscrowStatus.DISPUTED
         cargo.payment_status = CargoPaymentStatus.DISPUTED
         session.add(
@@ -869,7 +878,14 @@ async def admin_dispute_escrow(deal_id: int, admin: dict = Depends(get_current_a
                 escrow_deal_id=int(deal.id),
                 event_type="admin_disputed",
                 actor_user_id=None,
-                payload_json=json.dumps({"actor": admin.get("username")}, ensure_ascii=False),
+                payload_json=json.dumps(
+                    {
+                        "actor": admin.get("username"),
+                        "reason": reason_value,
+                        "note": note_value,
+                    },
+                    ensure_ascii=False,
+                ),
             )
         )
         log_audit_event(
@@ -878,10 +894,79 @@ async def admin_dispute_escrow(deal_id: int, admin: dict = Depends(get_current_a
             entity_id=int(cargo.id),
             action="escrow_disputed",
             actor_role="admin",
-            meta={"escrow_id": int(deal.id)},
+            meta={
+                "escrow_id": int(deal.id),
+                "reason": reason_value,
+                "note": note_value,
+            },
         )
         await session.commit()
 
+    return RedirectResponse(url="/admin/escrow", status_code=302)
+
+
+@router.post("/escrow/{deal_id}/cancel")
+async def admin_cancel_escrow(
+    deal_id: int,
+    reason: str | None = Form(default=None),
+    note: str | None = Form(default=None),
+    admin: dict = Depends(get_current_admin),
+):
+    async with async_session() as session:
+        deal = await session.get(EscrowDeal, deal_id)
+        if not deal:
+            raise HTTPException(status_code=404, detail="Escrow not found")
+        cargo = await session.get(Cargo, int(deal.cargo_id))
+        if not cargo:
+            raise HTTPException(status_code=404, detail="Cargo not found")
+        if deal.status in {EscrowStatus.RELEASED, EscrowStatus.CANCELLED}:
+            return RedirectResponse(url="/admin/escrow", status_code=302)
+
+        reason_value = (reason or "").strip()[:120]
+        note_value = (note or "").strip()[:500]
+        refund_amount = 0
+
+        if deal.status in {EscrowStatus.FUNDED, EscrowStatus.DELIVERY_MARKED, EscrowStatus.DISPUTED}:
+            client_wallet = await _ensure_wallet(session, int(deal.client_id))
+            refund_amount = int(deal.amount_rub)
+            client_wallet.balance_rub = max(int(client_wallet.balance_rub) - refund_amount, 0)
+            client_wallet.frozen_balance_rub = max(int(client_wallet.frozen_balance_rub) - refund_amount, 0)
+
+        deal.status = EscrowStatus.CANCELLED
+        cargo.payment_status = CargoPaymentStatus.CANCELLED
+        cargo.payment_verified_at = None
+        session.add(
+            EscrowEvent(
+                escrow_deal_id=int(deal.id),
+                event_type="admin_cancelled",
+                actor_user_id=None,
+                payload_json=json.dumps(
+                    {
+                        "actor": admin.get("username"),
+                        "reason": reason_value,
+                        "note": note_value,
+                        "refund_amount_rub": refund_amount,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+        )
+        log_audit_event(
+            session,
+            entity_type="cargo",
+            entity_id=int(cargo.id),
+            action="escrow_admin_cancelled",
+            actor_role="admin",
+            meta={
+                "escrow_id": int(deal.id),
+                "reason": reason_value,
+                "note": note_value,
+                "refund_amount_rub": refund_amount,
+            },
+        )
+        await session.commit()
+
+    await clear_cached("feed")
     return RedirectResponse(url="/admin/escrow", status_code=302)
 
 
@@ -912,7 +997,7 @@ async def admin_mute_notification_dispatch(cargo_id: int, admin: dict = Depends(
             session,
             entity_type="cargo",
             entity_id=int(cargo_id),
-            action="notification_dispatch_muted_by_admin",
+            action="notification_dispatch_muted",
             actor_role="admin",
             meta={
                 "mute_sec": int(settings.admin_notification_mute_sec),

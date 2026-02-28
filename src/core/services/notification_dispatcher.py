@@ -114,7 +114,7 @@ async def notify_matching_carriers(cargo_id: int, *, force: bool = False) -> int
                 session,
                 entity_type="cargo",
                 entity_id=cargo_id,
-                action="notification_dispatch_throttled",
+                action="notification_dispatch_throttle",
                 actor_user_id=int(cargo.owner_id),
                 actor_role="customer",
                 meta={
