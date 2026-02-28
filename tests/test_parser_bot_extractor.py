@@ -55,6 +55,11 @@ def test_parse_route_with_slash_or_pipe_separator():
     assert chevron_parsed.from_city == "Чимкент"
     assert chevron_parsed.to_city == "Навоий"
 
+    underscore_parsed = parse_cargo_message("Andijon __ Toshkent Tent 2.5 mln", keywords=["тент"])
+    assert underscore_parsed is not None
+    assert underscore_parsed.from_city == "Андижан"
+    assert underscore_parsed.to_city == "Ташкент"
+
 
 def test_parse_cargo_message_requires_route_and_keyword():
     assert parse_cargo_message("Просто привет, без маршрута", keywords=["тент"]) is None
@@ -113,6 +118,15 @@ def test_parse_cargo_message_prefers_first_valid_route_over_invalid_later_line()
 
     assert parsed is not None
     assert parsed.from_city == "Ворсино"
+    assert parsed.to_city == "Ташкент"
+
+
+def test_parse_cargo_message_strips_route_decorative_emoji():
+    text = "⛳️ Воронеж - ⛳️ Ташкент 21 тонн тент"
+    parsed = parse_cargo_message(text, keywords=["тент"])
+
+    assert parsed is not None
+    assert parsed.from_city == "Воронеж"
     assert parsed.to_city == "Ташкент"
 
 

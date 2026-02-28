@@ -88,3 +88,31 @@ def test_has_min_signal_accepts_cargo_intent_phrase_without_numeric_fields():
     )
 
     assert _has_min_signal(parsed) is True
+
+
+def test_has_min_signal_accepts_customs_or_ferry_intent_without_numeric_fields():
+    customs = ParsedCargo(
+        from_city="Балыкесир",
+        to_city="Ташкент",
+        body_type=None,
+        rate_rub=None,
+        weight_t=None,
+        phone=None,
+        inn=None,
+        matched_keywords=["auto"],
+        raw_text="Балыкесир - Ташкент Растаможка: Бурса",
+    )
+    ferry = ParsedCargo(
+        from_city="Поти",
+        to_city="Астана",
+        body_type=None,
+        rate_rub=None,
+        weight_t=None,
+        phone=None,
+        inn=None,
+        matched_keywords=["auto"],
+        raw_text="Поти - Астана Казахстан Груз готов Через паром",
+    )
+
+    assert _has_min_signal(customs) is True
+    assert _has_min_signal(ferry) is True

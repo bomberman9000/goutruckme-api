@@ -38,7 +38,7 @@ logging.basicConfig(
 logger = logging.getLogger("parser-worker")
 
 _CARGO_INTENT_RE = re.compile(
-    r"(?:\bгруз\s+готов\b|\bгруз\s+бор\b|\bюк\s+бор\b|\byuk\s+bor\b|\bмашина\s+(?:керак|нужна|нужен)\b|\bmashina\s+kerak\b)",
+    r"(?:\bгруз\s+готов\b|\bгруз\s+бор\b|\bюк\s+бор\b|\byuk\s+bor\b|\bмашина\s+(?:керак|нужна|нужен)\b|\bmashina\s+kerak\b|\bрастаможка\b|\bчерез\s+паром\b)",
     re.IGNORECASE,
 )
 

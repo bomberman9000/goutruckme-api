@@ -19,7 +19,7 @@ PHONE_RE = re.compile(
 )
 INN_RE = re.compile(r"\b\d{10}(?:\d{2})?\b")
 ROUTE_RE = re.compile(
-    r"(?P<from>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ.\- '’ʻ`]{2,40}?)\s*(?:[)\]}])?\s*(?:>{2,}|->|=>|→|➞|➡|—|–|\s-\s|\s/\s|\s\|\s)\s*(?P<to>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ.\- '’ʻ`]{2,40})",
+    r"(?P<from>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ.\- '’ʻ`]{2,40}?)\s*(?:[)\]}])?\s*(?:>{2,}|->|=>|→|➞|➡|—|–|_{2,}|\s-\s|\s/\s|\s\|\s)\s*(?P<to>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ.\- '’ʻ`]{2,40})",
     re.IGNORECASE,
 )
 ROUTE_COMPACT_RE = re.compile(
@@ -311,6 +311,8 @@ _WEEKDAY_NAMES_RU = [
     "пятница", "суббота", "воскресенье",
 ]
 
+_ROUTE_NOISE_RE = re.compile(r"[⛳⚖📄💵📦📞🔺❇‼🟡🟢🔴⛽🛢🚛✅🧑💻🔜]+|[\uFE0F]", re.UNICODE)
+
 
 @dataclass(slots=True)
 class ParsedCargo:
@@ -477,6 +479,8 @@ def _parse_body_type(text_lc: str) -> str | None:
 
 def _parse_route(text: str) -> tuple[str, str] | tuple[None, None]:
     route_text = re.sub(r"[\U0001F1E6-\U0001F1FF]", "", text or "")
+    route_text = _ROUTE_NOISE_RE.sub(" ", route_text)
+    route_text = re.sub(r"[ \t]+", " ", route_text).strip()
 
     for route in ROUTE_RE.finditer(route_text):
         from_city = _normalize_city(route.group("from"))
