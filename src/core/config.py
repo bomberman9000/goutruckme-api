@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     gruzpotok_verify_login_path: str = "/internal/auth/verify-login-token"
     gruzpotok_create_magic_link_path: str = "/internal/auth/create-login-token"
     gruzpotok_create_login_path: str = "/internal/auth/create-login-token"  # legacy alias
+    gruzpotok_confirm_link_path: str = "/api/telegram/confirm-link"
 
     # Parser-bot (Telegram userbot -> gruzpotok-api)
     parser_enabled: bool = False

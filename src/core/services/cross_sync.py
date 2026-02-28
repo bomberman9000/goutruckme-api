@@ -73,6 +73,38 @@ async def verify_gruzpotok_login_token(token: str, telegram_user_id: int) -> dic
     return data
 
 
+async def confirm_gruzpotok_telegram_link(
+    *,
+    code: str,
+    telegram_user_id: int,
+    telegram_username: str | None = None,
+) -> dict[str, Any]:
+    path = settings.gruzpotok_confirm_link_path
+    url = _join_url(settings.gruzpotok_api_internal_url, path)
+    if not url:
+        return {"ok": False, "error": "gruzpotok_internal_url_not_configured"}
+
+    timeout = max(1, int(settings.internal_http_timeout))
+    payload = {
+        "code": code,
+        "telegram_id": telegram_user_id,
+        "telegram_username": telegram_username or "",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(url, headers=_internal_headers(), json=payload)
+            response.raise_for_status()
+            data = response.json() if response.content else {}
+    except Exception as exc:
+        return {"ok": False, "error": f"confirm_link_failed:{str(exc)[:120]}"}
+
+    if not isinstance(data, dict):
+        return {"ok": False, "error": "invalid_confirm_link_payload"}
+
+    data.setdefault("ok", True)
+    return data
+
+
 async def create_gruzpotok_login_link(
     *,
     telegram_user_id: int,

@@ -14,7 +14,10 @@ from src.bot.keyboards import main_menu, role_kb, contact_request_kb, legal_type
 from src.bot.handlers.cargo import send_cargo_details
 from src.core.database import async_session
 from src.core.models import User, Reminder, UserProfile, UserRole
-from src.core.services.cross_sync import verify_gruzpotok_login_token
+from src.core.services.cross_sync import (
+    confirm_gruzpotok_telegram_link,
+    verify_gruzpotok_login_token,
+)
 from src.core.services.referral import attach_referral_invite
 from src.bot.states import Onboarding
 from src.core.config import settings
@@ -166,6 +169,46 @@ async def cmd_start(message: Message, state: FSMContext):
     if message.text:
         parts = message.text.split(maxsplit=1)
         start_payload = parts[1] if len(parts) == 2 else None
+        if len(parts) == 2 and parts[1].startswith("link_"):
+            code = parts[1][len("link_"):].strip()
+            if not code:
+                await message.answer("❌ Невалидная ссылка привязки.")
+                return
+
+            confirm_result = await confirm_gruzpotok_telegram_link(
+                code=code,
+                telegram_user_id=message.from_user.id,
+                telegram_username=message.from_user.username,
+            )
+            if not bool(confirm_result.get("ok")):
+                await message.answer(
+                    "❌ Не удалось подтвердить привязку по старой ссылке. "
+                    "Запросите новую ссылку на сайте или откройте WebApp из бота."
+                )
+                return
+
+            async with async_session() as session:
+                user = await session.get(User, message.from_user.id)
+                if not user:
+                    user = User(
+                        id=message.from_user.id,
+                        username=message.from_user.username,
+                        full_name=message.from_user.full_name,
+                    )
+                    session.add(user)
+                else:
+                    user.username = message.from_user.username
+                    user.full_name = message.from_user.full_name
+                user.is_verified = True
+                await session.commit()
+
+            await message.answer(
+                "✅ Аккаунт успешно привязан.\n\n"
+                "Откройте WebApp или используйте меню бота.",
+                reply_markup=webapp_entry_kb(),
+            )
+            return
+
         if len(parts) == 2 and parts[1].startswith("login_token_"):
             token = parts[1][len("login_token_"):].strip()
             if not token:
@@ -448,6 +491,9 @@ async def cmd_help(message: Message):
         "<b>Команды:</b>\n"
         "/start — меню\n"
         "/help — помощь\n"
+        "/link — открыть привязку/WebApp\n"
+        "/loads — лента грузов (legacy alias)\n"
+        "/applications — мои отклики (legacy alias)\n"
         "/webapp — личный кабинет\n"
         "/buy_premium — купить premium\n"
         "/referral — пригласить коллегу\n"
