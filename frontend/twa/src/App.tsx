@@ -154,6 +154,7 @@ export function App() {
     const value = (window as any)?.Telegram?.WebApp?.initData || "";
     return typeof value === "string" && value.trim() ? value.trim() : null;
   });
+  const canUseTelegramOnlyActions = Boolean(initData);
 
   const parsedSearch = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -350,6 +351,10 @@ export function App() {
     description?: string;
     paymentTerms?: string;
   }) {
+    if (!canUseTelegramOnlyActions) {
+      setCargoError("Публикация груза доступна только из Telegram Mini App");
+      return;
+    }
     const returnToCargos = tab === "cargos";
     setAddingCargo(true);
     setCargoError(null);
@@ -1421,6 +1426,10 @@ export function App() {
             <button
               className="action-btn primary topbar-action"
               onClick={() => {
+                if (!canUseTelegramOnlyActions) {
+                  setCargoError("Публикация груза доступна только из Telegram Mini App");
+                  return;
+                }
                 setCargoError(null);
                 setShowAddCargo((prev) => !prev);
               }}
@@ -1442,6 +1451,9 @@ export function App() {
           busy={addingCargo}
           error={cargoError}
         />
+      )}
+      {cargoError && !showAddCargo && (tab === "feed" || tab === "map") && (
+        <div className="error">{cargoError}</div>
       )}
 
       {issueDraft && (

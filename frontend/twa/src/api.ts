@@ -35,6 +35,14 @@ export type FeedItem = {
   company_rating: number | null;
 };
 
+function getRequiredInitData(actionLabel: string): string {
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (!initData) {
+    throw new Error(`${actionLabel} доступно только из Telegram Mini App`);
+  }
+  return initData;
+}
+
 export type SimilarItem = {
   id: number;
   from_city: string | null;
@@ -375,10 +383,8 @@ export async function trackClick(feedId: number): Promise<void> {
 
 export async function createManualCargo(payload: ManualCargoPayload): Promise<ManualCargoResponse> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
-  if (initData) {
-    headers.Authorization = `tma ${initData}`;
-  }
+  const initData = getRequiredInitData("Публикация груза");
+  headers.Authorization = `tma ${initData}`;
 
   const response = await fetch("/api/v1/cargos/manual", {
     method: "POST",
