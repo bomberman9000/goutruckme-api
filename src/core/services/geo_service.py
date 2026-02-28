@@ -40,6 +40,34 @@ class GeoService:
         self._city_cache: dict[str, CityData | None] = {}
         self._distance_cache: dict[tuple[str, str], int] = {}
 
+    @staticmethod
+    def _is_city_like_candidate(row: dict[str, Any]) -> bool:
+        kind = str(row.get("type") or row.get("addresstype") or "").strip().lower()
+        category = str(row.get("class") or "").strip().lower()
+        allowed_kinds = {
+            "city",
+            "town",
+            "village",
+            "municipality",
+            "hamlet",
+            "settlement",
+            "administrative",
+        }
+        if kind in allowed_kinds:
+            return True
+        return category == "place" and kind in allowed_kinds
+
+    def _pick_city_candidate(self, payload: Any) -> dict[str, Any] | None:
+        if not isinstance(payload, list):
+            return None
+        for row in payload:
+            if isinstance(row, dict) and self._is_city_like_candidate(row):
+                return row
+        for row in payload:
+            if isinstance(row, dict):
+                return row
+        return None
+
     def _local_city(self, city_name: str) -> CityData | None:
         key = _normalize_city_key(city_name)
         coords = city_coords(city_name)
@@ -68,7 +96,7 @@ class GeoService:
         params = {
             "q": city_name.strip(),
             "format": "json",
-            "limit": 1,
+            "limit": 5,
             "addressdetails": 1,
         }
         try:
@@ -81,11 +109,10 @@ class GeoService:
             self._city_cache[key] = None
             return None
 
-        if not isinstance(payload, list) or not payload:
+        row = self._pick_city_candidate(payload)
+        if not row:
             self._city_cache[key] = None
             return None
-
-        row = payload[0]
         try:
             full_name = str(row.get("display_name") or city_name).strip()
             name = full_name.split(",")[0].strip() or city_name.strip()
@@ -172,6 +199,9 @@ class GeoService:
             if len(results) >= limit:
                 return results
 
+        if results:
+            return results[:limit]
+
         params = {
             "q": q,
             "format": "json",
@@ -192,6 +222,8 @@ class GeoService:
 
         for row in payload:
             try:
+                if not isinstance(row, dict) or not self._is_city_like_candidate(row):
+                    continue
                 full_name = str(row.get("display_name") or "").strip()
                 if not full_name:
                     continue
