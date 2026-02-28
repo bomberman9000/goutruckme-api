@@ -15,7 +15,11 @@ from src.core.config import settings
 from src.core.database import async_session
 from src.core.audit import log_audit_event
 from src.core.services.banking import get_bank_client
-from src.core.services.notification_dispatcher import mute_dispatch, notify_matching_carriers
+from src.core.services.notification_dispatcher import (
+    is_dispatch_muted,
+    mute_dispatch,
+    notify_matching_carriers,
+)
 from src.core.services.watchdog import watchdog
 from src.core.models import (
     AuditEvent,
@@ -749,6 +753,12 @@ async def escrow_console(
             )
         ).scalars().all()
 
+    muted_cargo_ids = set()
+    for row in notification_rows:
+        cargo_id = int(row.entity_id)
+        if await is_dispatch_muted(cargo_id):
+            muted_cargo_ids.add(cargo_id)
+
     return templates.TemplateResponse("escrow.html", {
         **_ctx(request),
         "admin": admin,
@@ -761,7 +771,11 @@ async def escrow_console(
         "current_status": current_status.value if current_status else None,
         "status_counts": status_counts,
         "notification_logs": [
-            {"row": row, "meta": _safe_meta(row.meta_json)}
+            {
+                "row": row,
+                "meta": _safe_meta(row.meta_json),
+                "is_muted": int(row.entity_id) in muted_cargo_ids,
+            }
             for row in notification_rows
         ],
         "escrow_logs": [

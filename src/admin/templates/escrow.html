@@ -124,7 +124,14 @@
                 <div class="space-y-3">
                     {% for item in notification_logs %}
                     <div class="border rounded-lg p-4 bg-gray-50">
-                        <div class="text-sm font-semibold">{{ item.row.action }}</div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <div class="text-sm font-semibold">{{ item.row.action }}</div>
+                            {% if item.is_muted %}
+                            <span class="px-2 py-1 rounded text-xs bg-amber-100 text-amber-800 border border-amber-200">
+                                Приглушено
+                            </span>
+                            {% endif %}
+                        </div>
                         <div class="text-xs text-gray-500 mt-1">{{ item.row.created_at.strftime('%d.%m.%Y %H:%M') }} • cargo #{{ item.row.entity_id }}</div>
                         <div class="text-sm text-gray-700 mt-2">
                             targets={{ item.meta.get('target_count', 0) }}, sent={{ item.meta.get('sent_count', 0) }}
@@ -138,11 +145,13 @@
                                     Повторить рассылку
                                 </button>
                             </form>
+                            {% if not item.is_muted %}
                             <form action="/admin/notifications/{{ item.row.entity_id }}/mute" method="POST">
                                 <button type="submit" class="px-3 py-2 bg-gray-700 text-white rounded hover:bg-gray-800">
                                     Приглушить
                                 </button>
                             </form>
+                            {% endif %}
                         </div>
                     </div>
                     {% else %}
