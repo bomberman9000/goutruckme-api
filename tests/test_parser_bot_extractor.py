@@ -39,6 +39,18 @@ def test_parse_compact_route_without_spaces():
     assert parsed.to_city == "Ташкент"
 
 
+def test_parse_route_with_slash_or_pipe_separator():
+    slash_parsed = parse_cargo_message("Тент Москва / Казань 20т 120к", keywords=["тент"])
+    assert slash_parsed is not None
+    assert slash_parsed.from_city == "Москва"
+    assert slash_parsed.to_city == "Казань"
+
+    pipe_parsed = parse_cargo_message("Реф Самара | Уфа 10т 50000", keywords=["реф"])
+    assert pipe_parsed is not None
+    assert pipe_parsed.from_city == "Самара"
+    assert pipe_parsed.to_city == "Уфа"
+
+
 def test_parse_cargo_message_requires_route_and_keyword():
     assert parse_cargo_message("Просто привет, без маршрута", keywords=["тент"]) is None
     assert parse_cargo_message("Мск - Казань без ключевых слов", keywords=["реф"]) is None

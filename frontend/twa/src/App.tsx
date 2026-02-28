@@ -12,6 +12,8 @@ import {
   fetchSubscriptions,
   fetchWebappProfile,
   markEscrowDelivered,
+  disputeEscrow,
+  requestEscrowRefund,
   releaseEscrow,
   fetchFeed,
   fetchSimilar,
@@ -482,6 +484,48 @@ export function App() {
       await Promise.all([loadMyCargos(), load(true), loadProfileSummary()]);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Не удалось выполнить выплату";
+      setMyCargosError(message);
+      setProfileError(message);
+    }
+  }
+
+  async function handleDisputeEscrow(cargoId: number, source: "cargos" | "wallet" = "cargos") {
+    const reason = window.prompt("Причина спора:", "Проблема по условиям рейса");
+    if (reason === null) {
+      return;
+    }
+    const note = window.prompt("Комментарий (необязательно):", "") ?? "";
+    if (source === "wallet") {
+      setProfileError(null);
+    } else {
+      setMyCargosError(null);
+    }
+    try {
+      await disputeEscrow(cargoId, reason, note);
+      await Promise.all([loadMyCargos(), load(true), loadProfileSummary()]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Не удалось открыть спор";
+      setMyCargosError(message);
+      setProfileError(message);
+    }
+  }
+
+  async function handleRequestRefund(cargoId: number, source: "cargos" | "wallet" = "cargos") {
+    const reason = window.prompt("Причина возврата:", "Нужно отменить сделку");
+    if (reason === null) {
+      return;
+    }
+    const note = window.prompt("Комментарий для возврата (необязательно):", "") ?? "";
+    if (source === "wallet") {
+      setProfileError(null);
+    } else {
+      setMyCargosError(null);
+    }
+    try {
+      await requestEscrowRefund(cargoId, reason, note);
+      await Promise.all([loadMyCargos(), load(true), loadProfileSummary()]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Не удалось запросить возврат";
       setMyCargosError(message);
       setProfileError(message);
     }
@@ -980,6 +1024,22 @@ export function App() {
                         💸 Разблокировать оплату
                       </button>
                     )}
+                    {["payment_pending", "funded", "delivery_marked"].includes(cargo.payment_status) && (
+                      <button
+                        className="action-btn"
+                        onClick={() => void handleDisputeEscrow(cargo.id, "cargos")}
+                      >
+                        ⚠️ Открыть спор
+                      </button>
+                    )}
+                    {["payment_pending", "funded", "delivery_marked", "disputed"].includes(cargo.payment_status) && (
+                      <button
+                        className="action-btn report"
+                        onClick={() => void handleRequestRefund(cargo.id, "cargos")}
+                      >
+                        ↩️ Запросить возврат
+                      </button>
+                    )}
                     <button
                       className="action-btn"
                       onClick={() => {
@@ -1137,6 +1197,22 @@ export function App() {
                         onClick={() => void handleReleaseEscrow(cargo.id)}
                       >
                         💸 Разблокировать оплату
+                      </button>
+                    )}
+                    {["payment_pending", "funded", "delivery_marked"].includes(cargo.payment_status) && (
+                      <button
+                        className="action-btn"
+                        onClick={() => void handleDisputeEscrow(cargo.id, "wallet")}
+                      >
+                        ⚠️ Открыть спор
+                      </button>
+                    )}
+                    {["payment_pending", "funded", "delivery_marked", "disputed"].includes(cargo.payment_status) && (
+                      <button
+                        className="action-btn report"
+                        onClick={() => void handleRequestRefund(cargo.id, "wallet")}
+                      >
+                        ↩️ Запросить возврат
                       </button>
                     )}
                   </div>

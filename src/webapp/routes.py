@@ -289,7 +289,7 @@ async def webapp_profile(
                 await session.execute(
                     select(EscrowEvent)
                     .where(EscrowEvent.escrow_deal_id.in_(participant_deal_map.keys()))
-                    .where(EscrowEvent.event_type.in_(["admin_disputed", "admin_cancelled"]))
+                    .where(EscrowEvent.event_type.in_(["admin_disputed", "admin_cancelled", "user_disputed", "refund_requested"]))
                     .order_by(desc(EscrowEvent.created_at))
                 )
             ).scalars().all()

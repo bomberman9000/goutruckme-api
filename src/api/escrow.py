@@ -31,6 +31,11 @@ class EscrowCreateRequest(BaseModel):
     amount_rub: int | None = Field(default=None, gt=0, le=1_000_000_000)
 
 
+class EscrowIssueRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=120)
+    note: str | None = Field(default=None, max_length=500)
+
+
 class EscrowActionResponse(BaseModel):
     ok: bool = True
     cargo_id: int
@@ -415,6 +420,94 @@ async def release_escrow(
                 "provider": payout.provider,
                 "provider_payout_id": payout.provider_payout_id,
             },
+        )
+        await session.commit()
+
+    await clear_cached("feed")
+    return _serialize_response(deal, cargo)
+
+
+@router.post("/{cargo_id}/dispute", response_model=EscrowActionResponse)
+async def dispute_escrow(
+    cargo_id: int,
+    body: EscrowIssueRequest | None = None,
+    tma_user: TelegramTMAUser = Depends(get_required_tma_user),
+) -> EscrowActionResponse:
+    async with async_session() as session:
+        cargo = await session.get(Cargo, cargo_id)
+        if not cargo:
+            raise HTTPException(status_code=404, detail="Cargo not found")
+        deal = await _get_latest_deal(session, cargo_id)
+        if not deal:
+            raise HTTPException(status_code=404, detail="Escrow not found")
+        if tma_user.user_id not in {int(cargo.owner_id), int(cargo.carrier_id or 0)}:
+            raise HTTPException(status_code=403, detail="Forbidden")
+        if deal.status in {EscrowStatus.RELEASED, EscrowStatus.CANCELLED}:
+            raise HTTPException(status_code=409, detail="Escrow is already closed")
+
+        reason = (body.reason if body else None) or ""
+        note = (body.note if body else None) or ""
+        reason_value = reason.strip()[:120]
+        note_value = note.strip()[:500]
+
+        deal.status = EscrowStatus.DISPUTED
+        cargo.payment_status = CargoPaymentStatus.DISPUTED
+        await _append_escrow_event(
+            session,
+            deal_id=int(deal.id),
+            event_type="user_disputed",
+            actor_user_id=tma_user.user_id,
+            payload={"reason": reason_value, "note": note_value},
+        )
+        await _append_audit(
+            session,
+            cargo_id=int(cargo.id),
+            action="escrow_user_disputed",
+            actor_user_id=tma_user.user_id,
+            meta={"escrow_id": int(deal.id), "reason": reason_value, "note": note_value},
+        )
+        await session.commit()
+
+    await clear_cached("feed")
+    return _serialize_response(deal, cargo)
+
+
+@router.post("/{cargo_id}/request-refund", response_model=EscrowActionResponse)
+async def request_escrow_refund(
+    cargo_id: int,
+    body: EscrowIssueRequest | None = None,
+    tma_user: TelegramTMAUser = Depends(get_required_tma_user),
+) -> EscrowActionResponse:
+    async with async_session() as session:
+        cargo = await session.get(Cargo, cargo_id)
+        if not cargo or int(cargo.owner_id) != tma_user.user_id:
+            raise HTTPException(status_code=404, detail="Cargo not found")
+        deal = await _get_latest_deal(session, cargo_id)
+        if not deal:
+            raise HTTPException(status_code=404, detail="Escrow not found")
+        if deal.status in {EscrowStatus.RELEASED, EscrowStatus.CANCELLED}:
+            raise HTTPException(status_code=409, detail="Escrow is already closed")
+
+        reason = (body.reason if body else None) or ""
+        note = (body.note if body else None) or ""
+        reason_value = reason.strip()[:120]
+        note_value = note.strip()[:500]
+
+        deal.status = EscrowStatus.DISPUTED
+        cargo.payment_status = CargoPaymentStatus.DISPUTED
+        await _append_escrow_event(
+            session,
+            deal_id=int(deal.id),
+            event_type="refund_requested",
+            actor_user_id=tma_user.user_id,
+            payload={"reason": reason_value, "note": note_value},
+        )
+        await _append_audit(
+            session,
+            cargo_id=int(cargo.id),
+            action="escrow_refund_requested",
+            actor_user_id=tma_user.user_id,
+            meta={"escrow_id": int(deal.id), "reason": reason_value, "note": note_value},
         )
         await session.commit()
 

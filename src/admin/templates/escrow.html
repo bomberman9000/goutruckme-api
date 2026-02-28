@@ -97,7 +97,13 @@
                         {% if deal_note %}
                         <div class="rounded-lg border {% if deal_note.event_type == 'admin_cancelled' %}border-red-200 bg-red-50{% else %}border-amber-200 bg-amber-50{% endif %} p-3 text-sm">
                             <div class="font-semibold {% if deal_note.event_type == 'admin_cancelled' %}text-red-800{% else %}text-amber-800{% endif %}">
-                                {% if deal_note.event_type == "admin_cancelled" %}Последняя отмена{% else %}Последний спор{% endif %}
+                                {% if deal_note.event_type == "admin_cancelled" %}
+                                    Последняя отмена
+                                {% elif deal_note.event_type == "refund_requested" %}
+                                    Последний запрос возврата
+                                {% else %}
+                                    Последний спор
+                                {% endif %}
                                 <span class="font-normal text-xs text-gray-500 ml-2">{{ deal_note.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
                             </div>
                             {% if deal_note.reason %}

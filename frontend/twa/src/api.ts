@@ -514,6 +514,56 @@ export async function releaseEscrow(cargoId: number): Promise<EscrowActionRespon
   return response.json();
 }
 
+export async function disputeEscrow(
+  cargoId: number,
+  reason?: string | null,
+  note?: string | null,
+): Promise<EscrowActionResponse> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+
+  const response = await fetch(`/api/v1/escrow/${cargoId}/dispute`, {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: JSON.stringify({ reason: reason || null, note: note || null }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Dispute escrow failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function requestEscrowRefund(
+  cargoId: number,
+  reason?: string | null,
+  note?: string | null,
+): Promise<EscrowActionResponse> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const initData = (window as any)?.Telegram?.WebApp?.initData || null;
+  if (initData) {
+    headers.Authorization = `tma ${initData}`;
+  }
+
+  const response = await fetch(`/api/v1/escrow/${cargoId}/request-refund`, {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: JSON.stringify({ reason: reason || null, note: note || null }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Request refund failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export async function fetchSubscriptions(): Promise<SubscriptionItem[]> {
   const headers: Record<string, string> = {};
   const initData = (window as any)?.Telegram?.WebApp?.initData || null;

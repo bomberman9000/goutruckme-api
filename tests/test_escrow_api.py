@@ -214,3 +214,57 @@ def test_mock_payment_funds_and_release(monkeypatch):
     released_payload = json.loads(fake_session.events[-1].payload_json or "{}")
     assert released_payload["provider"] == "mock_tochka"
     assert released_payload["provider_payout_id"].startswith("mockout_")
+
+
+def test_user_can_open_dispute_and_request_refund(monkeypatch):
+    fake_session = _FakeSession()
+    fake_session.cargos[1] = Cargo(
+        id=1,
+        owner_id=555,
+        carrier_id=777,
+        from_city="Москва",
+        to_city="Казань",
+        cargo_type="тент",
+        weight=20,
+        price=120000,
+        load_date=datetime(2026, 2, 27, tzinfo=UTC),
+        status=CargoStatus.NEW,
+        payment_status=CargoPaymentStatus.UNSECURED,
+    )
+    client = _build_client(fake_session)
+
+    async def _clear_cached(_prefix: str) -> None:
+        return None
+
+    monkeypatch.setattr(escrow_api, "clear_cached", _clear_cached)
+
+    create_resp = client.post("/api/v1/escrow/1/create", headers=_build_tma_header(555), json={})
+    assert create_resp.status_code == 200
+    payment_url = create_resp.json()["payment_url"]
+    parsed = urlparse(payment_url)
+    pay_resp = client.get(f"{parsed.path}?{parsed.query}")
+    assert pay_resp.status_code == 200
+
+    disputed = client.post(
+        "/api/v1/escrow/1/dispute",
+        headers=_build_tma_header(777),
+        json={"reason": "Документы не совпали", "note": "Нужна проверка"},
+    )
+    assert disputed.status_code == 200
+    assert fake_session.deals[0].status == EscrowStatus.DISPUTED
+    assert fake_session.cargos[1].payment_status == CargoPaymentStatus.DISPUTED
+    dispute_payload = json.loads(fake_session.events[-1].payload_json or "{}")
+    assert fake_session.events[-1].event_type == "user_disputed"
+    assert dispute_payload["reason"] == "Документы не совпали"
+
+    refund_requested = client.post(
+        "/api/v1/escrow/1/request-refund",
+        headers=_build_tma_header(555),
+        json={"reason": "Нужно вернуть деньги", "note": "Заказ отменен"},
+    )
+    assert refund_requested.status_code == 200
+    assert fake_session.deals[0].status == EscrowStatus.DISPUTED
+    assert fake_session.cargos[1].payment_status == CargoPaymentStatus.DISPUTED
+    refund_payload = json.loads(fake_session.events[-1].payload_json or "{}")
+    assert fake_session.events[-1].event_type == "refund_requested"
+    assert refund_payload["reason"] == "Нужно вернуть деньги"
