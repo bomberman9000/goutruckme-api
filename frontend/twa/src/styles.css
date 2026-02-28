@@ -152,6 +152,12 @@ body {
   padding: 8px 10px;
   box-shadow: 0 0 18px rgba(200, 146, 10, 0.14);
 }
+.honest-banner-note {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #e8d8a1;
+}
 
 .card-body { display: flex; gap: 16px; margin-bottom: 10px; }
 .card-col { flex: 1; }
@@ -453,6 +459,19 @@ body {
 .wallet-safe-note {
   font-size: 12px;
   color: #d8c79a;
+}
+.wallet-safe-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.wallet-safe-breakdown span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(15, 23, 42, 0.35);
 }
 .secured-list {
   display: flex;

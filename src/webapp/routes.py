@@ -14,6 +14,8 @@ from src.core.models import (
     CargoStatus,
     CargoResponse,
     CompanyDetails,
+    EscrowDeal,
+    EscrowStatus,
     UserWallet,
     User,
     Claim,
@@ -235,6 +237,17 @@ async def webapp_profile(
             .limit(10)
         )
         user_cargos = cargos_result.scalars().all()
+        escrow_by_cargo_id: dict[int, EscrowDeal] = {}
+        if user_cargos:
+            escrow_result = await session.execute(
+                select(EscrowDeal)
+                .where(EscrowDeal.cargo_id.in_([int(c.id) for c in user_cargos]))
+                .order_by(EscrowDeal.id.desc())
+            )
+            for deal in escrow_result.scalars().all():
+                cargo_key = int(deal.cargo_id)
+                if cargo_key not in escrow_by_cargo_id:
+                    escrow_by_cargo_id[cargo_key] = deal
         wallet = await session.get(UserWallet, user_id)
 
         company_data = None
@@ -261,6 +274,20 @@ async def webapp_profile(
             for cargo in user_cargos
             if getattr(cargo, "payment_status", None) == CargoPaymentStatus.RELEASED
         )
+        secured_amount_rub = sum(
+            int(deal.amount_rub)
+            for deal in escrow_by_cargo_id.values()
+            if deal.status in {
+                EscrowStatus.FUNDED,
+                EscrowStatus.DELIVERY_MARKED,
+                EscrowStatus.RELEASED,
+            }
+        )
+        released_amount_rub = sum(
+            int(deal.carrier_amount_rub)
+            for deal in escrow_by_cargo_id.values()
+            if deal.status == EscrowStatus.RELEASED
+        )
 
     return {
         "user": {
@@ -282,6 +309,8 @@ async def webapp_profile(
             "cargo_count": len(user_cargos),
             "verified_payment_count": verified_payment_count,
             "released_payment_count": released_payment_count,
+            "secured_amount_rub": secured_amount_rub,
+            "released_amount_rub": released_amount_rub,
         },
         "cargos": [
             {
@@ -298,6 +327,15 @@ async def webapp_profile(
                     CargoPaymentStatus.DELIVERY_MARKED,
                     CargoPaymentStatus.RELEASED,
                 },
+                "escrow_id": escrow_by_cargo_id.get(int(c.id)).id if escrow_by_cargo_id.get(int(c.id)) else None,
+                "escrow_status": (
+                    escrow_by_cargo_id.get(int(c.id)).status.value
+                    if escrow_by_cargo_id.get(int(c.id))
+                    else None
+                ),
+                "escrow_amount_rub": int(escrow_by_cargo_id.get(int(c.id)).amount_rub) if escrow_by_cargo_id.get(int(c.id)) else None,
+                "platform_fee_rub": int(escrow_by_cargo_id.get(int(c.id)).platform_fee_rub) if escrow_by_cargo_id.get(int(c.id)) else None,
+                "carrier_amount_rub": int(escrow_by_cargo_id.get(int(c.id)).carrier_amount_rub) if escrow_by_cargo_id.get(int(c.id)) else None,
                 "load_date": c.load_date.strftime("%d.%m.%Y"),
             }
             for c in user_cargos

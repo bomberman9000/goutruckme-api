@@ -230,6 +230,11 @@ export type WebappProfileCargo = {
   status: string;
   payment_status: string;
   payment_verified: boolean;
+  escrow_id: number | null;
+  escrow_status: string | null;
+  escrow_amount_rub: number | null;
+  platform_fee_rub: number | null;
+  carrier_amount_rub: number | null;
   load_date: string;
 };
 
@@ -258,6 +263,8 @@ export type WebappProfileResponse = {
     cargo_count: number;
     verified_payment_count: number;
     released_payment_count: number;
+    secured_amount_rub: number;
+    released_amount_rub: number;
   };
   cargos: WebappProfileCargo[];
 };

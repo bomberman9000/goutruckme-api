@@ -67,6 +67,23 @@ function paymentStatusLabel(status: string | null | undefined): string {
   }
 }
 
+function paymentStatusHint(status: string | null | undefined): string {
+  switch (status) {
+    case "payment_pending":
+      return "Ссылка на оплату уже создана. После оплаты груз получит статус Честный рейс.";
+    case "funded":
+      return "Средства уже зарезервированы. Выплата пройдет после подтверждения разгрузки.";
+    case "delivery_marked":
+      return "Разгрузка отмечена. Осталось подтвердить разблокировку оплаты.";
+    case "released":
+      return "Сделка закрыта. Выплата перевозчику уже проведена.";
+    case "disputed":
+      return "По сделке открыт спор. Средства остаются под защитой до решения.";
+    default:
+      return "Без резервирования оплаты. Для безопасной сделки включи escrow.";
+  }
+}
+
 export function App() {
   const [tab, setTab] = useState<Tab>("feed");
   const [items, setItems] = useState<FeedItem[]>([]);
@@ -399,10 +416,14 @@ export function App() {
     }
   }
 
-  async function handleCreateEscrow(cargo: MyCargoItem) {
-    setMyCargosError(null);
+  async function handleCreateEscrowById(cargoId: number, amountRub: number, source: "cargos" | "wallet" = "cargos") {
+    if (source === "wallet") {
+      setProfileError(null);
+    } else {
+      setMyCargosError(null);
+    }
     try {
-      const result = await createEscrow(cargo.id, cargo.price);
+      const result = await createEscrow(cargoId, amountRub);
       if (result.payment_url) {
         const tg = (window as any)?.Telegram?.WebApp;
         if (tg?.openLink) {
@@ -411,19 +432,31 @@ export function App() {
           window.open(result.payment_url, "_blank", "noopener,noreferrer");
         }
       }
-      await Promise.all([loadMyCargos(), load(true)]);
+      await Promise.all([loadMyCargos(), load(true), loadProfileSummary()]);
     } catch (err) {
-      setMyCargosError(err instanceof Error ? err.message : "Не удалось создать безопасную сделку");
+      const message = err instanceof Error ? err.message : "Не удалось создать безопасную сделку";
+      if (source === "wallet") {
+        setProfileError(message);
+      } else {
+        setMyCargosError(message);
+      }
     }
+  }
+
+  async function handleCreateEscrow(cargo: MyCargoItem) {
+    await handleCreateEscrowById(cargo.id, cargo.price, "cargos");
   }
 
   async function handleMarkEscrowDelivered(cargoId: number) {
     setMyCargosError(null);
+    setProfileError(null);
     try {
       await markEscrowDelivered(cargoId);
-      await Promise.all([loadMyCargos(), load(true)]);
+      await Promise.all([loadMyCargos(), load(true), loadProfileSummary()]);
     } catch (err) {
-      setMyCargosError(err instanceof Error ? err.message : "Не удалось отметить доставку");
+      const message = err instanceof Error ? err.message : "Не удалось отметить доставку";
+      setMyCargosError(message);
+      setProfileError(message);
     }
   }
 
@@ -432,11 +465,14 @@ export function App() {
       return;
     }
     setMyCargosError(null);
+    setProfileError(null);
     try {
       await releaseEscrow(cargoId);
-      await Promise.all([loadMyCargos(), load(true)]);
+      await Promise.all([loadMyCargos(), load(true), loadProfileSummary()]);
     } catch (err) {
-      setMyCargosError(err instanceof Error ? err.message : "Не удалось выполнить выплату");
+      const message = err instanceof Error ? err.message : "Не удалось выполнить выплату";
+      setMyCargosError(message);
+      setProfileError(message);
     }
   }
 
@@ -629,7 +665,10 @@ export function App() {
         </div>
 
         {item.verified_payment && (
-          <div className="honest-banner">🛡️ Честный рейс — оплата через сервис</div>
+          <div className="honest-banner">
+            <div>🛡️ Честный рейс — оплата через сервис</div>
+            <div className="honest-banner-note">Средства уже зарезервированы. Выплата после подтверждения разгрузки.</div>
+          </div>
         )}
 
         <div className="card-body">
@@ -997,6 +1036,11 @@ export function App() {
           <div className="wallet-hold">
             В холде: {profileSummary ? (profileSummary.wallet.frozen_balance_rub ?? 0).toLocaleString("ru") : "0"} ₽
           </div>
+          <div className="wallet-safe-note">
+            Под защитой: {profileSummary ? (profileSummary.stats.secured_amount_rub ?? 0).toLocaleString("ru") : "0"} ₽
+            {" • "}
+            Выплачено: {profileSummary ? (profileSummary.stats.released_amount_rub ?? 0).toLocaleString("ru") : "0"} ₽
+          </div>
         </section>
 
         <section className="wallet-stats-grid">
@@ -1050,8 +1094,39 @@ export function App() {
                       {paymentStatusLabel(cargo.payment_status)}
                     </span>
                   </div>
+                  <div className="wallet-safe-breakdown">
+                    <span>Сумма: {(cargo.escrow_amount_rub ?? cargo.price).toLocaleString("ru")} ₽</span>
+                    {cargo.platform_fee_rub != null && <span>Комиссия: {cargo.platform_fee_rub.toLocaleString("ru")} ₽</span>}
+                    {cargo.carrier_amount_rub != null && <span>К выплате: {cargo.carrier_amount_rub.toLocaleString("ru")} ₽</span>}
+                  </div>
                   <div className="wallet-safe-note">
-                    Деньги уже зарезервированы. Выплата поступит после подтверждения разгрузки.
+                    {paymentStatusHint(cargo.payment_status)}
+                  </div>
+                  <div className="card-actions">
+                    {cargo.payment_status === "payment_pending" && (
+                      <button
+                        className="action-btn primary"
+                        onClick={() => void handleCreateEscrowById(cargo.id, cargo.price, "wallet")}
+                      >
+                        🔗 Оплатить
+                      </button>
+                    )}
+                    {cargo.payment_status === "funded" && (
+                      <button
+                        className="action-btn primary"
+                        onClick={() => void handleMarkEscrowDelivered(cargo.id)}
+                      >
+                        🚚 Доставлено
+                      </button>
+                    )}
+                    {cargo.payment_status === "delivery_marked" && (
+                      <button
+                        className="action-btn primary"
+                        onClick={() => void handleReleaseEscrow(cargo.id)}
+                      >
+                        💸 Разблокировать оплату
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
