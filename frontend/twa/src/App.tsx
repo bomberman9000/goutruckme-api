@@ -1389,7 +1389,7 @@ export function App() {
 
         <section className="wallet-history">
           <div className="fleet-header">
-            <h2>🛡️ История Safe Deal</h2>
+            <h2>🛡️ История Честного рейса</h2>
           </div>
           {profileLoading && !profileSummary ? (
             <p className="muted" style={{ textAlign: "center", padding: "20px" }}>Загружаем…</p>

@@ -215,7 +215,7 @@ async def cmd_start(message: Message, state: FSMContext):
             if not bool(confirm_result.get("ok")):
                 await message.answer(
                     "❌ Не удалось подтвердить привязку по старой ссылке. "
-                    "Запросите новую ссылку на сайте или откройте WebApp из бота."
+                    "Запросите новую ссылку на сайте или откройте Mini App из бота."
                 )
                 return
 
@@ -293,7 +293,7 @@ async def cmd_start(message: Message, state: FSMContext):
                 )
             else:
                 await message.answer(
-                    "✅ Аккаунт связан. Выбери действие в меню.",
+                    "✅ Аккаунт связан. Выберите действие в меню или откройте Mini App.",
                     reply_markup=main_menu(),
                 )
             return

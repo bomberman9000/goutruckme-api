@@ -66,7 +66,7 @@ async def show_profile(cb: CallbackQuery):
     wallet_balance = int(wallet.balance_rub) if wallet else 0
     wallet_frozen = int(wallet.frozen_balance_rub) if wallet else 0
 
-    text = f"👤 <b>Мой профиль</b>\n\n"
+    text = f"👤 <b>Кабинет / профиль</b>\n\n"
     text += f"🆔 <code>{user.id}</code>\n"
     text += f"📝 {user.full_name}\n"
     if user.username:
@@ -81,7 +81,7 @@ async def show_profile(cb: CallbackQuery):
     text += f"🏷 Роль: {role_label}\n"
     text += f"🧾 ИНН: {inn_value}\n"
     text += f"🛡 Верификация: {ver_label}\n\n"
-    text += f"⭐ Рейтинг: {stars} ({rating_count})\n"
+    text += f"⭐ Репутация: {stars} ({rating_count})\n"
     text += f"📦 Грузов: {cargos_count} (завершено: {completed})\n"
     text += f"💎 Premium: {premium_text}\n"
     text += f"💼 Кошелёк: {wallet_balance:,}₽ (холд: {wallet_frozen:,}₽)\n"
@@ -157,7 +157,7 @@ async def show_history(cb: CallbackQuery):
         await cb.answer()
         return
     
-    header = "📜 <b>История перевозок:</b>\n\n"
+    header = "📜 <b>История рейсов:</b>\n\n"
     try:
         await cb.message.edit_text(header, reply_markup=profile_menu())
     except TelegramBadRequest:
@@ -179,7 +179,7 @@ async def show_history(cb: CallbackQuery):
             CargoPaymentStatus.DELIVERY_MARKED,
             CargoPaymentStatus.RELEASED,
         }:
-            text += "   💰 Оплата гарантирована\n"
+            text += "   🛡️ Честный рейс\n"
         text += f"   {link}\n"
 
         reply_markup = None
