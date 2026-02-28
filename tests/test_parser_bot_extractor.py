@@ -50,6 +50,11 @@ def test_parse_route_with_slash_or_pipe_separator():
     assert pipe_parsed.from_city == "Самара"
     assert pipe_parsed.to_city == "Уфа"
 
+    chevron_parsed = parse_cargo_message("Тент Чимкент >>>> Навоий 22т", keywords=["тент"])
+    assert chevron_parsed is not None
+    assert chevron_parsed.from_city == "Чимкент"
+    assert chevron_parsed.to_city == "Навоий"
+
 
 def test_parse_cargo_message_requires_route_and_keyword():
     assert parse_cargo_message("Просто привет, без маршрута", keywords=["тент"]) is None

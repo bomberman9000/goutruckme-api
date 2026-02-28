@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import statistics
 import time
 import uuid
@@ -35,6 +36,11 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | parser-worker | %(message)s",
 )
 logger = logging.getLogger("parser-worker")
+
+_CARGO_INTENT_RE = re.compile(
+    r"(?:\bгруз\s+готов\b|\bгруз\s+бор\b|\bюк\s+бор\b|\byuk\s+bor\b|\bмашина\s+(?:керак|нужна|нужен)\b|\bmashina\s+kerak\b)",
+    re.IGNORECASE,
+)
 
 
 def _join_url(base_url: str, path: str) -> str:
@@ -241,7 +247,7 @@ def _is_spam(trust: ScoreResult | None) -> bool:
 
 
 def _has_min_signal(parsed: ParsedCargo) -> bool:
-    return any(
+    has_structured_signal = any(
         value not in (None, "", 0, 0.0)
         for value in (
             parsed.rate_rub,
@@ -252,6 +258,9 @@ def _has_min_signal(parsed: ParsedCargo) -> bool:
             parsed.dimensions,
         )
     )
+    if has_structured_signal:
+        return True
+    return bool(_CARGO_INTENT_RE.search(parsed.raw_text or ""))
 
 
 def _is_unrealistic_rate(parsed: ParsedCargo) -> bool:

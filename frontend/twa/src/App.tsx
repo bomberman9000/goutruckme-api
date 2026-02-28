@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, type FormEvent } from "react";
 import {
   archiveManualCargo,
   addFavorite,
@@ -38,6 +38,13 @@ import { AddSubscriptionForm } from "./AddSubscriptionForm";
 
 type Verdict = "green" | "yellow" | "red";
 type Tab = "feed" | "map" | "dashboard" | "wallet" | "fleet" | "cargos" | "subscriptions";
+type EscrowIssueKind = "dispute" | "refund";
+type EscrowIssueSource = "cargos" | "wallet";
+type EscrowIssueDraft = {
+  kind: EscrowIssueKind;
+  cargoId: number;
+  source: EscrowIssueSource;
+} | null;
 
 const BODY_TYPES = ["тент", "рефрижератор", "трал", "борт", "контейнер", "изотерм"];
 
@@ -139,6 +146,10 @@ export function App() {
   const [profileSummary, setProfileSummary] = useState<WebappProfileResponse | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [issueDraft, setIssueDraft] = useState<EscrowIssueDraft>(null);
+  const [issueReason, setIssueReason] = useState("");
+  const [issueNote, setIssueNote] = useState("");
+  const [issueSubmitting, setIssueSubmitting] = useState(false);
   const [initData] = useState<string | null>(() => {
     const value = (window as any)?.Telegram?.WebApp?.initData || "";
     return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -489,45 +500,74 @@ export function App() {
     }
   }
 
-  async function handleDisputeEscrow(cargoId: number, source: "cargos" | "wallet" = "cargos") {
-    const reason = window.prompt("Причина спора:", "Проблема по условиям рейса");
-    if (reason === null) {
-      return;
-    }
-    const note = window.prompt("Комментарий (необязательно):", "") ?? "";
-    if (source === "wallet") {
-      setProfileError(null);
-    } else {
-      setMyCargosError(null);
-    }
-    try {
-      await disputeEscrow(cargoId, reason, note);
-      await Promise.all([loadMyCargos(), load(true), loadProfileSummary()]);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Не удалось открыть спор";
-      setMyCargosError(message);
-      setProfileError(message);
-    }
+  function openEscrowIssueModal(kind: EscrowIssueKind, cargoId: number, source: EscrowIssueSource) {
+    setIssueDraft({ kind, cargoId, source });
+    setIssueReason(kind === "refund" ? "Нужно отменить сделку" : "Проблема по условиям рейса");
+    setIssueNote("");
   }
 
-  async function handleRequestRefund(cargoId: number, source: "cargos" | "wallet" = "cargos") {
-    const reason = window.prompt("Причина возврата:", "Нужно отменить сделку");
-    if (reason === null) {
+  function closeEscrowIssueModal() {
+    if (issueSubmitting) {
       return;
     }
-    const note = window.prompt("Комментарий для возврата (необязательно):", "") ?? "";
-    if (source === "wallet") {
+    setIssueDraft(null);
+    setIssueReason("");
+    setIssueNote("");
+  }
+
+  function handleDisputeEscrow(cargoId: number, source: EscrowIssueSource = "cargos") {
+    openEscrowIssueModal("dispute", cargoId, source);
+  }
+
+  function handleRequestRefund(cargoId: number, source: EscrowIssueSource = "cargos") {
+    openEscrowIssueModal("refund", cargoId, source);
+  }
+
+  async function submitEscrowIssue(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!issueDraft) {
+      return;
+    }
+
+    const reason = issueReason.trim();
+    const note = issueNote.trim();
+    if (!reason) {
+      const message = issueDraft.kind === "refund" ? "Укажи причину возврата" : "Укажи причину спора";
+      if (issueDraft.source === "wallet") {
+        setProfileError(message);
+      } else {
+        setMyCargosError(message);
+      }
+      return;
+    }
+
+    if (issueDraft.source === "wallet") {
       setProfileError(null);
     } else {
       setMyCargosError(null);
     }
+
+    setIssueSubmitting(true);
     try {
-      await requestEscrowRefund(cargoId, reason, note);
+      if (issueDraft.kind === "refund") {
+        await requestEscrowRefund(issueDraft.cargoId, reason, note);
+      } else {
+        await disputeEscrow(issueDraft.cargoId, reason, note);
+      }
       await Promise.all([loadMyCargos(), load(true), loadProfileSummary()]);
+      setIssueDraft(null);
+      setIssueReason("");
+      setIssueNote("");
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Не удалось запросить возврат";
+      const message = err instanceof Error
+        ? err.message
+        : issueDraft.kind === "refund"
+          ? "Не удалось запросить возврат"
+          : "Не удалось открыть спор";
       setMyCargosError(message);
       setProfileError(message);
+    } finally {
+      setIssueSubmitting(false);
     }
   }
 
@@ -1402,6 +1442,65 @@ export function App() {
           busy={addingCargo}
           error={cargoError}
         />
+      )}
+
+      {issueDraft && (
+        <div className="modal-backdrop" onClick={closeEscrowIssueModal}>
+          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <h3>{issueDraft.kind === "refund" ? "↩️ Запросить возврат" : "⚠️ Открыть спор"}</h3>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={closeEscrowIssueModal}
+                disabled={issueSubmitting}
+                aria-label="Закрыть"
+              >
+                ✕
+              </button>
+            </div>
+            <form className="modal-form" onSubmit={(event) => void submitEscrowIssue(event)}>
+              <label className="modal-field">
+                <span>{issueDraft.kind === "refund" ? "Причина возврата" : "Причина спора"}</span>
+                <input
+                  type="text"
+                  value={issueReason}
+                  onChange={(event) => setIssueReason(event.target.value)}
+                  placeholder={issueDraft.kind === "refund" ? "Нужно отменить сделку" : "Проблема по условиям рейса"}
+                  disabled={issueSubmitting}
+                  autoFocus
+                />
+              </label>
+              <label className="modal-field">
+                <span>Комментарий</span>
+                <textarea
+                  value={issueNote}
+                  onChange={(event) => setIssueNote(event.target.value)}
+                  placeholder="Подробности, если нужны"
+                  rows={4}
+                  disabled={issueSubmitting}
+                />
+              </label>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="action-btn"
+                  onClick={closeEscrowIssueModal}
+                  disabled={issueSubmitting}
+                >
+                  Отмена
+                </button>
+                <button type="submit" className="action-btn primary" disabled={issueSubmitting}>
+                  {issueSubmitting
+                    ? "⏳"
+                    : issueDraft.kind === "refund"
+                      ? "Отправить запрос"
+                      : "Открыть спор"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {tab === "feed" && (

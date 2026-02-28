@@ -72,3 +72,19 @@ def test_has_min_signal_accepts_body_only_route_offer():
     )
 
     assert _has_min_signal(parsed) is True
+
+
+def test_has_min_signal_accepts_cargo_intent_phrase_without_numeric_fields():
+    parsed = ParsedCargo(
+        from_city="Поти",
+        to_city="Астана",
+        body_type=None,
+        rate_rub=None,
+        weight_t=None,
+        phone=None,
+        inn=None,
+        matched_keywords=["auto"],
+        raw_text="Поти - Астана Казахстан Груз готов",
+    )
+
+    assert _has_min_signal(parsed) is True
