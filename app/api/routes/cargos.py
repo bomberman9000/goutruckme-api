@@ -19,6 +19,7 @@ from app.services.cargo_status import (
     is_terminal_status,
     normalize_cargo_status,
 )
+from app.services.geo import is_city_like_name
 from app.trust.service import recalc_company_trust
 
 router = APIRouter()
@@ -35,6 +36,12 @@ def _recalc_trust_safely(db: Session, *company_ids: int) -> None:
         except Exception:
             # Trust-пересчёт не должен ломать основной сценарий.
             pass
+
+
+def _is_public_cargo(load: Load | None) -> bool:
+    if load is None:
+        return False
+    return is_city_like_name(load.from_city) and is_city_like_name(load.to_city)
 
 
 # ============================================
@@ -198,7 +205,11 @@ async def get_cargos(
 
     loads = query.order_by(Load.created_at.desc()).limit(limit).all()
     stats = MarketStats.from_db(db, lookback_days=60)
-    return [_load_to_list_item(l, compute_ai_score(l, stats)) for l in loads]
+    return [
+        _load_to_list_item(l, compute_ai_score(l, stats))
+        for l in loads
+        if _is_public_cargo(l)
+    ]
 
 
 @router.get("/cargos/{cargo_id}", response_model=CargoDetail)
@@ -210,7 +221,7 @@ async def get_cargo_detail(
     """Получить детали груза."""
     expire_outdated_cargos(db)
     cargo = db.query(Load).filter(Load.id == cargo_id).first()
-    if not cargo:
+    if not _is_public_cargo(cargo):
         raise HTTPException(status_code=404, detail="Груз не найден")
     stats = MarketStats.from_db(db, lookback_days=60)
     return _load_to_detail(cargo, compute_ai_score(cargo, stats))

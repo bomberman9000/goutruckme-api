@@ -14,9 +14,16 @@ from app.services.cargo_status import (
     is_active_status,
     normalize_cargo_status,
 )
+from app.services.geo import is_city_like_name
 from app.trust.service import recalc_company_trust
 
 router = APIRouter()
+
+
+def _is_public_load(load: Load | None) -> bool:
+    if load is None:
+        return False
+    return is_city_like_name(load.from_city) and is_city_like_name(load.to_city)
 
 
 @router.get("/loads")
@@ -38,6 +45,7 @@ async def get_loads(
             "loading_date": cargo_loading_date(item).isoformat() if cargo_loading_date(item) else None,
         }
         for item in loads_list
+        if _is_public_load(item)
     ]
 
 
@@ -50,7 +58,7 @@ async def get_load_detail(
     """Детали груза."""
     expire_outdated_cargos(db)
     load = db.query(Load).filter(Load.id == load_id).first()
-    if not load:
+    if not _is_public_load(load):
         raise HTTPException(status_code=404, detail="Груз не найден")
 
     return {
@@ -78,7 +86,7 @@ async def take_load(
     """Взять груз (создать сделку)."""
     expire_outdated_cargos(db)
     load = db.query(Load).filter(Load.id == load_id).first()
-    if not load:
+    if not _is_public_load(load):
         raise HTTPException(status_code=404, detail="Груз не найден")
     if not is_active_status(load.status):
         raise HTTPException(status_code=409, detail="Груз недоступен")
