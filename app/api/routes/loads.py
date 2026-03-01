@@ -12,7 +12,7 @@ from app.core.security import SECRET_KEY, ALGORITHM
 from app.core.config import settings
 from typing import Optional
 from app.ai.scoring import MarketStats, compute_ai_score
-from app.services.geo import normalize_city_name
+from app.services.geo import is_city_like_name, is_supported_city, normalize_city_name
 from app.services.cargo_status import (
     apply_cargo_status_filter,
     cargo_loading_date,
@@ -122,8 +122,8 @@ def _resolve_city_input(
     raw_city_name = (city_name or "").strip()
     parsed_city_id = int(city_id) if city_id is not None else None
     if parsed_city_id is not None and parsed_city_id > 0:
-        city = db.query(City).filter(City.id == parsed_city_id, City.country == "RU").first()
-        if not city:
+        city = db.query(City).filter(City.id == parsed_city_id).first()
+        if not is_supported_city(city):
             raise HTTPException(status_code=422, detail=f"{field_name}_id не найден")
         canonical_name = city.name
         city_text = raw_city_name or city.name
@@ -131,7 +131,23 @@ def _resolve_city_input(
 
     if not raw_city_name:
         raise HTTPException(status_code=422, detail=f"Укажите {field_name}")
-    return None, raw_city_name, raw_city_name
+    if not is_city_like_name(raw_city_name):
+        raise HTTPException(status_code=422, detail=f"Некорректное значение {field_name}")
+
+    normalized_name = normalize_city_name(raw_city_name)
+    city = (
+        db.query(City)
+        .filter(City.name_norm == normalized_name)
+        .order_by(City.population.desc().nullslast(), City.name.asc())
+        .first()
+    )
+    if not is_supported_city(city):
+        raise HTTPException(status_code=422, detail=f"Выберите {field_name} из списка")
+    return int(city.id), city.name, raw_city_name
+
+
+def _is_public_load_city(value: Optional[str]) -> bool:
+    return is_city_like_name(value)
 
 
 def _parse_optional_array(raw_value: Optional[str], *, field_name: str) -> list[str]:
@@ -404,6 +420,8 @@ def list_loads(
     
     result = []
     for load in loads:
+        if not _is_public_load_city(load.from_city) or not _is_public_load_city(load.to_city):
+            continue
         creator = db.query(User).filter(User.id == load.user_id).first()
         ai_payload = compute_ai_score(load, stats)
         ai_distance_km = ai_payload.get("distance_km")

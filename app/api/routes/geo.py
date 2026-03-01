@@ -10,25 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.models.models import City
-from app.services.geo import normalize_city_name
+from app.services.geo import is_supported_city, normalize_city_name
 
 router = APIRouter()
-
-_SUPPORTED_COUNTRIES = {"RU", "BY", "UZ", "KG", "KZ"}
-_INVALID_CITY_TOKENS = (
-    "sanatorium",
-    "beach",
-    "hotel",
-    "resort",
-    "tuman",
-    "district",
-    "oblast",
-    "область",
-    "район",
-    "полигон",
-    "poligoni",
-    "chiqindi",
-)
 
 _CACHE_TTL_SEC = 600
 _CACHE_MAX_ITEMS = 1024
@@ -63,18 +47,7 @@ def _cache_set(key: str, payload: list[dict[str, Any]]) -> None:
 
 
 def _is_supported_catalog_city(city: City) -> bool:
-    country = str(city.country or "").strip().upper()
-    if country and country not in _SUPPORTED_COUNTRIES:
-        return False
-
-    normalized_name = normalize_city_name(city.name)
-    if not normalized_name:
-        return False
-
-    if any(token in normalized_name for token in _INVALID_CITY_TOKENS):
-        return False
-
-    return True
+    return is_supported_city(city)
 
 
 @router.get("/geo/cities")

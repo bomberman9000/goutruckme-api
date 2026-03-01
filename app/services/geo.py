@@ -11,6 +11,7 @@ from app.models.models import City
 _CITY_CLEAN_RE = re.compile(r"[^0-9a-zа-я\s\-]", flags=re.IGNORECASE)
 _SPACE_RE = re.compile(r"[\s\-–—]+")
 _CITY_PREFIX_RE = re.compile(r"^(?:г\.?|город)\s+", flags=re.IGNORECASE)
+_COMPANY_PREFIX_RE = re.compile(r"^(?:ооо|ип|ук|llc)\b", flags=re.IGNORECASE)
 _CITY_ALIASES = {
     "спб": "санкт петербург",
     "питер": "санкт петербург",
@@ -21,6 +22,23 @@ _CITY_ALIASES = {
     "город бишкек": "бишкек",
     "чимкент": "шымкент",
 }
+SUPPORTED_CITY_COUNTRIES = {"RU", "BY", "UZ", "KG", "KZ"}
+INVALID_CITY_TOKENS = (
+    "sanatorium",
+    "beach",
+    "hotel",
+    "resort",
+    "tuman",
+    "district",
+    "oblast",
+    "область",
+    "район",
+    "полигон",
+    "poligoni",
+    "chiqindi",
+    "belarussia",
+    "belarus",
+)
 
 
 def normalize_city_name(value: str | None) -> str:
@@ -30,6 +48,26 @@ def normalize_city_name(value: str | None) -> str:
     text = _SPACE_RE.sub(" ", text)
     text = text.strip()
     return _CITY_ALIASES.get(text, text)
+
+
+def is_city_like_name(value: str | None) -> bool:
+    normalized = normalize_city_name(value)
+    if not normalized:
+        return False
+    if _COMPANY_PREFIX_RE.match(normalized):
+        return False
+    if any(token in normalized for token in INVALID_CITY_TOKENS):
+        return False
+    return True
+
+
+def is_supported_city(city: City | None) -> bool:
+    if city is None:
+        return False
+    country = str(city.country or "").strip().upper()
+    if country and country not in SUPPORTED_CITY_COUNTRIES:
+        return False
+    return is_city_like_name(city.name)
 
 
 # MVP-справочник (расширяемый): крупнейшие города РФ для автокомплита.
