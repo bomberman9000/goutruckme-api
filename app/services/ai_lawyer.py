@@ -3,6 +3,7 @@ AI Юрист - генерация договоров и проверка док
 """
 from datetime import datetime
 from app.models.models import Load, User, Bid
+from app.services.load_public import build_public_load_context
 
 
 class AILawyer:
@@ -12,6 +13,7 @@ class AILawyer:
         """Генерация договора на перевозку."""
         
         contract_number = f"GT-{datetime.now().strftime('%Y%m%d')}-{load.id}"
+        load_context = build_public_load_context(load)
         
         contract = {
             "contract_number": contract_number,
@@ -27,10 +29,10 @@ class AILawyer:
                 "phone": carrier.phone
             },
             "cargo": {
-                "from_city": load.from_city,
-                "to_city": load.to_city,
-                "weight": load.weight,
-                "volume": load.volume
+                "from_city": load_context["from_city"],
+                "to_city": load_context["to_city"],
+                "weight": load_context["weight"],
+                "volume": load_context["volume"],
             },
             "price": bid.price,
             "terms": self._generate_terms(load, bid),
@@ -41,11 +43,12 @@ class AILawyer:
     
     def _generate_terms(self, load: Load, bid: Bid) -> list:
         """Генерация условий договора."""
+        load_context = build_public_load_context(load)
         terms = [
-            f"1. Перевозчик обязуется доставить груз из {load.from_city} в {load.to_city}.",
+            f"1. Перевозчик обязуется доставить груз из {load_context['from_city']} в {load_context['to_city']}.",
             f"2. Стоимость перевозки составляет {bid.price} рублей.",
-            f"3. Вес груза: {load.weight or 'не указан'} тонн.",
-            f"4. Объём груза: {load.volume or 'не указан'} м³.",
+            f"3. Вес груза: {load_context['weight'] or 'не указан'} тонн.",
+            f"4. Объём груза: {load_context['volume'] or 'не указан'} м³.",
             "5. Оплата производится после доставки груза.",
             "6. Перевозчик несёт ответственность за сохранность груза.",
             "7. Споры решаются путём переговоров или в судебном порядке."
@@ -57,6 +60,7 @@ class AILawyer:
         
         contract_number = f"GT-{datetime.now().strftime('%Y%m%d')}-{load.id}"
         date = datetime.now().strftime('%d.%m.%Y')
+        load_context = build_public_load_context(load)
         
         text = f"""
 ДОГОВОР НА ПЕРЕВОЗКУ ГРУЗА № {contract_number}
@@ -74,9 +78,9 @@ class AILawyer:
 1. ПРЕДМЕТ ДОГОВОРА
 
 1.1. Заказчик поручает, а Перевозчик принимает на себя обязательство по перевозке груза:
-    - Маршрут: {load.from_city} → {load.to_city}
-    - Вес: {load.weight or 'по факту'} т.
-    - Объём: {load.volume or 'по факту'} м³
+    - Маршрут: {load_context['from_city']} → {load_context['to_city']}
+    - Вес: {load_context['weight'] or 'по факту'} т.
+    - Объём: {load_context['volume'] or 'по факту'} м³
 
 2. СТОИМОСТЬ УСЛУГ
 
@@ -151,7 +155,6 @@ class AILawyer:
 
 # Singleton instance
 ai_lawyer = AILawyer()
-
 
 
 

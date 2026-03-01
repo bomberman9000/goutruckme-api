@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.models import CargoStatus, Load
+from app.services.load_public import build_public_load_base, is_public_load
 
 
 _CACHE_LOCK = Lock()
@@ -49,14 +50,16 @@ def build_load_recommendations(
     loads = query.order_by(Load.created_at.desc()).limit(max(1, min(limit, 50))).all()
     return [
         {
-            "id": int(load.id),
-            "from_city": load.from_city,
-            "to_city": load.to_city,
-            "price": float(load.total_price if load.total_price is not None else load.price),
-            "distance_km": float(load.distance_km) if load.distance_km is not None else None,
-            "rate_per_km": float(load.rate_per_km) if load.rate_per_km is not None else None,
+            "id": int(base["id"]),
+            "from_city": base["from_city"],
+            "to_city": base["to_city"],
+            "price": float(base["price"]),
+            "distance_km": float(base["distance_km"]) if base["distance_km"] is not None else None,
+            "rate_per_km": float(base["rate_per_km"]) if base["rate_per_km"] is not None else None,
         }
         for load in loads
+        if is_public_load(load)
+        for base in [build_public_load_base(load)]
     ]
 
 

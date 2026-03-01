@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Optional
 from app.models.models import Load, Truck, User, Bid
 from app.services.cargo_status import is_active_status
+from app.services.geo import canonicalize_city_name
 
 
 class AIDispatcher:
@@ -23,6 +24,7 @@ class AIDispatcher:
         """Поиск подходящих машин для груза по 20 параметрам."""
         
         matches = []
+        from_city = canonicalize_city_name(load.from_city)
         
         for truck in trucks:
             score = 0
@@ -49,7 +51,7 @@ class AIDispatcher:
                 reasons.append("✓ Объём подходит")
             
             # 4. Регион
-            if truck.region and load.from_city.lower() in truck.region.lower():
+            if truck.region and from_city.lower() in truck.region.lower():
                 score += 25
                 reasons.append("✓ Машина в регионе погрузки")
             
@@ -102,7 +104,10 @@ class AIDispatcher:
         base_rate = specs["base_rate"]
         
         # Примерное расстояние
-        estimated_distance = ai_logist.get_distance(load.from_city, load.to_city)
+        estimated_distance = ai_logist.get_distance(
+            canonicalize_city_name(load.from_city),
+            canonicalize_city_name(load.to_city),
+        )
         
         if not estimated_distance:
             return {
@@ -187,7 +192,7 @@ class AIDispatcher:
                 best_match = matches[0]
                 distribution.append({
                     "load_id": load.id,
-                    "load_route": f"{load.from_city} → {load.to_city}",
+                    "load_route": f"{canonicalize_city_name(load.from_city)} → {canonicalize_city_name(load.to_city)}",
                     "assigned_truck": best_match["truck_id"],
                     "driver": best_match["owner_name"],
                     "match_score": best_match["match_score"]
@@ -197,7 +202,7 @@ class AIDispatcher:
             else:
                 unassigned.append({
                     "load_id": load.id,
-                    "load_route": f"{load.from_city} → {load.to_city}",
+                    "load_route": f"{canonicalize_city_name(load.from_city)} → {canonicalize_city_name(load.to_city)}",
                     "reason": "Нет подходящих машин"
                 })
         
@@ -233,7 +238,7 @@ class AIDispatcher:
             })
         
         # Проверка маршрута
-        if load.from_city == load.to_city:
+        if canonicalize_city_name(load.from_city) == canonicalize_city_name(load.to_city):
             alerts.append({
                 "type": "error",
                 "icon": "❌",
@@ -246,5 +251,4 @@ class AIDispatcher:
 
 # Singleton instance
 ai_dispatcher = AIDispatcher()
-
 
