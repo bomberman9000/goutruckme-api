@@ -10809,13 +10809,35 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
             const total = Number(summary.total || 0);
             const site = Number(summary.site || 0);
             const miniApp = Number(summary.mini_app || 0);
+            const activeSource = String(vehiclesState.filters?.source || '');
+            const chipClass = (value) => {
+                const active = activeSource === value;
+                return active
+                    ? 'px-3 py-2 rounded-lg border text-sm font-semibold bg-blue-500/20 border-blue-400/40 text-blue-200 shadow-[0_0_0_1px_rgba(96,165,250,0.18)]'
+                    : 'px-3 py-2 rounded-lg border text-sm font-semibold bg-dark border-dark-border text-gray-300 hover:border-purple/50';
+            };
             node.innerHTML = `
                 <div class="flex flex-wrap items-center gap-3 text-sm">
-                    <span class="px-3 py-2 rounded-lg bg-dark border border-dark-border text-gray-300">Всего: ${total}</span>
-                    <span class="px-3 py-2 rounded-lg bg-dark border border-dark-border text-gray-300">🌐 Сайт: ${site}</span>
-                    <span class="px-3 py-2 rounded-lg bg-dark border border-dark-border text-gray-300">📱 Mini App: ${miniApp}</span>
+                    <button type="button" onclick="setVehicleSourceFilter('')" class="${chipClass('')}">Всего: ${total}</button>
+                    <button type="button" onclick="setVehicleSourceFilter('site')" class="${chipClass('site')}">🌐 Сайт: ${site}</button>
+                    <button type="button" onclick="setVehicleSourceFilter('mini_app')" class="${chipClass('mini_app')}">📱 Mini App: ${miniApp}</button>
                 </div>
             `;
+        }
+
+        function setVehicleSourceFilter(source) {
+            const normalized = String(source || '').trim().toLowerCase();
+            const select = document.getElementById('vehicle-filter-source');
+            if (select) {
+                select.value = normalized;
+            }
+            vehiclesState.filters.source = normalized;
+            vehiclesState.page = 1;
+            if (vehiclesState.filterDebounceTimer) {
+                clearTimeout(vehiclesState.filterDebounceTimer);
+                vehiclesState.filterDebounceTimer = null;
+            }
+            loadVehicles(true);
         }
 
         function changeVehiclePage(delta) {
