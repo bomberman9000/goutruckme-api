@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from src.core.models import UserVehicle
+from sqlalchemy import select
+
+from src.core.database import async_session
+from src.core.models import User, UserVehicle
 from src.core.schemas.sync import SharedSyncEvent, SharedVehicleSchema
 from src.core.services.cross_sync import make_search_id, publish_sync_event
 
@@ -10,6 +13,14 @@ async def publish_vehicle_sync_event(
     *,
     event_type: str = "vehicle_upsert",
 ) -> bool:
+    owner_phone = None
+    owner_company = None
+    async with async_session() as session:
+        owner = await session.scalar(select(User).where(User.id == int(vehicle.user_id)))
+        if owner:
+            owner_phone = (owner.phone or "").strip() or None
+            owner_company = (owner.company or "").strip() or None
+
     payload = SharedVehicleSchema(
         id=str(vehicle.id),
         search_id=f"vehicle_{vehicle.id}",
@@ -22,6 +33,8 @@ async def publish_vehicle_sync_event(
         plate_number=(vehicle.plate_number or "").strip() or None,
         is_available=bool(vehicle.is_available),
         status="active",
+        owner_phone=owner_phone,
+        owner_company=owner_company,
         source="tg-bot",
         meta={
             "is_available": bool(vehicle.is_available),

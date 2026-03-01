@@ -38,6 +38,8 @@ class SharedVehicleSchema(BaseModel):
     is_available: bool | None = None
     vehicle_kind: str | None = None
     name: str | None = None
+    owner_phone: str | None = None
+    owner_company: str | None = None
     status: str | None = None
     source: Literal["tg-bot", "gruzpotok-api", "unknown"] = "unknown"
     meta: dict[str, Any] = Field(default_factory=dict)
