@@ -21,6 +21,7 @@ from app.services.cargo_status import (
 )
 from app.services.bot_webhooks import send_event_to_bot_sync
 from app.services.cross_service_sync import notify_user_on_bot_sync
+from app.services.load_public import build_public_load_base, is_public_load
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -144,10 +145,6 @@ def _resolve_city_input(
     if not is_supported_city(city):
         raise HTTPException(status_code=422, detail=f"Выберите {field_name} из списка")
     return int(city.id), city.name, raw_city_name
-
-
-def _is_public_load_city(value: Optional[str]) -> bool:
-    return is_city_like_name(value)
 
 
 def _parse_optional_array(raw_value: Optional[str], *, field_name: str) -> list[str]:
@@ -420,26 +417,12 @@ def list_loads(
     
     result = []
     for load in loads:
-        if not _is_public_load_city(load.from_city) or not _is_public_load_city(load.to_city):
+        if not is_public_load(load):
             continue
         creator = db.query(User).filter(User.id == load.user_id).first()
         ai_payload = compute_ai_score(load, stats)
-        ai_distance_km = ai_payload.get("distance_km")
-        ai_rate_per_km = ai_payload.get("rate_per_km")
-        total_price = load.total_price if load.total_price is not None else load.price
-        distance_km = load.distance_km if load.distance_km is not None else ai_distance_km
-        rate_per_km = load.rate_per_km
-        if rate_per_km is None and isinstance(distance_km, (int, float)) and distance_km > 0 and isinstance(total_price, (int, float)):
-            rate_per_km = round(float(total_price) / float(distance_km), 1)
-        if rate_per_km is None:
-            rate_per_km = ai_rate_per_km
-        loading_date = cargo_loading_date(load)
         load_dict = {
-            "id": load.id,
-            "from_city_id": load.from_city_id,
-            "to_city_id": load.to_city_id,
-            "from_city": canonicalize_city_name(load.from_city),
-            "to_city": canonicalize_city_name(load.to_city),
+            **build_public_load_base(load, ai_payload),
             "weight": load.weight,
             "volume": load.volume,
             "weight_t": load.weight_t if load.weight_t is not None else load.weight,
@@ -455,15 +438,6 @@ def list_loads(
             "needs_dump": bool(load.needs_dump),
             "temp_min": load.temp_min,
             "temp_max": load.temp_max,
-            "price": total_price,
-            "total_price": total_price,
-            "distance": distance_km,
-            "distance_km": distance_km,
-            "price_per_km": round(float(rate_per_km), 1) if isinstance(rate_per_km, (int, float)) else None,
-            "rate_per_km": round(float(rate_per_km), 1) if isinstance(rate_per_km, (int, float)) else None,
-            "status": normalize_cargo_status(load.status),
-            "loading_date": loading_date.isoformat() if loading_date else None,
-            "loading_time": load.loading_time,
             "created_at": load.created_at.isoformat() if load.created_at else None,
             "ai_risk": ai_payload.get("ai_risk") or "low",
             "ai_score": int(ai_payload.get("ai_score") or 0),

@@ -19,7 +19,7 @@ from app.services.cargo_status import (
     is_terminal_status,
     normalize_cargo_status,
 )
-from app.services.geo import canonicalize_city_name, is_city_like_name
+from app.services.load_public import build_public_load_base, is_public_load
 from app.trust.service import recalc_company_trust
 
 router = APIRouter()
@@ -36,12 +36,6 @@ def _recalc_trust_safely(db: Session, *company_ids: int) -> None:
         except Exception:
             # Trust-пересчёт не должен ломать основной сценарий.
             pass
-
-
-def _is_public_cargo(load: Load | None) -> bool:
-    if load is None:
-        return False
-    return is_city_like_name(load.from_city) and is_city_like_name(load.to_city)
 
 
 # ============================================
@@ -113,29 +107,9 @@ class SelectCarrierRequest(BaseModel):
 def _load_to_list_item(load: Load, ai_payload: Optional[dict] = None) -> dict:
     """Преобразовать Load в CargoListItem."""
     ai_payload = ai_payload or {}
-    distance_km = load.distance_km if load.distance_km is not None else ai_payload.get("distance_km")
-    total_price = load.total_price if load.total_price is not None else load.price
-    rate_per_km = load.rate_per_km
-    if rate_per_km is None and isinstance(distance_km, (int, float)) and distance_km > 0 and isinstance(total_price, (int, float)):
-        rate_per_km = round(float(total_price) / float(distance_km), 1)
-    if rate_per_km is None:
-        rate_per_km = ai_payload.get("rate_per_km")
-    loading_date = cargo_loading_date(load)
     return {
-        "id": load.id,
-        "from_city_id": load.from_city_id,
-        "to_city_id": load.to_city_id,
-        "from_city": canonicalize_city_name(load.from_city),
-        "to_city": canonicalize_city_name(load.to_city),
-        "price": float(total_price) if total_price is not None else 0,
-        "total_price": float(total_price) if total_price is not None else 0,
-        "distance": distance_km,
-        "price_per_km": round(float(rate_per_km), 1) if isinstance(rate_per_km, (int, float)) else None,
+        **build_public_load_base(load, ai_payload),
         "weight": load.weight,
-        "truck_type": None,
-        "loading_date": loading_date.isoformat() if loading_date else "",
-        "loading_time": load.loading_time,
-        "status": normalize_cargo_status(load.status),
         "ai_risk": ai_payload.get("ai_risk") or "low",
         "ai_score": int(ai_payload.get("ai_score") or 0),
         "ai_explain": ai_payload.get("ai_explain") or "",
@@ -146,34 +120,14 @@ def _load_to_list_item(load: Load, ai_payload: Optional[dict] = None) -> dict:
 def _load_to_detail(load: Load, ai_payload: Optional[dict] = None) -> dict:
     """Преобразовать Load в CargoDetail."""
     ai_payload = ai_payload or {}
-    distance_km = load.distance_km if load.distance_km is not None else ai_payload.get("distance_km")
-    total_price = load.total_price if load.total_price is not None else load.price
-    rate_per_km = load.rate_per_km
-    if rate_per_km is None and isinstance(distance_km, (int, float)) and distance_km > 0 and isinstance(total_price, (int, float)):
-        rate_per_km = round(float(total_price) / float(distance_km), 1)
-    if rate_per_km is None:
-        rate_per_km = ai_payload.get("rate_per_km")
-    loading_date = cargo_loading_date(load)
     return {
-        "id": load.id,
-        "from_city_id": load.from_city_id,
-        "to_city_id": load.to_city_id,
-        "from_city": canonicalize_city_name(load.from_city),
-        "to_city": canonicalize_city_name(load.to_city),
-        "price": float(total_price) if total_price is not None else 0,
-        "total_price": float(total_price) if total_price is not None else 0,
-        "price_per_km": round(float(rate_per_km), 1) if isinstance(rate_per_km, (int, float)) else None,
-        "distance": distance_km,
+        **build_public_load_base(load, ai_payload),
         "weight": load.weight,
         "volume": load.volume,
-        "truck_type": None,
-        "loading_date": loading_date.isoformat() if loading_date else "",
-        "loading_time": load.loading_time,
         "cargo_type": None,
         "contact_phone": None,
         "contact_telegram": None,
         "description": None,
-        "status": normalize_cargo_status(load.status),
         "ai_risk": ai_payload.get("ai_risk") or "low",
         "ai_score": int(ai_payload.get("ai_score") or 0),
         "ai_explain": ai_payload.get("ai_explain") or "",
@@ -208,7 +162,7 @@ async def get_cargos(
     return [
         _load_to_list_item(l, compute_ai_score(l, stats))
         for l in loads
-        if _is_public_cargo(l)
+        if is_public_load(l)
     ]
 
 
@@ -221,7 +175,7 @@ async def get_cargo_detail(
     """Получить детали груза."""
     expire_outdated_cargos(db)
     cargo = db.query(Load).filter(Load.id == cargo_id).first()
-    if not _is_public_cargo(cargo):
+    if not is_public_load(cargo):
         raise HTTPException(status_code=404, detail="Груз не найден")
     stats = MarketStats.from_db(db, lookback_days=60)
     return _load_to_detail(cargo, compute_ai_score(cargo, stats))

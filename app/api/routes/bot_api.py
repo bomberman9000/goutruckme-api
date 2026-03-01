@@ -15,7 +15,7 @@ from app.services.cargo_status import (
     is_active_status,
     normalize_cargo_status,
 )
-from app.services.geo import canonicalize_city_name
+from app.services.load_public import build_public_load_base, is_public_load
 from app.trust.service import recalc_company_trust
 
 router = APIRouter()
@@ -62,14 +62,16 @@ async def get_loads(
     loads = apply_cargo_status_filter(db.query(Load), "active").order_by(Load.created_at.desc()).limit(limit).all()
     return [
         {
-            "id": l.id,
-            "from_city": l.from_city,
-            "to_city": l.to_city,
-            "price": l.price,
-            "status": normalize_cargo_status(l.status),
-            "loading_date": cargo_loading_date(l).isoformat() if cargo_loading_date(l) else None,
+            "id": base["id"],
+            "from_city": base["from_city"],
+            "to_city": base["to_city"],
+            "price": base["price"],
+            "status": base["status"],
+            "loading_date": base["loading_date"],
         }
         for l in loads
+        if is_public_load(l)
+        for base in [build_public_load_base(l)]
     ]
 
 
@@ -82,17 +84,18 @@ async def get_load(
     """Детали груза."""
     expire_outdated_cargos(db)
     load = db.query(Load).filter(Load.id == load_id).first()
-    if not load:
+    if not is_public_load(load):
         raise HTTPException(status_code=404, detail="Не найдено")
+    base = build_public_load_base(load)
     return {
-        "id": load.id,
-        "from_city": canonicalize_city_name(load.from_city),
-        "to_city": canonicalize_city_name(load.to_city),
-        "price": load.price,
-        "weight": load.weight,
-        "truck_type": None,
-        "status": normalize_cargo_status(load.status),
-        "loading_date": cargo_loading_date(load).isoformat() if cargo_loading_date(load) else None,
+        "id": base["id"],
+        "from_city": base["from_city"],
+        "to_city": base["to_city"],
+        "price": base["price"],
+        "weight": base["weight"],
+        "truck_type": base["truck_type"],
+        "status": base["status"],
+        "loading_date": base["loading_date"],
         "contact_phone": None,
         "description": None,
     }
@@ -107,7 +110,7 @@ async def take_load(
     """Взять груз (создать сделку)."""
     expire_outdated_cargos(db)
     load = db.query(Load).filter(Load.id == load_id).first()
-    if not load:
+    if not is_public_load(load):
         raise HTTPException(status_code=404, detail="Не найдено")
     if not is_active_status(load.status):
         raise HTTPException(status_code=409, detail="Груз недоступен")
