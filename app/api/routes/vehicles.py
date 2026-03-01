@@ -675,6 +675,7 @@ def _vehicle_to_dict(vehicle: Vehicle, db: Session, *, matching_loads: Optional[
     owner_id = int(vehicle.owner_user_id or vehicle.carrier_id)
     carrier = vehicle.carrier
     carrier_trust = get_company_trust_snapshot(db, owner_id)
+    is_mini_app = int(vehicle.id or 0) >= 900_000_000
 
     vehicle_matching_loads = matching_loads
     if vehicle_matching_loads is None:
@@ -735,6 +736,8 @@ def _vehicle_to_dict(vehicle: Vehicle, db: Session, *, matching_loads: Optional[
         "available_today": bool(vehicle.available_from and vehicle.available_from <= date.today() and (not vehicle.available_to or vehicle.available_to >= date.today())),
         "rate_per_km": vehicle.rate_per_km,
         "status": vehicle.status,
+        "source": "mini_app" if is_mini_app else "site",
+        "source_label": "Mini App" if is_mini_app else "Сайт",
         "created_at": vehicle.created_at.isoformat() if vehicle.created_at else None,
         "updated_at": vehicle.updated_at.isoformat() if vehicle.updated_at else None,
         "carrier": {

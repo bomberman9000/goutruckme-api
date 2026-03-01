@@ -10628,10 +10628,13 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
                     : `c ${formatVehicleDate(vehicle.available_from)}`;
                 const adrClasses = Array.isArray(vehicle.adr_classes) ? vehicle.adr_classes : [];
                 const optionsShort = options.slice(0, 3).map(opt => VEHICLE_OPTION_LABELS_MAP[opt] || opt).join(', ') || '—';
+                const sourceBadge = vehicle?.source === 'mini_app'
+                    ? '<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[11px] border bg-blue-500/15 border-blue-400/30 text-blue-300">📱 Mini App</span>'
+                    : '';
                 return `
                     <tr class="hover:bg-dark-border/30">
                         <td class="px-3 py-3">
-                            <div class="font-semibold">${escapeHtml(formatVehicleKind(vehicle))}</div>
+                            <div class="font-semibold flex items-center flex-wrap">${escapeHtml(formatVehicleKind(vehicle))}${sourceBadge}</div>
                             <div class="text-xs text-gray-400">${escapeHtml(vehicle.name || formatVehicleBodyType(vehicle.body_type))}</div>
                         </td>
                         <td class="px-3 py-3">${escapeHtml(vehicle.plate_number || '—')}</td>
@@ -10684,12 +10687,15 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
                 const tempBlock = vehicle.temp_min != null || vehicle.temp_max != null
                     ? `<div>🌡 ${vehicle.temp_min == null ? '—' : vehicle.temp_min}…${vehicle.temp_max == null ? '—' : vehicle.temp_max} °C</div>`
                     : '';
+                const sourceBadge = vehicle?.source === 'mini_app'
+                    ? '<span class="px-2 py-1 rounded text-xs border bg-blue-500/15 border-blue-400/30 text-blue-300">📱 Mini App</span>'
+                    : '<span class="px-2 py-1 rounded text-xs border bg-dark/60 border-dark-border text-gray-400">🌐 Сайт</span>';
 
                 return `
                     <article class="bg-dark-card border border-dark-border rounded-xl p-5">
                         <div class="flex items-start justify-between gap-3">
                             <div>
-                                <div class="text-lg font-bold">🚛 ${escapeHtml(formatVehicleKind(vehicle))}</div>
+                                <div class="text-lg font-bold flex items-center flex-wrap gap-2">🚛 ${escapeHtml(formatVehicleKind(vehicle))} ${sourceBadge}</div>
                                 <div class="text-sm text-gray-400 mt-1">${escapeHtml(vehicle.plate_number || '—')} · ${escapeHtml(vehicle.name || '')}</div>
                             </div>
                             <span class="px-2 py-1 rounded text-xs border ${riskClass}">Риск: ${escapeHtml(riskLabel)}</span>
