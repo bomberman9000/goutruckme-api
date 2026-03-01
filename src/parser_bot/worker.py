@@ -479,22 +479,66 @@ async def _process_message(
             return
 
         fallback_id = f"{message.chat_id}:{message.message_id or message.entry_id}"
-        if settings.parser_use_llm:
-            parsed = await parse_cargo_message_llm(text, keywords=keywords)
-        else:
-            parsed = parse_cargo_message(text, keywords=keywords)
-            if (
-                not parsed
-                and contains_invalid_geo_token(text)
-                and (settings.groq_api_key or settings.openai_api_key)
-            ):
+        route_geo = None
+
+        # Fast path: try regex extraction first and validate the route before
+        # spending an LLM call. This keeps the hot path cheap for the majority
+        # of structured chat messages.
+        parsed = parse_cargo_message(text, keywords=keywords)
+        if parsed:
+            parsed.is_hot_deal = evaluate_hot_deal(parsed)
+            route_geo = await get_geo_service().resolve_route(
+                parsed.from_city,
+                parsed.to_city,
+            )
+            if route_geo:
+                logger.debug(
+                    "regex route accepted id=%s route=%s->%s",
+                    message.entry_id,
+                    parsed.from_city,
+                    parsed.to_city,
+                )
+            else:
+                logger.info(
+                    "regex route rejected by geo id=%s route=%s->%s",
+                    message.entry_id,
+                    parsed.from_city,
+                    parsed.to_city,
+                )
+
+        # Slow path: only fall back to the LLM when regex failed completely or
+        # produced a route that geo validation could not confirm.
+        llm_enabled = bool(settings.parser_use_llm)
+        should_try_llm = llm_enabled and (
+            parsed is None
+            or route_geo is None
+            or contains_invalid_geo_token(text)
+        )
+        if should_try_llm:
+            if contains_invalid_geo_token(text):
                 logger.info(
                     "invalid geo token detected, retrying with LLM id=%s",
                     message.entry_id,
                 )
-                parsed = await parse_cargo_message_llm(text, keywords=keywords)
-            if parsed:
-                parsed.is_hot_deal = evaluate_hot_deal(parsed)
+            elif parsed is None:
+                logger.info("regex parse miss, retrying with LLM id=%s", message.entry_id)
+            else:
+                logger.info(
+                    "regex route not confirmed, retrying with LLM id=%s",
+                    message.entry_id,
+                )
+
+            llm_candidate = await parse_cargo_message_llm(text, keywords=keywords)
+            if llm_candidate:
+                llm_candidate.is_hot_deal = evaluate_hot_deal(llm_candidate)
+                llm_route_geo = await get_geo_service().resolve_route(
+                    llm_candidate.from_city,
+                    llm_candidate.to_city,
+                )
+                if llm_route_geo:
+                    parsed = llm_candidate
+                    route_geo = llm_route_geo
+
         if not parsed:
             await _save_ingest_event(
                 message=message,
@@ -505,7 +549,6 @@ async def _process_message(
             )
             return
 
-        route_geo = await get_geo_service().resolve_route(parsed.from_city, parsed.to_city)
         if not route_geo:
             await _save_ingest_event(
                 message=message,
