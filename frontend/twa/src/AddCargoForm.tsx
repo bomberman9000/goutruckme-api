@@ -1,6 +1,11 @@
 import { useEffect, useId, useMemo, useState } from "react";
 
-import { searchCities, type CitySuggestion } from "./api";
+import {
+  fetchRecommendedCargoRate,
+  searchCities,
+  type CitySuggestion,
+  type RecommendedCargoRate,
+} from "./api";
 
 type AddCargoFormProps = {
   onSubmit: (payload: {
@@ -101,6 +106,30 @@ function normalizeDateTyping(value: string): string {
   return `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4)}`;
 }
 
+function normalizeIntegerTyping(value: string): string {
+  return value.replace(/\D/g, "").slice(0, 10);
+}
+
+function parseIntegerInput(value: string): number | null {
+  const digits = normalizeIntegerTyping(value);
+  if (!digits) {
+    return null;
+  }
+  const parsed = Number.parseInt(digits, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function formatRub(value: number | null | undefined): string {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return "—";
+  }
+  return new Intl.NumberFormat("ru-RU").format(numeric);
+}
+
 export function AddCargoForm({
   onSubmit,
   onCancel,
@@ -122,17 +151,18 @@ export function AddCargoForm({
   const [paymentTerms, setPaymentTerms] = useState(initialValues?.paymentTerms ?? "");
   const [originSuggestions, setOriginSuggestions] = useState<CitySuggestion[]>([]);
   const [destinationSuggestions, setDestinationSuggestions] = useState<CitySuggestion[]>([]);
+  const [recommendedRate, setRecommendedRate] = useState<RecommendedCargoRate | null>(null);
+  const [recommendedRateError, setRecommendedRateError] = useState<string | null>(null);
 
   const canSubmit = useMemo(() => {
     const weightNumber = Number.parseFloat(weight);
-    const priceNumber = Number.parseInt(price, 10);
+    const priceNumber = parseIntegerInput(price);
     return (
       origin.trim().length >= 2
       && destination.trim().length >= 2
       && Number.isFinite(weightNumber)
       && weightNumber > 0
-      && Number.isFinite(priceNumber)
-      && priceNumber > 0
+      && priceNumber !== null
       && parseDateInput(loadDate) !== null
     );
   }, [destination, loadDate, origin, price, weight]);
@@ -185,6 +215,48 @@ export function AddCargoForm({
     };
   }, [destination]);
 
+  useEffect(() => {
+    const weightNumber = Number.parseFloat(weight);
+    if (
+      origin.trim().length < 2
+      || destination.trim().length < 2
+      || !Number.isFinite(weightNumber)
+      || weightNumber <= 0
+      || bodyType.trim().length < 2
+    ) {
+      setRecommendedRate(null);
+      setRecommendedRateError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await fetchRecommendedCargoRate({
+          origin,
+          destination,
+          weight: weightNumber,
+          body_type: bodyType,
+        });
+        if (!cancelled) {
+          setRecommendedRate(result);
+          setRecommendedRateError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setRecommendedRate(null);
+          const message = err instanceof Error ? err.message : "Не удалось рассчитать ставку";
+          setRecommendedRateError(message === "Invalid cities detected" ? null : message);
+        }
+      }
+    }, 320);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [bodyType, destination, origin, weight]);
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canSubmit) {
@@ -196,12 +268,17 @@ export function AddCargoForm({
       return;
     }
 
+    const normalizedPrice = parseIntegerInput(price);
+    if (!normalizedPrice) {
+      return;
+    }
+
     await onSubmit({
       origin: origin.trim(),
       destination: destination.trim(),
       bodyType: bodyType.trim(),
       weight: Number.parseFloat(weight),
-      price: Number.parseInt(price, 10),
+      price: normalizedPrice,
       loadDate: normalizedLoadDate,
       loadTime: loadTime.trim() || undefined,
       description: description.trim() || undefined,
@@ -287,11 +364,11 @@ export function AddCargoForm({
         <label className="truck-field">
           <span>Ставка, ₽</span>
           <input
-            type="number"
-            min="1"
-            step="1000"
+            type="text"
             value={price}
-            onChange={(event) => setPrice(event.target.value)}
+            onChange={(event) => setPrice(normalizeIntegerTyping(event.target.value))}
+            inputMode="numeric"
+            placeholder="120000"
             disabled={busy}
             required
           />
@@ -343,6 +420,40 @@ export function AddCargoForm({
           />
         </label>
       </div>
+
+      {(recommendedRate || recommendedRateError) && (
+        <div className="cargo-rate-hint">
+          <div className="cargo-rate-hint-head">
+            <strong>💡 Рекомендованная ставка</strong>
+            {recommendedRate && (
+              <button
+                type="button"
+                className="action-btn"
+                disabled={busy}
+                onClick={() => setPrice(String(recommendedRate.recommended_rate_rub))}
+              >
+                Подставить
+              </button>
+            )}
+          </div>
+          {recommendedRate ? (
+            <>
+              <div className="cargo-rate-main">
+                {formatRub(recommendedRate.recommended_rate_rub)} ₽
+                <span>
+                  ~ {recommendedRate.rate_per_km} ₽/км · {recommendedRate.distance_km} км
+                </span>
+              </div>
+              <div className="cargo-rate-range">
+                Диапазон: {formatRub(recommendedRate.min_rate_rub)} — {formatRub(recommendedRate.max_rate_rub)} ₽
+              </div>
+              <div className="cargo-rate-details">{recommendedRate.details}</div>
+            </>
+          ) : (
+            <div className="cargo-rate-error">{recommendedRateError}</div>
+          )}
+        </div>
+      )}
 
       {error && <div className="error truck-form-error">{error}</div>}
 

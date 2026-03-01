@@ -798,6 +798,53 @@ body {
   grid-column: 1 / -1;
 }
 
+.cargo-rate-hint {
+  margin-top: 12px;
+  border: 1px solid rgba(34, 197, 94, 0.24);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.72);
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    0 8px 22px rgba(2, 8, 23, 0.14);
+}
+
+.cargo-rate-hint-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cargo-rate-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #86efac;
+}
+
+.cargo-rate-main span,
+.cargo-rate-range,
+.cargo-rate-details {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.cargo-rate-details {
+  white-space: pre-line;
+}
+
+.cargo-rate-error {
+  font-size: 12px;
+  color: #fca5a5;
+}
+
 .truck-check {
   display: flex;
   align-items: center;

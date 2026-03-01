@@ -327,6 +327,19 @@ export type ManualCargoResponse = {
   feed_id: number;
 };
 
+export type RecommendedCargoRate = {
+  ok: boolean;
+  origin: string;
+  destination: string;
+  distance_km: number;
+  recommended_rate_rub: number;
+  min_rate_rub: number;
+  max_rate_rub: number;
+  rate_per_km: number;
+  source: string;
+  details: string;
+};
+
 export type MyCargoItem = {
   id: number;
   from_city: string;
@@ -601,6 +614,30 @@ export async function createManualCargo(payload: ManualCargoPayload): Promise<Ma
 
   if (!response.ok) {
     throw await buildApiError(response, "Create cargo failed");
+  }
+
+  return response.json();
+}
+
+export async function fetchRecommendedCargoRate(params: {
+  origin: string;
+  destination: string;
+  weight: number;
+  body_type: string;
+}): Promise<RecommendedCargoRate> {
+  const query = new URLSearchParams({
+    origin: params.origin.trim(),
+    destination: params.destination.trim(),
+    weight: String(params.weight),
+    body_type: params.body_type.trim(),
+  });
+
+  const response = await fetch(`/api/v1/cargos/recommended-rate?${query.toString()}`, {
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw await buildApiError(response, "Recommended rate failed");
   }
 
   return response.json();

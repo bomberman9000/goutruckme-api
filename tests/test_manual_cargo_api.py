@@ -168,6 +168,45 @@ def test_create_manual_cargo_creates_cargo_and_feed_event(monkeypatch):
     assert dispatched == [1]
 
 
+def test_recommended_rate_uses_geo_and_smart_estimate(monkeypatch):
+    app = FastAPI()
+    app.include_router(cargos_api.router)
+
+    monkeypatch.setattr(cargos_api, "get_geo_service", lambda: _FakeGeoService())
+
+    async def _estimate(origin: str, destination: str, weight: float, body_type: str):
+        assert origin == "Москва"
+        assert destination == "Казань"
+        assert weight == 20
+        assert body_type == "тент"
+        return {
+            "price": 135000,
+            "source": "market",
+            "details": "📊 Рыночная цена",
+        }
+
+    monkeypatch.setattr(cargos_api, "_estimate_recommended_rate", _estimate)
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/v1/cargos/recommended-rate",
+        params={
+            "origin": "москва",
+            "destination": "казань",
+            "weight": 20,
+            "body_type": "тент",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["recommended_rate_rub"] == 135000
+    assert body["distance_km"] == 820
+    assert body["source"] == "market"
+    assert body["rate_per_km"] == 165
+    assert body["min_rate_rub"] < body["recommended_rate_rub"] < body["max_rate_rub"]
+
+
 def test_get_my_cargos_returns_only_owner_items(monkeypatch):
     fake_session = _FakeSession(users={555: User(id=555, full_name="Alex", username=None)})
     fake_session.cargos = [

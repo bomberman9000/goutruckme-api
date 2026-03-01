@@ -37,6 +37,19 @@ class ManualCargoResponse(BaseModel):
     feed_id: int
 
 
+class RecommendedRateResponse(BaseModel):
+    ok: bool = True
+    origin: str
+    destination: str
+    distance_km: int
+    recommended_rate_rub: int
+    min_rate_rub: int
+    max_rate_rub: int
+    rate_per_km: int
+    source: str
+    details: str
+
+
 class MyCargoItem(BaseModel):
     id: int
     from_city: str
@@ -140,6 +153,17 @@ def _build_manual_raw_text(
         )
         if part
     )
+
+
+async def _estimate_recommended_rate(
+    origin: str,
+    destination: str,
+    weight: float,
+    body_type: str,
+) -> dict:
+    from src.core.ai import estimate_price_smart
+
+    return await estimate_price_smart(origin, destination, weight, body_type)
 
 
 async def _find_manual_feed_event(session, owner_id: int, cargo_id: int) -> ParserIngestEvent | None:
@@ -319,6 +343,65 @@ async def create_manual_cargo(
     await clear_cached("feed")
     background_tasks.add_task(notify_matching_carriers, cargo.id)
     return ManualCargoResponse(cargo_id=cargo.id, feed_id=feed_event.id)
+
+
+@router.get("/api/v1/cargos/recommended-rate", response_model=RecommendedRateResponse)
+async def get_recommended_rate(
+    origin: str = Query(min_length=2, max_length=100),
+    destination: str = Query(min_length=2, max_length=100),
+    weight: float = Query(gt=0, le=1000),
+    body_type: str = Query(default="тент", min_length=2, max_length=100),
+) -> RecommendedRateResponse:
+    route_geo = await get_geo_service().resolve_route(origin, destination)
+    if not route_geo:
+        raise HTTPException(status_code=422, detail="Invalid cities detected")
+
+    normalized_origin = route_geo.origin.name
+    normalized_destination = route_geo.destination.name
+    normalized_body_type = body_type.strip()
+    distance_km = max(1, int(route_geo.distance_km))
+
+    estimate = await _estimate_recommended_rate(
+        normalized_origin,
+        normalized_destination,
+        float(weight),
+        normalized_body_type,
+    )
+
+    recommended_rate = estimate.get("price")
+    source = str(estimate.get("source") or "unknown")
+    details = str(estimate.get("details") or "").strip()
+
+    if not isinstance(recommended_rate, int) or recommended_rate <= 0:
+        fallback_rate_per_km = int(max(30, min(50, 35 + min(float(weight), 20.0) * 0.5)))
+        recommended_rate = distance_km * fallback_rate_per_km
+        source = "geo_calculated"
+        details = (
+            "📐 Расчёт по расстоянию\n"
+            f"• Дистанция: ~{distance_km} км\n"
+            f"• Ставка: ~{fallback_rate_per_km} ₽/км"
+        )
+
+    rate_per_km = max(1, round(recommended_rate / distance_km))
+    if source == "calculated" or source == "geo_calculated":
+        min_rate = distance_km * 30
+        max_rate = distance_km * 50
+    else:
+        spread = max(5_000, int(recommended_rate * 0.12))
+        min_rate = max(1, recommended_rate - spread)
+        max_rate = recommended_rate + spread
+
+    return RecommendedRateResponse(
+        origin=normalized_origin,
+        destination=normalized_destination,
+        distance_km=distance_km,
+        recommended_rate_rub=int(recommended_rate),
+        min_rate_rub=int(min_rate),
+        max_rate_rub=int(max_rate),
+        rate_per_km=int(rate_per_km),
+        source=source,
+        details=details or "📊 Рекомендованная ставка рассчитана автоматически",
+    )
 
 
 @router.get("/api/v1/cargos/my", response_model=MyCargoResponse)
