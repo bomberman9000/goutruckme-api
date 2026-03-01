@@ -9,6 +9,7 @@ from typing import Optional, List, Dict
 from app.db.database import SessionLocal
 from app.models.models import Load, User, Truck, Bid
 from app.services.ai_chatbot import ai_chatbot
+from app.services.geo import canonicalize_city_name
 
 router = APIRouter()
 
@@ -151,8 +152,8 @@ def send_load_offer(request: SendOfferRequest, db: Session = Depends(get_db)):
     
     load_data = {
         "id": load.id,
-        "from_city": load.from_city,
-        "to_city": load.to_city,
+        "from_city": canonicalize_city_name(load.from_city),
+        "to_city": canonicalize_city_name(load.to_city),
         "weight": load.weight,
         "volume": load.volume,
         "price": load.price,
@@ -183,8 +184,8 @@ def broadcast_load(request: BroadcastRequest, db: Session = Depends(get_db)):
     
     load_data = {
         "id": load.id,
-        "from_city": load.from_city,
-        "to_city": load.to_city,
+        "from_city": canonicalize_city_name(load.from_city),
+        "to_city": canonicalize_city_name(load.to_city),
         "weight": load.weight,
         "volume": load.volume,
         "price": load.price
@@ -211,10 +212,13 @@ def broadcast_to_region(load_id: int, db: Session = Depends(get_db)):
     if not load:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     
+    from_city = canonicalize_city_name(load.from_city)
+    to_city = canonicalize_city_name(load.to_city)
+
     # Находим водителей в регионе
     trucks = db.query(Truck).filter(
         Truck.status == "free",
-        Truck.region.ilike(f"%{load.from_city}%")
+        Truck.region.ilike(f"%{from_city}%")
     ).all()
     
     user_ids = list(set(t.user_id for t in trucks))
@@ -228,8 +232,8 @@ def broadcast_to_region(load_id: int, db: Session = Depends(get_db)):
     
     load_data = {
         "id": load.id,
-        "from_city": load.from_city,
-        "to_city": load.to_city,
+        "from_city": from_city,
+        "to_city": to_city,
         "weight": load.weight,
         "volume": load.volume,
         "price": load.price
@@ -250,8 +254,8 @@ def start_negotiation(request: NegotiationRequest, db: Session = Depends(get_db)
     
     load_data = {
         "id": load.id,
-        "from_city": load.from_city,
-        "to_city": load.to_city,
+        "from_city": canonicalize_city_name(load.from_city),
+        "to_city": canonicalize_city_name(load.to_city),
         "price": load.price
     }
     
@@ -277,8 +281,8 @@ def confirm_deal(request: ConfirmDealRequest, db: Session = Depends(get_db)):
     
     load_data = {
         "id": load.id,
-        "from_city": load.from_city,
-        "to_city": load.to_city,
+        "from_city": canonicalize_city_name(load.from_city),
+        "to_city": canonicalize_city_name(load.to_city),
         "loading_date": "по договорённости",
         "loading_address": ""
     }
@@ -366,8 +370,8 @@ def generate_auto_messages(load_id: int, db: Session = Depends(get_db)):
     drivers = db.query(User).filter(User.role == UserRole.carrier).limit(50).all()
     
     load_data = {
-        "from_city": load.from_city,
-        "to_city": load.to_city,
+        "from_city": canonicalize_city_name(load.from_city),
+        "to_city": canonicalize_city_name(load.to_city),
         "weight": load.weight,
         "price": load.price
     }
@@ -443,5 +447,4 @@ def get_chatbot_status():
             "GET /chatbot/conversation/{id}": "💬 История диалога"
         }
     }
-
 

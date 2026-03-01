@@ -9,6 +9,7 @@ from typing import Optional
 from app.db.database import SessionLocal
 from app.models.models import Load, User
 from app.services.ai_lawyer_llm import ai_lawyer_llm
+from app.services.geo import canonicalize_city_name
 
 router = APIRouter()
 
@@ -92,8 +93,8 @@ def analyze_load_by_id(load_id: int, db: Session = Depends(get_db)):
     shipper = db.query(User).filter(User.id == load.user_id).first()
     
     load_data = {
-        "from_city": load.from_city,
-        "to_city": load.to_city,
+        "from_city": canonicalize_city_name(load.from_city),
+        "to_city": canonicalize_city_name(load.to_city),
         "weight": load.weight,
         "volume": load.volume,
         "price": load.price,
@@ -217,7 +218,6 @@ def get_lawyer_status():
             "POST /lawyer/quick-check": "Быстрая проверка"
         }
     }
-
 
 
 

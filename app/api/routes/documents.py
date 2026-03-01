@@ -10,6 +10,7 @@ from typing import Optional, List, Dict
 from app.db.database import SessionLocal
 from app.models.models import Load, User, Bid
 from app.services.ai_documents import ai_documents
+from app.services.geo import canonicalize_city_name
 
 router = APIRouter()
 
@@ -291,8 +292,8 @@ def generate_docs_for_load(load_id: int, bid_id: int,
     }
     
     load_data = {
-        "from_city": load.from_city,
-        "to_city": load.to_city,
+        "from_city": canonicalize_city_name(load.from_city),
+        "to_city": canonicalize_city_name(load.to_city),
         "price": bid.price,
         "weight": load.weight,
         "volume": load.volume
@@ -400,7 +401,6 @@ def get_documents_status():
             "GET /documents/list": "Список документов"
         }
     }
-
 
 
 

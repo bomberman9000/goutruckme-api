@@ -29,6 +29,7 @@ from app.dicts.vehicles import (
 from app.matching.compat import check_compat
 from app.models.models import City, Load, User, UserRole, Vehicle
 from app.services.cargo_status import apply_cargo_status_filter
+from app.services.geo import canonicalize_city_name
 from app.services.vehicle_ai import analyze_vehicle_submission, count_matching_loads
 from app.trust.service import get_company_trust_snapshot
 
@@ -897,8 +898,8 @@ def _vehicle_matches_load(
     payload = {
         "cargo_id": int(load.id),
         "load_id": int(load.id),
-        "from_city": load.from_city,
-        "to_city": load.to_city,
+        "from_city": canonicalize_city_name(load.from_city),
+        "to_city": canonicalize_city_name(load.to_city),
         "loading_date": load.loading_date.isoformat() if load.loading_date else None,
         "weight_t": round(load_weight, 3),
         "volume_m3": round(load_volume, 3),
@@ -984,8 +985,8 @@ def _find_matching_cargos(
                 rejected_item = {
                     "cargo_id": int(load.id),
                     "load_id": int(load.id),
-                    "from_city": load.from_city,
-                    "to_city": load.to_city,
+                    "from_city": canonicalize_city_name(load.from_city),
+                    "to_city": canonicalize_city_name(load.to_city),
                     "rejected_reasons": rejected_reasons[:4],
                 }
                 if debug:

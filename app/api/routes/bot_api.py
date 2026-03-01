@@ -15,6 +15,7 @@ from app.services.cargo_status import (
     is_active_status,
     normalize_cargo_status,
 )
+from app.services.geo import canonicalize_city_name
 from app.trust.service import recalc_company_trust
 
 router = APIRouter()
@@ -85,8 +86,8 @@ async def get_load(
         raise HTTPException(status_code=404, detail="Не найдено")
     return {
         "id": load.id,
-        "from_city": load.from_city,
-        "to_city": load.to_city,
+        "from_city": canonicalize_city_name(load.from_city),
+        "to_city": canonicalize_city_name(load.to_city),
         "price": load.price,
         "weight": load.weight,
         "truck_type": None,

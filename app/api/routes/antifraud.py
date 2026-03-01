@@ -9,6 +9,7 @@ from typing import Optional, List
 from app.db.database import SessionLocal
 from app.models.models import Load, User, Bid
 from app.services.ai_antifraud import ai_antifraud
+from app.services.geo import canonicalize_city_name
 
 router = APIRouter()
 
@@ -164,8 +165,8 @@ def check_load_by_id(load_id: int, db: Session = Depends(get_db)):
     
     load_data = {
         "id": load.id,
-        "from_city": load.from_city,
-        "to_city": load.to_city,
+        "from_city": canonicalize_city_name(load.from_city),
+        "to_city": canonicalize_city_name(load.to_city),
         "price": load.price,
         "weight": load.weight,
         "volume": load.volume
@@ -428,8 +429,8 @@ def full_fraud_analysis(user_id: int, load_id: int = None, ip: str = None,
         if load:
             load_data = {
                 "id": load.id,
-                "from_city": load.from_city,
-                "to_city": load.to_city,
+                "from_city": canonicalize_city_name(load.from_city),
+                "to_city": canonicalize_city_name(load.to_city),
                 "price": load.price,
                 "weight": load.weight,
                 "volume": load.volume
@@ -517,4 +518,3 @@ def get_antifraud_status():
             "POST /antifraud/dispute/{id}": "Зафиксировать спор"
         }
     }
-

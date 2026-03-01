@@ -21,6 +21,7 @@ from app.models.models import (
     User,
     Vehicle,
 )
+from app.services.geo import canonicalize_city_name
 
 router = APIRouter()
 _ALLOWED_RANGES = {"day": 1, "week": 7, "month": 30}
@@ -397,7 +398,10 @@ def analytics_money(
                 load = db.query(Load).filter(Load.id == deal.cargo_id).first()
                 if not load:
                     continue
-                key = (load.from_city or "", load.to_city or "")
+                key = (
+                    canonicalize_city_name(load.from_city) if load.from_city else "",
+                    canonicalize_city_name(load.to_city) if load.to_city else "",
+                )
                 route_sums.setdefault(key, []).append(client_price - carrier_price)
 
             top_routes = [
