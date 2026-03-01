@@ -4902,13 +4902,13 @@
 
             const actionsHTML = `
                 <div class="space-y-2 pt-4 border-t border-dark-border">
-                    <button class="w-full px-4 py-2 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark rounded-lg font-semibold transition-all">
+                    <button onclick="openTakeCargoModal(${JSON.stringify(load.id)})" class="w-full px-4 py-2 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark rounded-lg font-semibold transition-all">
                         Взять груз
                     </button>
-                    <button class="w-full px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg transition-all">
+                    <button onclick="showLoadContacts(${JSON.stringify(load.id)})" class="w-full px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg transition-all">
                         Связаться
                     </button>
-                    <button class="w-full px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg transition-all">
+                    <button onclick="startLoadNegotiation(${JSON.stringify(load.id)})" class="w-full px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg transition-all">
                         🤖 AI ведёт переговоры
                     </button>
                 </div>
@@ -4946,6 +4946,54 @@
 
         function closeLoadCard() {
             document.getElementById('loadCardPanel').classList.add('hidden');
+        }
+
+        function showLoadContacts(loadId) {
+            const load = Array.isArray(cargoState.allLoads)
+                ? cargoState.allLoads.find(item => String(item.id) === String(loadId))
+                : null;
+
+            if (!load) {
+                showNotification('Груз не найден', 'error');
+                return;
+            }
+
+            const lines = [];
+            if (load.contact_phone) lines.push(`📞 ${load.contact_phone}`);
+            if (load.contact_telegram) lines.push(`💬 ${load.contact_telegram}`);
+
+            if (!lines.length) {
+                showNotification('Контакты пока не указаны для этого груза', 'error');
+                return;
+            }
+
+            alert(`Контакты по грузу\n\n${lines.join('\n')}`);
+        }
+
+        function startLoadNegotiation(loadId) {
+            const load = Array.isArray(cargoState.allLoads)
+                ? cargoState.allLoads.find(item => String(item.id) === String(loadId))
+                : null;
+
+            if (!load) {
+                showNotification('Груз не найден', 'error');
+                return;
+            }
+
+            const price = formatPrice(toFiniteNumber(load.total_price ?? load.price));
+            const route = `${load.from_city || '—'} → ${load.to_city || '—'}`;
+            const baseMessage = [
+                'AI подготовил сценарий переговоров:',
+                `1. Подтвердите маршрут: ${route}`,
+                `2. Уточните финальную ставку: ${price}`,
+                '3. Проверьте контакты и условия оплаты перед сделкой'
+            ];
+
+            if (load.ai_explain) {
+                baseMessage.push('', `Подсказка AI: ${load.ai_explain}`);
+            }
+
+            alert(baseMessage.join('\n'));
         }
 
         // Role selection
