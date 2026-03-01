@@ -4,6 +4,7 @@ from app.api.routes import (
     auth,
     bids,
     complaints,
+    complaints_ai,
     consolidation,
     dicts,
     document_sign,
