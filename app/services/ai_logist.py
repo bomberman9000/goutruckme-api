@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
 from app.matching.scorer import evaluate_trust
+from app.services.geo import canonicalize_city_name, normalize_city_name
 
 
 class TruckType(str, Enum):
@@ -115,6 +116,13 @@ class AILogist:
         ("санкт-петербург", "казань"): 1530,
         ("санкт-петербург", "нижний новгород"): 1130,
     }
+
+    @staticmethod
+    def _canonical_city(value: str) -> str:
+        return canonicalize_city_name(value or "")
+
+    def _canonical_pair(self, from_city: str, to_city: str) -> tuple[str, str]:
+        return self._canonical_city(from_city), self._canonical_city(to_city)
     
     def recommend_truck_type(self, weight: float = None, volume: float = None,
                              length: float = None, cargo_type: str = None) -> Dict[str, Any]:
@@ -207,6 +215,7 @@ class AILogist:
     
     def get_distance(self, from_city: str, to_city: str) -> Optional[int]:
         """Получить расстояние между городами."""
+        from_city, to_city = self._canonical_pair(from_city, to_city)
         key = (from_city.lower(), to_city.lower())
         reverse_key = (to_city.lower(), from_city.lower())
         dist = self.DISTANCES.get(key) or self.DISTANCES.get(reverse_key)
@@ -216,8 +225,6 @@ class AILogist:
         # Попытка рассчитать через координаты (fallback-справочник)
         try:
             from app.services.route_calc import CITY_COORDS_FALLBACK, _haversine_km, ROAD_FACTOR_DEFAULT
-            from app.services.geo import normalize_city_name
-
             norm_from = normalize_city_name(from_city)
             norm_to = normalize_city_name(to_city)
 
@@ -237,7 +244,7 @@ class AILogist:
         """
         💰 Прогнозирование стоимости перевозки.
         """
-        
+        from_city, to_city = self._canonical_pair(from_city, to_city)
         distance = self.get_distance(from_city, to_city)
         specs = self.TRUCK_SPECS.get(truck_type, self.TRUCK_SPECS["10т"])
         base_rate = specs["base_rate"]
@@ -316,8 +323,12 @@ class AILogist:
         - Доступности
         """
         
-        from_city = load.get("from_city", "").lower()
-        to_city = load.get("to_city", "").lower()
+        canonical_from, canonical_to = self._canonical_pair(
+            load.get("from_city", ""),
+            load.get("to_city", ""),
+        )
+        from_city = canonical_from.lower()
+        to_city = canonical_to.lower()
         weight = load.get("weight", 10)
         volume = load.get("volume")
         price = load.get("price", 0)
@@ -355,8 +366,8 @@ class AILogist:
                 score += 10
             
             # Балл за регион
-            region = truck.get("region", "").lower()
-            if from_city in region:
+            region = normalize_city_name(truck.get("region", ""))
+            if from_city and from_city in region:
                 score += 25
                 reasons.append("✓ Машина в регионе погрузки")
             
@@ -421,7 +432,7 @@ class AILogist:
         
         return {
             "load": {
-                "route": f"{from_city} → {to_city}",
+                "route": f"{canonical_from} → {canonical_to}",
                 "weight": weight,
                 "volume": volume,
                 "price": price
@@ -538,8 +549,10 @@ class AILogist:
         📨 Генерация сообщения для рассылки водителям.
         """
         
-        from_city = load.get("from_city", "")
-        to_city = load.get("to_city", "")
+        from_city, to_city = self._canonical_pair(
+            load.get("from_city", ""),
+            load.get("to_city", ""),
+        )
         weight = load.get("weight", "")
         volume = load.get("volume", "")
         price = load.get("price", "")
@@ -606,7 +619,7 @@ class AILogist:
                 
                 assignments.append({
                     "load_id": load.get("id"),
-                    "load_route": f"{load.get('from_city')} → {load.get('to_city')}",
+                    "load_route": f"{self._canonical_city(load.get('from_city', ''))} → {self._canonical_city(load.get('to_city', ''))}",
                     "assigned_truck_id": best_match["truck_id"],
                     "assigned_driver": best_match["owner_name"],
                     "match_score": best_match["match_score"],
@@ -618,7 +631,7 @@ class AILogist:
             else:
                 unassigned.append({
                     "load_id": load.get("id"),
-                    "load_route": f"{load.get('from_city')} → {load.get('to_city')}",
+                    "load_route": f"{self._canonical_city(load.get('from_city', ''))} → {self._canonical_city(load.get('to_city', ''))}",
                     "reason": "Нет подходящих машин"
                 })
         
@@ -636,7 +649,7 @@ class AILogist:
         """
         📊 Аналитика по маршруту.
         """
-        
+        from_city, to_city = self._canonical_pair(from_city, to_city)
         distance = self.get_distance(from_city, to_city)
         
         # Средние цены по типам ТС
