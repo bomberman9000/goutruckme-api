@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -96,6 +96,34 @@ def _coerce_bool(value: Any) -> bool | None:
     return None
 
 
+def _coerce_date(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    raw = str(value).strip()
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _normalize_loading_time(value: Any) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if len(raw) == 5 and raw[2] == ":":
+        hours = _coerce_int(raw[:2])
+        minutes = _coerce_int(raw[3:])
+        if hours is not None and minutes is not None and 0 <= hours <= 23 and 0 <= minutes <= 59:
+            return f"{hours:02d}:{minutes:02d}"
+    return None
+
+
 def _map_load_status(value: Any) -> str:
     raw = str(value or "").strip().lower()
     mapping = {
@@ -150,6 +178,15 @@ def _upsert_order_from_sync(
     source = str(order.get("source") or "").strip() or None
     is_hot_deal = _coerce_bool(order.get("is_hot_deal"))
     is_direct_customer = _coerce_bool(order.get("is_direct_customer"))
+    required_body_type = str(order.get("required_body_type") or order.get("body_type") or "").strip() or None
+    distance_km = _coerce_float(order.get("distance_km"))
+    rate_per_km = _coerce_float(order.get("rate_per_km"))
+    pickup_lat = _coerce_float(order.get("pickup_lat") or order.get("from_lat"))
+    pickup_lon = _coerce_float(order.get("pickup_lon") or order.get("from_lon"))
+    delivery_lat = _coerce_float(order.get("delivery_lat") or order.get("to_lat"))
+    delivery_lon = _coerce_float(order.get("delivery_lon") or order.get("to_lon"))
+    loading_date = _coerce_date(order.get("loading_date") or order.get("load_date"))
+    loading_time = _normalize_loading_time(order.get("loading_time") or order.get("load_time"))
     owner_id = _coerce_int(order.get("user_id")) or fallback_user_id
 
     if not from_city or not to_city:
@@ -187,6 +224,15 @@ def _upsert_order_from_sync(
             inn=inn,
             suggested_response=suggested_response,
             source=source,
+            required_body_type=required_body_type,
+            distance_km=distance_km,
+            rate_per_km=rate_per_km,
+            pickup_lat=pickup_lat,
+            pickup_lon=pickup_lon,
+            delivery_lat=delivery_lat,
+            delivery_lon=delivery_lon,
+            loading_date=loading_date,
+            loading_time=loading_time,
             status=_map_load_status(order.get("status")),
         )
         db.add(load)
@@ -210,6 +256,23 @@ def _upsert_order_from_sync(
         load.inn = inn or load.inn
         load.suggested_response = suggested_response or load.suggested_response
         load.source = source or load.source
+        load.required_body_type = required_body_type or load.required_body_type
+        if distance_km is not None and distance_km > 0:
+            load.distance_km = distance_km
+        if rate_per_km is not None and rate_per_km > 0:
+            load.rate_per_km = rate_per_km
+        if pickup_lat is not None:
+            load.pickup_lat = pickup_lat
+        if pickup_lon is not None:
+            load.pickup_lon = pickup_lon
+        if delivery_lat is not None:
+            load.delivery_lat = delivery_lat
+        if delivery_lon is not None:
+            load.delivery_lon = delivery_lon
+        if loading_date is not None:
+            load.loading_date = loading_date
+        if loading_time is not None:
+            load.loading_time = loading_time
         load.status = _map_load_status(order.get("status") or load.status)
 
     return {
