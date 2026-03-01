@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+from pathlib import Path
 
 from sqlalchemy import select
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from src.core.database import async_session
 from src.core.models import UserVehicle
