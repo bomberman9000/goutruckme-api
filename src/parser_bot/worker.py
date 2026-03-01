@@ -376,6 +376,7 @@ async def _save_ingest_event(
     trust: ScoreResult | None,
     is_spam: bool,
     status: str,
+    parse_method: str | None = None,
     error: str | None = None,
 ) -> None:
     details: dict[str, Any] = {
@@ -383,6 +384,8 @@ async def _save_ingest_event(
         "received_at": message.received_at or int(time.time()),
         "retry_count": message.retry_count,
     }
+    if parse_method:
+        details["parse_method"] = parse_method
     if trust:
         details["trust"] = {
             "score": trust.score,
@@ -469,13 +472,21 @@ async def _process_message(
 ) -> None:
     should_ack = True
     parsed: ParsedCargo | None = None
+    parse_method: str | None = None
     trust: ScoreResult | None = None
     is_spam = False
 
     try:
         text = (message.raw_text or "").strip()
         if not text:
-            await _save_ingest_event(message=message, parsed=None, trust=None, is_spam=False, status="empty")
+            await _save_ingest_event(
+                message=message,
+                parsed=None,
+                trust=None,
+                is_spam=False,
+                status="empty",
+                parse_method=parse_method,
+            )
             return
 
         fallback_id = f"{message.chat_id}:{message.message_id or message.entry_id}"
@@ -486,6 +497,7 @@ async def _process_message(
         # of structured chat messages.
         parsed = parse_cargo_message(text, keywords=keywords)
         if parsed:
+            parse_method = "regex_fast"
             parsed.is_hot_deal = evaluate_hot_deal(parsed)
             route_geo = await get_geo_service().resolve_route(
                 parsed.from_city,
@@ -537,6 +549,7 @@ async def _process_message(
                 )
                 if llm_route_geo:
                     parsed = llm_candidate
+                    parse_method = "llm_fallback"
                     route_geo = llm_route_geo
 
         if not parsed:
@@ -546,6 +559,7 @@ async def _process_message(
                 trust=None,
                 is_spam=False,
                 status="ignored",
+                parse_method=parse_method,
             )
             return
 
@@ -556,6 +570,7 @@ async def _process_message(
                 trust=None,
                 is_spam=False,
                 status="ignored",
+                parse_method=parse_method,
                 error="invalid_cities",
             )
             logger.info(
@@ -581,6 +596,7 @@ async def _process_message(
                 trust=None,
                 is_spam=False,
                 status="ignored",
+                parse_method=parse_method,
             )
             return
 
@@ -596,6 +612,7 @@ async def _process_message(
                 trust=None,
                 is_spam=False,
                 status="ignored",
+                parse_method=parse_method,
             )
             logger.info(
                 "ignored unrealistic rate id=%s route=%s->%s rate=%s",
@@ -620,6 +637,7 @@ async def _process_message(
                 trust=None,
                 is_spam=False,
                 status="manual_review",
+                parse_method=parse_method,
                 error=review_reason,
             )
             logger.info(
@@ -641,6 +659,7 @@ async def _process_message(
                 trust=None,
                 is_spam=False,
                 status="duplicate",
+                parse_method=parse_method,
             )
             return
 
@@ -653,6 +672,7 @@ async def _process_message(
                 trust=None,
                 is_spam=False,
                 status="duplicate",
+                parse_method=parse_method,
             )
             logger.info(
                 "content-dedupe hit id=%s route=%s->%s",
@@ -701,6 +721,7 @@ async def _process_message(
                 trust=trust,
                 is_spam=True,
                 status="spam_filtered",
+                parse_method=parse_method,
             )
             logger.info(
                 "filtered by score id=%s route=%s->%s score=%s",
@@ -721,6 +742,7 @@ async def _process_message(
                 trust=trust,
                 is_spam=False,
                 status="synced",
+                parse_method=parse_method,
             )
             logger.info(
                 "synced id=%s route=%s->%s inn=%s score=%s",
@@ -751,6 +773,7 @@ async def _process_message(
                 trust=trust,
                 is_spam=False,
                 status=status,
+                parse_method=parse_method,
                 error=str(exc),
             )
             logger.warning(

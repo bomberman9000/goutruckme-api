@@ -1,5 +1,6 @@
 import json
 import uuid
+from collections import Counter
 
 import httpx
 from fastapi import APIRouter, Request, Depends, Form, HTTPException
@@ -609,6 +610,18 @@ async def parser_events(
             .limit(limit)
         )
         events = result.scalars().all()
+        parse_method_counts: Counter[str] = Counter()
+        for event in events:
+            parse_method = None
+            if event.details_json:
+                try:
+                    details = json.loads(event.details_json)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    details = {}
+                parse_method = details.get("parse_method")
+            setattr(event, "parse_method_hint", parse_method)
+            if parse_method:
+                parse_method_counts[parse_method] += 1
 
     return templates.TemplateResponse("parser.html", {
         **_ctx(request),
@@ -624,6 +637,10 @@ async def parser_events(
         "sources": sources,
         "parser_metrics": parser_metrics,
         "top_errors": top_errors,
+        "parse_method_counts": [
+            {"name": name, "count": count}
+            for name, count in parse_method_counts.most_common()
+        ],
     })
 
 

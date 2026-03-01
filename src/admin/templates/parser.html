@@ -173,6 +173,22 @@
             {% endif %}
         </div>
 
+        <div class="bg-white rounded-lg shadow p-5 mb-6">
+            <div class="text-sm text-gray-500 mb-3">Метод разбора (на этой странице)</div>
+            {% if parse_method_counts %}
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                {% for item in parse_method_counts %}
+                <div class="border rounded-lg p-3 bg-gray-50">
+                    <div class="text-xs text-gray-500 mb-1">{{ item.count }} шт.</div>
+                    <div class="font-semibold text-sm break-words">{{ item.name }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-gray-500">На текущей странице еще нет данных о методе разбора.</div>
+            {% endif %}
+        </div>
+
         <div class="space-y-4">
             {% for event in events %}
             <div class="bg-white rounded-lg shadow border border-gray-200 p-5">
@@ -187,6 +203,9 @@
                             {% endif %}
                             {% if event.source %}
                             <span class="px-2 py-1 rounded text-xs bg-blue-50 text-blue-700">{{ event.source }}</span>
+                            {% endif %}
+                            {% if event.parse_method_hint %}
+                            <span class="px-2 py-1 rounded text-xs bg-emerald-50 text-emerald-700">{{ event.parse_method_hint }}</span>
                             {% endif %}
                         </div>
 
