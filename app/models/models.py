@@ -279,6 +279,15 @@ class Load(Base):
     rate_per_km = Column(Float, nullable=True)
     loading_date = Column(Date, nullable=True, index=True)
     loading_time = Column(String(5), nullable=True)
+    cargo_description = Column(String(255), nullable=True)
+    payment_terms = Column(String(120), nullable=True)
+    is_direct_customer = Column(Boolean, nullable=True)
+    dimensions = Column(String(64), nullable=True)
+    is_hot_deal = Column(Boolean, default=False, nullable=True)
+    phone = Column(String(32), nullable=True, index=True)
+    inn = Column(String(12), nullable=True, index=True)
+    suggested_response = Column(Text, nullable=True)
+    source = Column(String(64), nullable=True)
     status = Column(String(20), default=CargoStatus.active.value, nullable=False, index=True)  # active / expired / closed / cancelled
     created_at = Column(DateTime, default=datetime.utcnow)
 

@@ -83,6 +83,19 @@ def _coerce_float(value: Any) -> float | None:
         return None
 
 
+def _coerce_bool(value: Any) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    raw = str(value).strip().lower()
+    if raw in {"1", "true", "yes", "y", "on"}:
+        return True
+    if raw in {"0", "false", "no", "n", "off"}:
+        return False
+    return None
+
+
 def _map_load_status(value: Any) -> str:
     raw = str(value or "").strip().lower()
     mapping = {
@@ -128,6 +141,15 @@ def _upsert_order_from_sync(
     to_city = str(order.get("to_city") or "").strip()
     price = _coerce_float(order.get("price_rub") or order.get("total_price") or order.get("price"))
     weight = _coerce_float(order.get("weight_t") or order.get("weight"))
+    cargo_description = str(order.get("cargo_description") or "").strip() or None
+    payment_terms = str(order.get("payment_terms") or "").strip() or None
+    dimensions = str(order.get("dimensions") or "").strip() or None
+    phone = str(order.get("phone") or "").strip() or None
+    inn = str(order.get("inn") or "").strip() or None
+    suggested_response = str(order.get("suggested_response") or "").strip() or None
+    source = str(order.get("source") or "").strip() or None
+    is_hot_deal = _coerce_bool(order.get("is_hot_deal"))
+    is_direct_customer = _coerce_bool(order.get("is_direct_customer"))
     owner_id = _coerce_int(order.get("user_id")) or fallback_user_id
 
     if not from_city or not to_city:
@@ -156,6 +178,15 @@ def _upsert_order_from_sync(
             volume_m3=0.0,
             price=float(price),
             total_price=float(price),
+            cargo_description=cargo_description,
+            payment_terms=payment_terms,
+            is_direct_customer=is_direct_customer,
+            dimensions=dimensions,
+            is_hot_deal=is_hot_deal if is_hot_deal is not None else False,
+            phone=phone,
+            inn=inn,
+            suggested_response=suggested_response,
+            source=source,
             status=_map_load_status(order.get("status")),
         )
         db.add(load)
@@ -168,6 +199,17 @@ def _upsert_order_from_sync(
         load.weight_t = float(weight) if weight is not None else load.weight_t
         load.price = float(price)
         load.total_price = float(price)
+        load.cargo_description = cargo_description or load.cargo_description
+        load.payment_terms = payment_terms or load.payment_terms
+        if is_direct_customer is not None:
+            load.is_direct_customer = is_direct_customer
+        load.dimensions = dimensions or load.dimensions
+        if is_hot_deal is not None:
+            load.is_hot_deal = is_hot_deal
+        load.phone = phone or load.phone
+        load.inn = inn or load.inn
+        load.suggested_response = suggested_response or load.suggested_response
+        load.source = source or load.source
         load.status = _map_load_status(order.get("status") or load.status)
 
     return {
