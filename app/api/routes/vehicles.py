@@ -1043,6 +1043,7 @@ def list_vehicles(
     q: Optional[str] = Query(default=None, description="Поиск по названию/госномеру/марке"),
     city: Optional[str] = Query(default=None, description="Город/регион"),
     city_id: Optional[int] = Query(default=None, ge=1),
+    source: Optional[str] = Query(default=None, description="Источник: site|mini_app"),
     vehicle_kind: Optional[str] = Query(default=None, description="Тип транспорта"),
     body_type: Optional[str] = Query(default=None, description="Тип кузова"),
     min_payload_tons: Optional[float] = Query(default=None, ge=0),
@@ -1076,6 +1077,15 @@ def list_vehicles(
 
     if city_id:
         query = query.filter(Vehicle.city_id == city_id)
+
+    if source:
+        source_normalized = _norm(source)
+        if source_normalized == "mini_app":
+            query = query.filter(Vehicle.id >= 900_000_000)
+        elif source_normalized == "site":
+            query = query.filter(Vehicle.id < 900_000_000)
+        else:
+            raise HTTPException(status_code=422, detail="source должен быть site|mini_app")
 
     if city:
         city_like = f"%{city.strip()}%"

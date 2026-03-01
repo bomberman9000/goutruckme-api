@@ -326,9 +326,6 @@
                 <button onclick="openShipmentsPage()" class="nav-page-btn px-4 py-2 rounded-lg text-sm font-medium transition-all" data-page="shipments">
                     Реестр
                 </button>
-                <button onclick="addTestClients()" class="glass-action-btn px-3 py-1 bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/30 text-yellow-400 rounded text-xs font-semibold transition-all" title="Добавить тестовых клиентов">
-                    🧪 Тест
-                </button>
                 <button onclick="showPage('documents')" class="nav-page-btn px-4 py-2 rounded-lg text-sm font-medium transition-all" data-page="documents">
                     Документы (AI)
                 </button>
@@ -747,10 +744,16 @@
                 </div>
 
                 <div class="bg-dark-card border border-dark-border rounded-xl p-4">
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-3">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-8 gap-3">
                         <input type="text" id="vehicle-filter-city" placeholder="Фильтр: город"
                             oninput="applyVehicleFilters()"
                             class="px-3 py-2 bg-dark border border-dark-border rounded-lg focus:outline-none focus:border-purple">
+                        <select id="vehicle-filter-source" onchange="applyVehicleFilters()"
+                            class="px-3 py-2 bg-dark border border-dark-border rounded-lg focus:outline-none focus:border-purple">
+                            <option value="">Все источники</option>
+                            <option value="site">🌐 Сайт</option>
+                            <option value="mini_app">📱 Mini App</option>
+                        </select>
                         <select id="vehicle-filter-kind" onchange="applyVehicleFilters()"
                             class="px-3 py-2 bg-dark border border-dark-border rounded-lg focus:outline-none focus:border-purple">
                             <option value="">Все типы</option>
@@ -8398,6 +8401,7 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
             editingVehicleId: null,
             filters: {
                 city: '',
+                source: '',
                 kind: '',
                 minPayload: '',
                 availableToday: false,
@@ -10727,6 +10731,7 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
 
         function applyVehicleFilters() {
             vehiclesState.filters.city = (document.getElementById('vehicle-filter-city')?.value || '').trim().toLowerCase();
+            vehiclesState.filters.source = (document.getElementById('vehicle-filter-source')?.value || '').trim().toLowerCase();
             vehiclesState.filters.kind = (document.getElementById('vehicle-filter-kind')?.value || '').trim().toUpperCase();
             vehiclesState.filters.minPayload = document.getElementById('vehicle-filter-min-payload')?.value || '';
             vehiclesState.filters.availableToday = Boolean(document.getElementById('vehicle-filter-available-today')?.checked);
@@ -10750,6 +10755,7 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
             params.set('size', String(vehiclesState.size || 50));
 
             if (vehiclesState.filters.city) params.set('city', vehiclesState.filters.city);
+            if (vehiclesState.filters.source) params.set('source', vehiclesState.filters.source);
             if (vehiclesState.filters.kind) params.set('vehicle_kind', vehiclesState.filters.kind);
             if (vehiclesState.filters.minPayload) params.set('min_payload_tons', String(vehiclesState.filters.minPayload));
             if (vehiclesState.filters.availableToday) params.set('available_today', 'true');
