@@ -19,7 +19,7 @@ from app.services.cargo_status import (
     is_terminal_status,
     normalize_cargo_status,
 )
-from app.services.geo import is_city_like_name
+from app.services.geo import canonicalize_city_name, is_city_like_name
 from app.trust.service import recalc_company_trust
 
 router = APIRouter()
@@ -125,8 +125,8 @@ def _load_to_list_item(load: Load, ai_payload: Optional[dict] = None) -> dict:
         "id": load.id,
         "from_city_id": load.from_city_id,
         "to_city_id": load.to_city_id,
-        "from_city": load.from_city,
-        "to_city": load.to_city,
+        "from_city": canonicalize_city_name(load.from_city),
+        "to_city": canonicalize_city_name(load.to_city),
         "price": float(total_price) if total_price is not None else 0,
         "total_price": float(total_price) if total_price is not None else 0,
         "distance": distance_km,
@@ -158,8 +158,8 @@ def _load_to_detail(load: Load, ai_payload: Optional[dict] = None) -> dict:
         "id": load.id,
         "from_city_id": load.from_city_id,
         "to_city_id": load.to_city_id,
-        "from_city": load.from_city,
-        "to_city": load.to_city,
+        "from_city": canonicalize_city_name(load.from_city),
+        "to_city": canonicalize_city_name(load.to_city),
         "price": float(total_price) if total_price is not None else 0,
         "total_price": float(total_price) if total_price is not None else 0,
         "price_per_km": round(float(rate_per_km), 1) if isinstance(rate_per_km, (int, float)) else None,

@@ -14,7 +14,7 @@ from app.services.cargo_status import (
     is_active_status,
     normalize_cargo_status,
 )
-from app.services.geo import is_city_like_name
+from app.services.geo import canonicalize_city_name, is_city_like_name
 from app.trust.service import recalc_company_trust
 
 router = APIRouter()
@@ -38,8 +38,8 @@ async def get_loads(
     return [
         {
             "id": item.id,
-            "from_city": item.from_city,
-            "to_city": item.to_city,
+            "from_city": canonicalize_city_name(item.from_city),
+            "to_city": canonicalize_city_name(item.to_city),
             "price": item.price,
             "status": normalize_cargo_status(item.status),
             "loading_date": cargo_loading_date(item).isoformat() if cargo_loading_date(item) else None,
@@ -63,8 +63,8 @@ async def get_load_detail(
 
     return {
         "id": load.id,
-        "from_city": load.from_city,
-        "to_city": load.to_city,
+        "from_city": canonicalize_city_name(load.from_city),
+        "to_city": canonicalize_city_name(load.to_city),
         "price": load.price,
         "weight": load.weight,
         "truck_type": None,

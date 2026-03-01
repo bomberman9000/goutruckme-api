@@ -21,6 +21,11 @@ _CITY_ALIASES = {
     "тошкент": "ташкент",
     "город бишкек": "бишкек",
     "чимкент": "шымкент",
+    "андижон": "андижан",
+    "нижний новогород": "нижний новгород",
+    "термезский район": "термез",
+    "термез туман": "термез",
+    "зерафшан": "зарафшан",
 }
 SUPPORTED_CITY_COUNTRIES = {"RU", "BY", "UZ", "KG", "KZ"}
 INVALID_CITY_TOKENS = (
@@ -68,6 +73,20 @@ def is_supported_city(city: City | None) -> bool:
     if country and country not in SUPPORTED_CITY_COUNTRIES:
         return False
     return is_city_like_name(city.name)
+
+
+def canonicalize_city_name(value: str | None) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return raw
+    normalized = normalize_city_name(raw)
+    if not normalized:
+        return raw
+    for item in DEFAULT_CITY_ROWS:
+        name = str(item.get("name") or "").strip()
+        if name and normalize_city_name(name) == normalized:
+            return name
+    return " ".join(part.capitalize() for part in normalized.split())
 
 
 # MVP-справочник (расширяемый): крупнейшие города РФ для автокомплита.
@@ -190,6 +209,7 @@ DEFAULT_CITY_ROWS: tuple[dict, ...] = (
     {"name": "Нукус", "region": "Каракалпакстан", "country": "UZ", "population": 329000, "lat": 42.4600, "lon": 59.6166},
     {"name": "Джизак", "region": "Джизакская область", "country": "UZ", "population": 186000, "lat": 40.1158, "lon": 67.8422},
     {"name": "Коканд", "region": "Ферганская область", "country": "UZ", "population": 259000, "lat": 40.5286, "lon": 70.9427},
+    {"name": "Термез", "region": "Сурхандарьинская область", "country": "UZ", "population": 140000, "lat": 37.2242, "lon": 67.2783},
     {"name": "Бишкек", "region": "Бишкек", "country": "KG", "population": 1074000, "lat": 42.8746, "lon": 74.5698},
     {"name": "Ош", "region": "Ошская область", "country": "KG", "population": 322000, "lat": 40.5283, "lon": 72.7985},
     {"name": "Алматы", "region": "Алматы", "country": "KZ", "population": 2275000, "lat": 43.2383, "lon": 76.9456},

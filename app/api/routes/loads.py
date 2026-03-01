@@ -12,7 +12,7 @@ from app.core.security import SECRET_KEY, ALGORITHM
 from app.core.config import settings
 from typing import Optional
 from app.ai.scoring import MarketStats, compute_ai_score
-from app.services.geo import is_city_like_name, is_supported_city, normalize_city_name
+from app.services.geo import canonicalize_city_name, is_city_like_name, is_supported_city, normalize_city_name
 from app.services.cargo_status import (
     apply_cargo_status_filter,
     cargo_loading_date,
@@ -438,8 +438,8 @@ def list_loads(
             "id": load.id,
             "from_city_id": load.from_city_id,
             "to_city_id": load.to_city_id,
-            "from_city": load.from_city,
-            "to_city": load.to_city,
+            "from_city": canonicalize_city_name(load.from_city),
+            "to_city": canonicalize_city_name(load.to_city),
             "weight": load.weight,
             "volume": load.volume,
             "weight_t": load.weight_t if load.weight_t is not None else load.weight,
