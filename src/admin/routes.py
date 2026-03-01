@@ -60,6 +60,13 @@ def _internal_headers() -> dict[str, str]:
 
 
 def _build_retry_sync_payload(event: ParserIngestEvent) -> dict:
+    details: dict = {}
+    if event.details_json:
+        try:
+            details = json.loads(event.details_json)
+        except Exception:
+            details = {}
+
     order = {
         "from_city": event.from_city,
         "to_city": event.to_city,
@@ -73,12 +80,18 @@ def _build_retry_sync_payload(event: ParserIngestEvent) -> dict:
         order["user_id"] = int(settings.parser_default_user_id)
     if event.body_type:
         order["body_type"] = event.body_type
+        order["required_body_type"] = event.body_type
     if event.inn:
         order["inn"] = event.inn
     if event.load_date:
         order["load_date"] = event.load_date
     if event.load_time:
         order["load_time"] = event.load_time
+    distance_km = details.get("distance_km")
+    if isinstance(distance_km, (int, float)) and distance_km > 0:
+        order["distance_km"] = float(distance_km)
+        if event.rate_rub:
+            order["rate_per_km"] = round(float(event.rate_rub) / float(distance_km), 1)
     if event.cargo_description:
         order["cargo_description"] = event.cargo_description
     if event.payment_terms:
@@ -93,6 +106,16 @@ def _build_retry_sync_payload(event: ParserIngestEvent) -> dict:
         order["phone"] = event.phone
     if event.suggested_response:
         order["suggested_response"] = event.suggested_response
+    if event.from_lat is not None and event.from_lon is not None:
+        order["pickup_lat"] = event.from_lat
+        order["pickup_lon"] = event.from_lon
+        order["from_lat"] = event.from_lat
+        order["from_lon"] = event.from_lon
+    if event.to_lat is not None and event.to_lon is not None:
+        order["delivery_lat"] = event.to_lat
+        order["delivery_lon"] = event.to_lon
+        order["to_lat"] = event.to_lat
+        order["to_lon"] = event.to_lon
 
     metadata = {
         "chat_id": event.chat_id,
@@ -101,9 +124,11 @@ def _build_retry_sync_payload(event: ParserIngestEvent) -> dict:
         "phone": event.phone,
         "inn": event.inn,
         "body_type": event.body_type,
+        "required_body_type": event.body_type,
         "raw_text": event.raw_text[:2000] if event.raw_text else "",
         "load_date": event.load_date,
         "load_time": event.load_time,
+        "distance_km": distance_km if isinstance(distance_km, (int, float)) else None,
         "cargo_description": event.cargo_description,
         "payment_terms": event.payment_terms,
         "is_direct_customer": event.is_direct_customer,
@@ -111,6 +136,12 @@ def _build_retry_sync_payload(event: ParserIngestEvent) -> dict:
         "is_hot_deal": event.is_hot_deal,
         "phone_blacklisted": event.phone_blacklisted,
     }
+    if event.from_lat is not None and event.from_lon is not None:
+        metadata["pickup_lat"] = event.from_lat
+        metadata["pickup_lon"] = event.from_lon
+    if event.to_lat is not None and event.to_lon is not None:
+        metadata["delivery_lat"] = event.to_lat
+        metadata["delivery_lon"] = event.to_lon
 
     if event.trust_score is not None:
         metadata["trust_score"] = event.trust_score

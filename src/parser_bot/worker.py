@@ -79,12 +79,17 @@ def _build_sync_payload(
         order["user_id"] = int(settings.parser_default_user_id)
     if parsed.body_type:
         order["body_type"] = parsed.body_type
+        order["required_body_type"] = parsed.body_type
     if parsed.inn:
         order["inn"] = parsed.inn
     if parsed.load_date:
         order["load_date"] = parsed.load_date
     if parsed.load_time:
         order["load_time"] = parsed.load_time
+    if parsed.route_distance_km:
+        order["distance_km"] = int(parsed.route_distance_km)
+        if parsed.rate_rub:
+            order["rate_per_km"] = round(float(parsed.rate_rub) / float(parsed.route_distance_km), 1)
     if parsed.cargo_description:
         order["cargo_description"] = parsed.cargo_description
     if parsed.payment_terms:
@@ -99,6 +104,16 @@ def _build_sync_payload(
         order["phone"] = parsed.phone
     if parsed.suggested_response:
         order["suggested_response"] = parsed.suggested_response
+    if parsed.from_lat is not None and parsed.from_lon is not None:
+        order["pickup_lat"] = parsed.from_lat
+        order["pickup_lon"] = parsed.from_lon
+        order["from_lat"] = parsed.from_lat
+        order["from_lon"] = parsed.from_lon
+    if parsed.to_lat is not None and parsed.to_lon is not None:
+        order["delivery_lat"] = parsed.to_lat
+        order["delivery_lon"] = parsed.to_lon
+        order["to_lat"] = parsed.to_lat
+        order["to_lon"] = parsed.to_lon
     order["source"] = source_name
 
     metadata = {
@@ -109,10 +124,12 @@ def _build_sync_payload(
         "phone": parsed.phone,
         "inn": parsed.inn,
         "body_type": parsed.body_type,
+        "required_body_type": parsed.body_type,
         "matched_keywords": parsed.matched_keywords,
         "raw_text": parsed.raw_text[:2000],
         "load_date": parsed.load_date,
         "load_time": parsed.load_time,
+        "distance_km": parsed.route_distance_km,
         "cargo_description": parsed.cargo_description,
         "payment_terms": parsed.payment_terms,
         "is_direct_customer": parsed.is_direct_customer,
@@ -120,6 +137,12 @@ def _build_sync_payload(
         "is_hot_deal": parsed.is_hot_deal,
         "phone_blacklisted": parsed.phone_blacklisted,
     }
+    if parsed.from_lat is not None and parsed.from_lon is not None:
+        metadata["pickup_lat"] = parsed.from_lat
+        metadata["pickup_lon"] = parsed.from_lon
+    if parsed.to_lat is not None and parsed.to_lon is not None:
+        metadata["delivery_lat"] = parsed.to_lat
+        metadata["delivery_lon"] = parsed.to_lon
     if trust:
         metadata["trust_score"] = trust.score
         metadata["trust_verdict"] = trust.verdict
