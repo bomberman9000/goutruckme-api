@@ -16,6 +16,7 @@ from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
 from src.core.audit import log_audit_event
 from src.core.database import async_session
 from src.core.models import UserVehicle
+from src.core.services.fleet_sync import publish_vehicle_sync_event
 from src.core.services.geo_service import get_geo_service
 from src.core.services.matching_engine import find_matches_for_vehicle
 
@@ -117,6 +118,7 @@ async def add_vehicle(
         )
         await session.commit()
         await session.refresh(v)
+    await publish_vehicle_sync_event(v, event_type="vehicle_upsert")
     return VehicleResponse(
         id=v.id, body_type=v.body_type, capacity_tons=v.capacity_tons,
         location_city=v.location_city, is_available=v.is_available,
@@ -216,6 +218,7 @@ async def set_available(
         )
         await session.commit()
         await session.refresh(v)
+    await publish_vehicle_sync_event(v, event_type="vehicle_upsert")
 
     async with async_session() as session:
         v = await session.scalar(
@@ -246,6 +249,8 @@ async def set_unavailable(
             raise HTTPException(status_code=404, detail="vehicle not found")
         v.is_available = False
         await session.commit()
+        await session.refresh(v)
+    await publish_vehicle_sync_event(v, event_type="vehicle_upsert")
     return {"ok": True}
 
 

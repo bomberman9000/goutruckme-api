@@ -27,9 +27,17 @@ class SharedVehicleSchema(BaseModel):
     user_id: int | None = None
     from_city: str | None = None
     to_city: str | None = None
+    location_city: str | None = None
+    location_region: str | None = None
     body_type: str | None = None
     capacity_t: float | None = None
+    capacity_tons: float | None = None
+    volume_m3: float | None = None
     price_rub: int | None = None
+    plate_number: str | None = None
+    is_available: bool | None = None
+    vehicle_kind: str | None = None
+    name: str | None = None
     status: str | None = None
     source: Literal["tg-bot", "gruzpotok-api", "unknown"] = "unknown"
     meta: dict[str, Any] = Field(default_factory=dict)
