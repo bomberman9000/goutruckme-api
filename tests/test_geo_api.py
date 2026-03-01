@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api import geo as geo_api
+from src.core.services.geo_service import GeoService
 
 
 class _FakeGeoService:
@@ -42,3 +43,17 @@ def test_geo_cities_short_query_returns_empty():
     response = client.get("/api/v1/geo/cities?q=Е")
 
     assert response.status_code == 422
+
+
+def test_geo_service_rejects_non_city_nominatim_rows():
+    service = GeoService()
+
+    payload = [
+        {
+            "display_name": 'УК "Социум строй", Москва',
+            "class": "building",
+            "type": "commercial",
+        }
+    ]
+
+    assert service._pick_city_candidate(payload) is None

@@ -106,6 +106,14 @@ def test_parse_cargo_message_skips_non_city_stopword_route():
     parsed = parse_cargo_message(text, keywords=["тент"])
     assert parsed is None
 
+    payload_text = "Погрузка - Кофе Готов, 20т, 310000"
+    payload_parsed = parse_cargo_message(payload_text, keywords=["тент"])
+    assert payload_parsed is None
+
+    company_text = 'УК "Социум строй" - Ташкент, 22т, 310000'
+    company_parsed = parse_cargo_message(company_text, keywords=["тент"])
+    assert company_parsed is None
+
 
 def test_parse_cargo_message_prefers_first_valid_route_over_invalid_later_line():
     text = (

@@ -71,11 +71,16 @@ CITY_STOP_WORDS = {
     "нужен",
     "нужна",
     "нужно",
+    "погрузка",
+    "выгрузка",
     "груз",
     "машина",
     "срочно",
     "на",
     "в",
+    "готов",
+    "готово",
+    "кофе",
     "тент",
     "tent",
     "реф",
@@ -103,6 +108,9 @@ CITY_INVALID_EXACT = {
     "оптала",
     "нал",
     "без нала",
+    "погрузка",
+    "выгрузка",
+    "кофе готов",
     "перечис",
     "перечисление",
     "перечисл",
@@ -116,6 +124,31 @@ CITY_INVALID_EXACT = {
     "накд",
     "нақд",
     "naqd",
+}
+
+CITY_INVALID_PREFIX_WORDS = {
+    "ооо",
+    "ип",
+    "ук",
+    "ao",
+    "ooo",
+    "llc",
+    "company",
+    "компания",
+}
+
+CITY_INVALID_BUSINESS_WORDS = {
+    "строй",
+    "логистик",
+    "логистика",
+    "транс",
+    "карго",
+    "cargo",
+    "экспресс",
+    "express",
+    "group",
+    "групп",
+    "группа",
 }
 
 _STACKED_ROUTE_KEEP_MULTIWORD_KEYS = {
@@ -375,7 +408,17 @@ def _city_key(value: str) -> str:
 
 
 def _is_invalid_city_name(value: str) -> bool:
-    return _city_key(value) in CITY_INVALID_EXACT
+    key = _city_key(value)
+    if key in CITY_INVALID_EXACT:
+        return True
+    words = key.split()
+    if not words:
+        return True
+    if len(words) >= 2 and words[0] in CITY_INVALID_PREFIX_WORDS:
+        return True
+    if len(words) >= 2 and words[-1] in CITY_INVALID_BUSINESS_WORDS:
+        return True
+    return False
 
 
 def _normalize_phone(value: str) -> str:

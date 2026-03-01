@@ -63,9 +63,6 @@ class GeoService:
         for row in payload:
             if isinstance(row, dict) and self._is_city_like_candidate(row):
                 return row
-        for row in payload:
-            if isinstance(row, dict):
-                return row
         return None
 
     def _local_city(self, city_name: str) -> CityData | None:
