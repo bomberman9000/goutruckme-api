@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+from src.core.cities import city_suggest, resolve_city
 from src.core.config import settings
 from src.core.geo import CITY_COORDS, _normalize_city_key, city_coords, haversine_km
 
@@ -65,13 +66,17 @@ class GeoService:
         return None
 
     def _local_city(self, city_name: str) -> CityData | None:
-        key = _normalize_city_key(city_name)
-        coords = city_coords(city_name)
+        resolved_name = city_name
+        resolved, _ = resolve_city(city_name)
+        if resolved:
+            resolved_name = resolved
+        key = _normalize_city_key(resolved_name)
+        coords = city_coords(resolved_name)
         if not key or not coords:
             return None
         return CityData(
-            name=key.title(),
-            full_name=key.title(),
+            name=resolved_name,
+            full_name=resolved_name,
             lat=float(coords[0]),
             lon=float(coords[1]),
             source="local",
@@ -179,11 +184,11 @@ class GeoService:
         results: list[dict[str, Any]] = []
         seen: set[str] = set()
 
-        for city_key in CITY_COORDS:
-            if not city_key.startswith(key):
+        for pretty in city_suggest(q, limit=limit):
+            coords = city_coords(pretty)
+            if not coords:
                 continue
-            lat, lon = CITY_COORDS[city_key]
-            pretty = city_key.title()
+            lat, lon = coords
             results.append({
                 "name": pretty,
                 "full_name": pretty,
@@ -194,9 +199,6 @@ class GeoService:
             seen.add(_normalize_city_key(pretty))
             if len(results) >= limit:
                 return results
-
-        if results:
-            return results[:limit]
 
         params = {
             "q": q,
