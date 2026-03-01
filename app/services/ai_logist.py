@@ -59,42 +59,42 @@ class AILogist:
             "max_weight": 1.5,
             "max_volume": 9,
             "max_length": 3,
-            "base_rate": 18,  # руб/км
+            "base_rate": 40,  # руб/км (2025)
             "loading_types": ["задняя", "боковая"],
         },
         "5т": {
             "max_weight": 5,
             "max_volume": 36,
             "max_length": 6,
-            "base_rate": 28,
+            "base_rate": 65,  # руб/км (2025)
             "loading_types": ["задняя", "боковая", "верхняя"],
         },
         "10т": {
             "max_weight": 10,
             "max_volume": 54,
             "max_length": 7.5,
-            "base_rate": 38,
+            "base_rate": 85,  # руб/км (2025)
             "loading_types": ["задняя", "боковая", "верхняя"],
         },
         "20т": {
             "max_weight": 20,
             "max_volume": 82,
             "max_length": 13.6,
-            "base_rate": 48,
+            "base_rate": 110,  # руб/км (2025)
             "loading_types": ["задняя", "боковая", "верхняя"],
         },
         "фура": {
             "max_weight": 22,
             "max_volume": 92,
             "max_length": 13.6,
-            "base_rate": 52,
+            "base_rate": 120,  # руб/км (2025)
             "loading_types": ["задняя"],
         },
         "рефрижератор": {
             "max_weight": 20,
             "max_volume": 76,
             "max_length": 13.6,
-            "base_rate": 65,
+            "base_rate": 140,  # руб/км (2025)
             "loading_types": ["задняя"],
             "special": "температурный режим",
         },
@@ -209,7 +209,28 @@ class AILogist:
         """Получить расстояние между городами."""
         key = (from_city.lower(), to_city.lower())
         reverse_key = (to_city.lower(), from_city.lower())
-        return self.DISTANCES.get(key) or self.DISTANCES.get(reverse_key) or 500
+        dist = self.DISTANCES.get(key) or self.DISTANCES.get(reverse_key)
+        if dist:
+            return dist
+
+        # Попытка рассчитать через координаты (fallback-справочник)
+        try:
+            from app.services.route_calc import CITY_COORDS_FALLBACK, _haversine_km, ROAD_FACTOR_DEFAULT
+            from app.services.geo import normalize_city_name
+
+            norm_from = normalize_city_name(from_city)
+            norm_to = normalize_city_name(to_city)
+
+            coords_from = CITY_COORDS_FALLBACK.get(norm_from)
+            coords_to = CITY_COORDS_FALLBACK.get(norm_to)
+
+            if coords_from and coords_to:
+                raw_dist = _haversine_km(coords_from[0], coords_from[1], coords_to[0], coords_to[1])
+                return max(1, int(round(raw_dist * ROAD_FACTOR_DEFAULT)))
+        except ImportError:
+            pass
+
+        return 500
     
     def calculate_price(self, from_city: str, to_city: str, 
                         truck_type: str, weight: float = None) -> Dict[str, Any]:

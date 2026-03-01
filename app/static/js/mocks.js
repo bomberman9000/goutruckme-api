@@ -15,7 +15,7 @@ export function generateMockLoads(count = 50) {
         const weight = Math.round((Math.random() * 20 + 1) * 10) / 10;
         const volume = Math.round((Math.random() * 30 + 5) * 10) / 10;
         const distance = Math.round(Math.random() * 2000 + 200);
-        const basePrice = distance * (Math.random() * 15 + 10);
+        const basePrice = distance * (Math.random() * 40 + 40); // 40-80 руб/км (было 10-25)
         const price = Math.round(basePrice);
         const pricePerKm = Math.round(price / distance);
         

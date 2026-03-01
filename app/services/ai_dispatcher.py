@@ -84,29 +84,25 @@ class AIDispatcher:
     def check_rate_adequacy(self, load: Load, proposed_rate: float) -> dict:
         """Проверка адекватности ставки."""
         
-        # Базовые расценки (руб/км) по типам
-        BASE_RATES = {
-            "light": 25,   # до 3т
-            "medium": 35,  # 3-10т
-            "heavy": 45,   # 10-20т
-            "extra": 55,   # 20т+
-        }
+        # Импортируем актуальные ставки из AI-Логиста, чтобы не дублировать
+        from app.services.ai_logist import ai_logist
         
-        # Определяем категорию
+        # Определяем категорию для fallback (если вдруг ai_logist не сработает)
         weight = load.weight or 10
         if weight <= 3:
-            category = "light"
+            truck_type = "газель"
+        elif weight <= 5:
+            truck_type = "5т"
         elif weight <= 10:
-            category = "medium"
-        elif weight <= 20:
-            category = "heavy"
+            truck_type = "10т"
         else:
-            category = "extra"
+            truck_type = "фура"
+            
+        specs = ai_logist.TRUCK_SPECS.get(truck_type, ai_logist.TRUCK_SPECS["10т"])
+        base_rate = specs["base_rate"]
         
-        base_rate = BASE_RATES[category]
-        
-        # Примерное расстояние (в реальности нужен API)
-        estimated_distance = 500  # км по умолчанию
+        # Примерное расстояние
+        estimated_distance = ai_logist.get_distance(load.from_city, load.to_city)
         
         min_acceptable = base_rate * estimated_distance * 0.7
         max_acceptable = base_rate * estimated_distance * 1.5
