@@ -51,3 +51,20 @@ def build_public_load_base(load: Load, ai_payload: Optional[dict[str, Any]] = No
         "loading_date": loading_date.isoformat() if loading_date else None,
         "loading_time": load.loading_time,
     }
+
+
+def build_public_load_context(load: Load, ai_payload: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    base = build_public_load_base(load, ai_payload)
+    return {
+        "id": base["id"],
+        "from_city": base["from_city"],
+        "to_city": base["to_city"],
+        "price": base["price"],
+        "weight": base["weight"],
+        "volume": base["volume"],
+        "distance_km": base["distance_km"],
+        "rate_per_km": base["rate_per_km"],
+        "loading_date": base["loading_date"],
+        "loading_time": base["loading_time"],
+        "status": base["status"],
+    }

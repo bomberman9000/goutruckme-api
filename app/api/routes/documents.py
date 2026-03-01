@@ -9,8 +9,8 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict
 from app.db.database import SessionLocal
 from app.models.models import Load, User, Bid
+from app.services.load_public import build_public_load_context
 from app.services.ai_documents import ai_documents
-from app.services.geo import canonicalize_city_name
 
 router = APIRouter()
 
@@ -292,11 +292,8 @@ def generate_docs_for_load(load_id: int, bid_id: int,
     }
     
     load_data = {
-        "from_city": canonicalize_city_name(load.from_city),
-        "to_city": canonicalize_city_name(load.to_city),
+        **build_public_load_context(load),
         "price": bid.price,
-        "weight": load.weight,
-        "volume": load.volume
     }
     
     cargo_data = {
@@ -401,6 +398,5 @@ def get_documents_status():
             "GET /documents/list": "Список документов"
         }
     }
-
 
 

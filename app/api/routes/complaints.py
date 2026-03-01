@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 from app.models.models import Complaint, User, Load
 from app.services.rating_system import rating_system
 from app.services.ai_lawyer_llm import ai_lawyer_llm
-from app.services.geo import canonicalize_city_name
+from app.services.load_public import build_public_load_context
 from app.trust.service import recalc_company_trust
 from app.core.security import SECRET_KEY, ALGORITHM
 from jose import jwt
@@ -131,13 +131,7 @@ def create_complaint(
         if complaint.load_id:
             load = db.query(Load).filter(Load.id == complaint.load_id).first()
             if load:
-                load_data = {
-                    "from_city": canonicalize_city_name(load.from_city),
-                    "to_city": canonicalize_city_name(load.to_city),
-                    "price": load.price,
-                    "weight": load.weight,
-                    "volume": load.volume
-                }
+                load_data = build_public_load_context(load)
         
         # Анализ претензии AI-Юристом
         analysis_data = {
@@ -348,13 +342,7 @@ def get_complaint_ai_analysis(complaint_id: int, db: Session = Depends(get_db)):
     if complaint.load_id:
         load = db.query(Load).filter(Load.id == complaint.load_id).first()
         if load:
-            load_data = {
-                "from_city": canonicalize_city_name(load.from_city),
-                "to_city": canonicalize_city_name(load.to_city),
-                "price": load.price,
-                "weight": load.weight,
-                "volume": load.volume
-            }
+            load_data = build_public_load_context(load)
     
     analysis_data = {
         "complaint_title": complaint.title,

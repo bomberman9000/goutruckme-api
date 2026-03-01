@@ -9,7 +9,7 @@ from typing import Optional, List
 from app.db.database import SessionLocal
 from app.models.models import Load, User, Bid
 from app.services.ai_antifraud import ai_antifraud
-from app.services.geo import canonicalize_city_name
+from app.services.load_public import build_public_load_context
 
 router = APIRouter()
 
@@ -163,14 +163,7 @@ def check_load_by_id(load_id: int, db: Session = Depends(get_db)):
             "created_at": str(creator.created_at) if creator.created_at else None
         }
     
-    load_data = {
-        "id": load.id,
-        "from_city": canonicalize_city_name(load.from_city),
-        "to_city": canonicalize_city_name(load.to_city),
-        "price": load.price,
-        "weight": load.weight,
-        "volume": load.volume
-    }
+    load_data = build_public_load_context(load)
     
     result = ai_antifraud.analyze_load(load_data, creator_data)
     return result
@@ -427,14 +420,7 @@ def full_fraud_analysis(user_id: int, load_id: int = None, ip: str = None,
     if load_id:
         load = db.query(Load).filter(Load.id == load_id).first()
         if load:
-            load_data = {
-                "id": load.id,
-                "from_city": canonicalize_city_name(load.from_city),
-                "to_city": canonicalize_city_name(load.to_city),
-                "price": load.price,
-                "weight": load.weight,
-                "volume": load.volume
-            }
+            load_data = build_public_load_context(load)
     
     # Собираем историю
     loads = db.query(Load).filter(Load.user_id == user_id).all()

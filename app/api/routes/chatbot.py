@@ -9,7 +9,7 @@ from typing import Optional, List, Dict
 from app.db.database import SessionLocal
 from app.models.models import Load, User, Truck, Bid
 from app.services.ai_chatbot import ai_chatbot
-from app.services.geo import canonicalize_city_name
+from app.services.load_public import build_public_load_context
 
 router = APIRouter()
 
@@ -151,12 +151,7 @@ def send_load_offer(request: SendOfferRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     
     load_data = {
-        "id": load.id,
-        "from_city": canonicalize_city_name(load.from_city),
-        "to_city": canonicalize_city_name(load.to_city),
-        "weight": load.weight,
-        "volume": load.volume,
-        "price": load.price,
+        **build_public_load_context(load),
         "cargo_name": "Груз",
         "loading_date": "по договорённости"
     }
@@ -182,14 +177,7 @@ def broadcast_load(request: BroadcastRequest, db: Session = Depends(get_db)):
     if not load:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     
-    load_data = {
-        "id": load.id,
-        "from_city": canonicalize_city_name(load.from_city),
-        "to_city": canonicalize_city_name(load.to_city),
-        "weight": load.weight,
-        "volume": load.volume,
-        "price": load.price
-    }
+    load_data = build_public_load_context(load)
     
     result = ai_chatbot.broadcast_load(
         load=load_data,
@@ -212,8 +200,8 @@ def broadcast_to_region(load_id: int, db: Session = Depends(get_db)):
     if not load:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     
-    from_city = canonicalize_city_name(load.from_city)
-    to_city = canonicalize_city_name(load.to_city)
+    load_context = build_public_load_context(load)
+    from_city = load_context["from_city"]
 
     # Находим водителей в регионе
     trucks = db.query(Truck).filter(
@@ -230,14 +218,7 @@ def broadcast_to_region(load_id: int, db: Session = Depends(get_db)):
             "sent_to": 0
         }
     
-    load_data = {
-        "id": load.id,
-        "from_city": from_city,
-        "to_city": to_city,
-        "weight": load.weight,
-        "volume": load.volume,
-        "price": load.price
-    }
+    load_data = load_context
     
     result = ai_chatbot.broadcast_load(load_data, user_ids)
     return result
@@ -252,12 +233,7 @@ def start_negotiation(request: NegotiationRequest, db: Session = Depends(get_db)
     if not load:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     
-    load_data = {
-        "id": load.id,
-        "from_city": canonicalize_city_name(load.from_city),
-        "to_city": canonicalize_city_name(load.to_city),
-        "price": load.price
-    }
+    load_data = build_public_load_context(load)
     
     result = ai_chatbot.start_negotiation(
         user_id=request.user_id,
@@ -280,9 +256,7 @@ def confirm_deal(request: ConfirmDealRequest, db: Session = Depends(get_db)):
     shipper = db.query(User).filter(User.id == load.user_id).first()
     
     load_data = {
-        "id": load.id,
-        "from_city": canonicalize_city_name(load.from_city),
-        "to_city": canonicalize_city_name(load.to_city),
+        **build_public_load_context(load),
         "loading_date": "по договорённости",
         "loading_address": ""
     }
@@ -369,12 +343,7 @@ def generate_auto_messages(load_id: int, db: Session = Depends(get_db)):
     from app.models.models import UserRole
     drivers = db.query(User).filter(User.role == UserRole.carrier).limit(50).all()
     
-    load_data = {
-        "from_city": canonicalize_city_name(load.from_city),
-        "to_city": canonicalize_city_name(load.to_city),
-        "weight": load.weight,
-        "price": load.price
-    }
+    load_data = build_public_load_context(load)
     
     drivers_data = [
         {"id": d.id, "fullname": d.fullname, "phone": d.phone}
@@ -447,4 +416,3 @@ def get_chatbot_status():
             "GET /chatbot/conversation/{id}": "💬 История диалога"
         }
     }
-
