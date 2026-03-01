@@ -177,7 +177,7 @@ export async function searchCities(query: string, limit = 5): Promise<CitySugges
   if (q.length < 2) {
     return [];
   }
-  const response = await fetch(`/api/v1/geo/cities?q=${encodeURIComponent(q)}&limit=${limit}`, {
+  const response = await fetch(`/api/v1/geo/cities/directory?q=${encodeURIComponent(q)}&limit=${limit}`, {
     credentials: "include",
   });
   if (!response.ok) {

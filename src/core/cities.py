@@ -149,3 +149,15 @@ def city_suggest(query: str, limit: int = 8) -> list[str]:
         results.append(index[key])
 
     return _dedupe(results)[:limit]
+
+
+def city_directory(query: str | None = None, limit: int = 50) -> list[str]:
+    cities, _, _ = _city_index()
+    if limit <= 0:
+        return []
+
+    q = (query or "").strip()
+    if not q:
+        return cities[:limit]
+
+    return city_suggest(q, limit=limit)

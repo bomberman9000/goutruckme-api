@@ -46,6 +46,44 @@ def test_geo_cities_short_query_returns_empty():
     assert response.status_code == 422
 
 
+def test_geo_city_directory_uses_shared_catalog():
+    app = FastAPI()
+    app.include_router(geo_api.router)
+    client = TestClient(app)
+
+    response = client.get("/api/v1/geo/cities/directory?q=Таш&limit=5")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["items"]
+    assert any(item["name"] == "Ташкент" for item in body["items"])
+    assert all(item["source"] == "directory" for item in body["items"])
+
+
+def test_geo_city_directory_can_list_without_query():
+    app = FastAPI()
+    app.include_router(geo_api.router)
+    client = TestClient(app)
+
+    response = client.get("/api/v1/geo/cities/directory?limit=3")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["items"]) == 3
+
+
+def test_geo_city_resolve_returns_canonical_city():
+    app = FastAPI()
+    app.include_router(geo_api.router)
+    client = TestClient(app)
+
+    response = client.get("/api/v1/geo/cities/resolve?name=город Бишкек")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["resolved"] == "Бишкек"
+
+
 def test_geo_service_rejects_non_city_nominatim_rows():
     service = GeoService()
 
