@@ -152,6 +152,25 @@ def test_parse_cargo_message_ignores_flag_emoji_and_payment_route_noise():
     assert parsed.to_city == "Бишкек"
 
 
+def test_parse_cargo_message_normalizes_city_prefix_and_rejects_objects():
+    city_prefix = parse_cargo_message("Тент Ташкент - город Бишкек 22т", keywords=["тент"])
+    assert city_prefix is not None
+    assert city_prefix.from_city == "Ташкент"
+    assert city_prefix.to_city == "Бишкек"
+
+    object_route = parse_cargo_message(
+        "Belarussia sanatorium beach - Гомель 20т 82755",
+        keywords=["тент"],
+    )
+    assert object_route is None
+
+    landfill_route = parse_cargo_message(
+        "Shaxrisabz tuman chiqindi poligoni - Навоийская область 20т 24840",
+        keywords=["тент"],
+    )
+    assert landfill_route is None
+
+
 def test_parse_cargo_message_parses_translit_compact_route():
     text = "Toshkent-SAMARQAND Tent fura yoki ref +998870200292"
     parsed = parse_cargo_message(text, keywords=["тент"])

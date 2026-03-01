@@ -71,6 +71,7 @@ CITY_STOP_WORDS = {
     "нужен",
     "нужна",
     "нужно",
+    "город",
     "погрузка",
     "выгрузка",
     "груз",
@@ -101,6 +102,25 @@ CITY_STOP_WORDS = {
     "kerak",
     "керак",
     "yuk",
+    "tuman",
+    "tumani",
+    "rayon",
+    "district",
+    "oblast",
+    "область",
+    "обл",
+    "viloyat",
+    "viloyati",
+    "region",
+    "chiqindi",
+    "poligoni",
+    "poligon",
+    "polygon",
+    "beach",
+    "sanatorium",
+    "resort",
+    "hotel",
+    "hostel",
 }
 
 CITY_INVALID_EXACT = {
@@ -108,6 +128,16 @@ CITY_INVALID_EXACT = {
     "оптала",
     "нал",
     "без нала",
+    "belarussia",
+    "belarus",
+    "russia",
+    "россия",
+    "узбекистан",
+    "казахстан",
+    "кыргызстан",
+    "киргизия",
+    "беларусь",
+    "белоруссия",
     "погрузка",
     "выгрузка",
     "кофе готов",
@@ -149,6 +179,25 @@ CITY_INVALID_BUSINESS_WORDS = {
     "group",
     "групп",
     "группа",
+    "beach",
+    "sanatorium",
+    "resort",
+    "hotel",
+    "hostel",
+    "warehouse",
+    "terminal",
+    "poligoni",
+    "poligon",
+    "polygon",
+    "chiqindi",
+    "tuman",
+    "tumani",
+    "rayon",
+    "district",
+    "oblast",
+    "region",
+    "область",
+    "район",
 }
 
 _STACKED_ROUTE_KEEP_MULTIWORD_KEYS = {
@@ -414,9 +463,13 @@ def _is_invalid_city_name(value: str) -> bool:
     words = key.split()
     if not words:
         return True
+    if len(words) == 1 and words[0].endswith(("ская", "ский", "ское")):
+        return True
     if len(words) >= 2 and words[0] in CITY_INVALID_PREFIX_WORDS:
         return True
     if len(words) >= 2 and words[-1] in CITY_INVALID_BUSINESS_WORDS:
+        return True
+    if len(words) >= 2 and any(word in CITY_INVALID_BUSINESS_WORDS for word in words):
         return True
     return False
 

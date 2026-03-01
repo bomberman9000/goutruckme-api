@@ -51,7 +51,6 @@ class GeoService:
             "municipality",
             "hamlet",
             "settlement",
-            "administrative",
         }
         if kind in allowed_kinds:
             return True

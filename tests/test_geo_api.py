@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api import geo as geo_api
+from src.core.geo import city_coords
 from src.core.services.geo_service import GeoService
 
 
@@ -57,3 +58,10 @@ def test_geo_service_rejects_non_city_nominatim_rows():
     ]
 
     assert service._pick_city_candidate(payload) is None
+
+
+def test_city_coords_contains_common_cis_cities():
+    assert city_coords("Ташкент") is not None
+    assert city_coords("Гомель") is not None
+    assert city_coords("Брест") is not None
+    assert city_coords("Бишкек") is not None
