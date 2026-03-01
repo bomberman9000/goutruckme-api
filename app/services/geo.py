@@ -182,14 +182,46 @@ def _build_city_objects(rows: Iterable[dict]) -> list[City]:
 
 def seed_default_cities(db: Session) -> int:
     """Заполняет cities дефолтным каталогом, не дублируя записи."""
-    existing = {row[0] for row in db.query(City.name_norm).all()}
-    to_insert = [
-        city
-        for city in _build_city_objects(DEFAULT_CITY_ROWS)
-        if city.name_norm and city.name_norm not in existing
-    ]
-    if not to_insert:
+    existing = {row.name_norm: row for row in db.query(City).all() if row.name_norm}
+    to_insert: list[City] = []
+    changed = 0
+
+    for city in _build_city_objects(DEFAULT_CITY_ROWS):
+        if not city.name_norm:
+            continue
+        current = existing.get(city.name_norm)
+        if current is None:
+            to_insert.append(city)
+            continue
+
+        updated = False
+        if city.region and not current.region:
+            current.region = city.region
+            updated = True
+        if city.population and not current.population:
+            current.population = city.population
+            updated = True
+        if city.lat is not None and current.lat is None:
+            current.lat = city.lat
+            updated = True
+        if city.lon is not None and current.lon is None:
+            current.lon = city.lon
+            updated = True
+        incoming_country = str(city.country or "").strip().upper()
+        current_country = str(current.country or "").strip().upper()
+        if incoming_country and (not current_country or current_country == "RU"):
+            if current_country != incoming_country:
+                current.country = incoming_country
+                updated = True
+        if updated:
+            db.add(current)
+            changed += 1
+
+    if to_insert:
+        db.bulk_save_objects(to_insert)
+        changed += len(to_insert)
+
+    if not changed:
         return 0
-    db.bulk_save_objects(to_insert)
     db.commit()
-    return len(to_insert)
+    return changed

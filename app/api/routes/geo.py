@@ -14,6 +14,22 @@ from app.services.geo import normalize_city_name
 
 router = APIRouter()
 
+_SUPPORTED_COUNTRIES = {"RU", "BY", "UZ", "KG", "KZ"}
+_INVALID_CITY_TOKENS = (
+    "sanatorium",
+    "beach",
+    "hotel",
+    "resort",
+    "tuman",
+    "district",
+    "oblast",
+    "область",
+    "район",
+    "полигон",
+    "poligoni",
+    "chiqindi",
+)
+
 _CACHE_TTL_SEC = 600
 _CACHE_MAX_ITEMS = 1024
 _city_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
@@ -46,6 +62,21 @@ def _cache_set(key: str, payload: list[dict[str, Any]]) -> None:
         _city_cache[key] = (now + _CACHE_TTL_SEC, payload)
 
 
+def _is_supported_catalog_city(city: City) -> bool:
+    country = str(city.country or "").strip().upper()
+    if country and country not in _SUPPORTED_COUNTRIES:
+        return False
+
+    normalized_name = normalize_city_name(city.name)
+    if not normalized_name:
+        return False
+
+    if any(token in normalized_name for token in _INVALID_CITY_TOKENS):
+        return False
+
+    return True
+
+
 @router.get("/geo/cities")
 def search_cities(
     q: str = Query("", description="Поисковая строка"),
@@ -72,7 +103,7 @@ def search_cities(
         db.query(City)
         .filter(City.name_norm.like(contains_pattern))
         .order_by(prefix_rank.asc(), length_penalty.asc(), population_score.desc(), City.name.asc())
-        .limit(limit)
+        .limit(min(limit * 10, 100))
         .all()
     )
 
@@ -81,8 +112,10 @@ def search_cities(
             "id": city.id,
             "name": city.name,
             "region": city.region,
+            "country": city.country,
         }
         for city in rows
-    ]
+        if _is_supported_catalog_city(city)
+    ][:limit]
     _cache_set(cache_key, payload)
     return payload

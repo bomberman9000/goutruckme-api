@@ -56,7 +56,7 @@ def _haversine_km(from_lat: float, from_lon: float, to_lat: float, to_lon: float
 
 
 def resolve_city_point(db: Session, city_id: int) -> CityPoint | None:
-    city = db.query(City).filter(City.id == int(city_id), City.country == "RU").first()
+    city = db.query(City).filter(City.id == int(city_id)).first()
     if not city:
         return None
 
