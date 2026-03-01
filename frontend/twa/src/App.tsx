@@ -148,6 +148,8 @@ async function copyText(value: string): Promise<boolean> {
   return false;
 }
 
+const PREMIUM_BOT_LINK = "https://t.me/gotruck_ai_bot?start=buy_premium";
+
 export function App() {
   const [tab, setTab] = useState<Tab>("feed");
   const [items, setItems] = useState<FeedItem[]>([]);
@@ -207,6 +209,17 @@ export function App() {
     return typeof value === "string" && value.trim() ? value.trim() : null;
   });
   const canUseTelegramOnlyActions = Boolean(initData);
+
+  function handleBuyPremium(note?: string) {
+    const tg = (window as any)?.Telegram?.WebApp;
+    const message = note || "Открываем покупку Premium в боте.";
+    if (tg?.showAlert) tg.showAlert(message);
+    if (tg?.openTelegramLink) {
+      tg.openTelegramLink(PREMIUM_BOT_LINK);
+      return;
+    }
+    window.open(PREMIUM_BOT_LINK, "_blank");
+  }
 
   function showActionGuide(title: string, steps: string[], tone: ActionGuideTone = "info") {
     setActionGuide({ title, steps, tone });
@@ -358,7 +371,7 @@ export function App() {
       window.location.href = `tel:${item.phone}`;
       return;
     }
-    window.alert("Номер скрыт. Нужна подписка Premium.");
+    handleBuyPremium("Номер скрыт. Premium открывает полный контакт.");
   }
 
   function onReplyClick(item: FeedItem) {
@@ -1154,6 +1167,11 @@ export function App() {
                     ? "🏅 Амбассадор"
                     : `До амбассадора: ${profileSummary.referral.activated_count}/${profileSummary.referral.ambassador_target}`}
                 </div>
+                {!profileSummary.user.is_premium && (
+                  <button className="action-btn primary" onClick={() => handleBuyPremium()}>
+                    ⭐ Купить Premium
+                  </button>
+                )}
                 <button className="action-btn primary" onClick={() => void handleInviteColleague()}>
                   Пригласить коллегу
                 </button>
@@ -1180,6 +1198,11 @@ export function App() {
                 <div className="cabinet-meta">В холде: {(profileSummary.wallet.frozen_balance_rub ?? 0).toLocaleString("ru")} ₽</div>
                 <div className="cabinet-meta">Гарантировано: {profileSummary.stats.verified_payment_count}</div>
                 <div className="cabinet-meta">Выплачено сделок: {profileSummary.stats.released_payment_count}</div>
+                {!profileSummary.user.is_premium && (
+                  <button className="action-btn primary" onClick={() => handleBuyPremium()}>
+                    ⭐ Купить Premium
+                  </button>
+                )}
                 <button className="action-btn" onClick={() => setTab("wallet")}>Подробнее →</button>
               </>
             ) : (

@@ -201,6 +201,16 @@ async def cmd_start(message: Message, state: FSMContext):
     if message.text:
         parts = message.text.split(maxsplit=1)
         start_payload = parts[1] if len(parts) == 2 else None
+        if start_payload == "buy_premium":
+            from src.bot.handlers.payments import _build_buy_kb
+
+            await message.answer(
+                "💳 Выберите тариф Premium.\n\n"
+                "Premium открывает полный контакт в ленте, приоритетный доступ к новым заявкам "
+                "и быстрый доступ к откликам.",
+                reply_markup=_build_buy_kb(),
+            )
+            return
         if len(parts) == 2 and parts[1].startswith("link_"):
             code = parts[1][len("link_"):].strip()
             if not code:
