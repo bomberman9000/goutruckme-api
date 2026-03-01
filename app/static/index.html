@@ -3962,6 +3962,21 @@
             return `${distance.toLocaleString('ru-RU')} км`;
         }
 
+        function formatRatePerKm(ratePerKm, totalPrice, distance) {
+            const explicitRate = toFiniteNumber(ratePerKm);
+            if (explicitRate !== null && explicitRate > 0) {
+                return `${Math.round(explicitRate * 10) / 10} ₽/км`;
+            }
+
+            const numericPrice = toFiniteNumber(totalPrice);
+            const numericDistance = toFiniteNumber(distance);
+            if (numericPrice !== null && numericDistance !== null && numericDistance > 0) {
+                return `${Math.round((numericPrice / numericDistance) * 10) / 10} ₽/км`;
+            }
+
+            return '—';
+        }
+
         function toFiniteNumber(value) {
             if (value === null || value === undefined || value === '') return null;
             const num = Number(value);
@@ -7384,7 +7399,7 @@
                         </td>
                         <td class="px-4 py-3">
                             <div class="font-semibold text-green-400">${formatPrice(cargo.price)}</div>
-                            <div class="text-xs text-gray-400">${cargo.price_per_km || Math.round(cargo.price / (cargo.distance || 1000))} ₽/км</div>
+                            <div class="text-xs text-gray-400">${formatRatePerKm(cargo.price_per_km, cargo.price, cargo.distance)}</div>
                         </td>
                         <td class="px-4 py-3">
                             <div class="text-sm">${cargo.loading_date ? formatDate(cargo.loading_date) : '—'}</div>
@@ -7627,7 +7642,7 @@
                                 </div>
                                 <div>
                                     <div class="text-sm text-gray-400 mb-1">Ставка за км</div>
-                                    <div class="font-semibold">${cargo.price_per_km || Math.round(cargo.price / (cargo.distance || 1000))} ₽/км</div>
+                                    <div class="font-semibold">${formatRatePerKm(cargo.price_per_km, cargo.price, cargo.distance)}</div>
                                 </div>
                                 <div>
                                     <div class="text-sm text-gray-400 mb-1">Дистанция</div>

@@ -205,7 +205,7 @@ class AILogist:
             }
         }
     
-    def get_distance(self, from_city: str, to_city: str) -> int:
+    def get_distance(self, from_city: str, to_city: str) -> Optional[int]:
         """Получить расстояние между городами."""
         key = (from_city.lower(), to_city.lower())
         reverse_key = (to_city.lower(), from_city.lower())
@@ -230,7 +230,7 @@ class AILogist:
         except ImportError:
             pass
 
-        return 500
+        return None
     
     def calculate_price(self, from_city: str, to_city: str, 
                         truck_type: str, weight: float = None) -> Dict[str, Any]:
@@ -241,6 +241,26 @@ class AILogist:
         distance = self.get_distance(from_city, to_city)
         specs = self.TRUCK_SPECS.get(truck_type, self.TRUCK_SPECS["10т"])
         base_rate = specs["base_rate"]
+
+        if distance is None:
+            return {
+                "route": f"{from_city} → {to_city}",
+                "distance_km": None,
+                "truck_type": truck_type,
+                "pricing": {
+                    "recommended": None,
+                    "min": None,
+                    "max": None,
+                    "per_km": None
+                },
+                "adjustments": ["Точное расстояние не определено — уточните маршрут"],
+                "breakdown": {
+                    "base_rate_per_km": base_rate,
+                    "distance": None,
+                    "base_total": None
+                },
+                "warning": "Маршрут не найден в справочнике расстояний"
+            }
         
         # Базовая цена
         base_price = distance * base_rate
@@ -622,34 +642,32 @@ class AILogist:
         # Средние цены по типам ТС
         prices_by_type = {}
         for truck_type, specs in self.TRUCK_SPECS.items():
-            price = distance * specs["base_rate"]
+            price = round(distance * specs["base_rate"]) if distance is not None else None
             prices_by_type[truck_type] = {
-                "price": round(price),
+                "price": price,
                 "per_km": specs["base_rate"]
             }
         
         # Время в пути (примерно 60 км/ч средняя)
-        travel_time = distance / 60
+        travel_time = round(distance / 60, 1) if distance is not None else None
         
         return {
             "route": f"{from_city} → {to_city}",
             "distance_km": distance,
-            "estimated_travel_time_hours": round(travel_time, 1),
+            "estimated_travel_time_hours": travel_time,
             "prices_by_truck_type": prices_by_type,
             "market_info": {
-                "demand": "high" if distance < 500 else "medium",
+                "demand": "high" if isinstance(distance, (int, float)) and distance < 500 else "medium",
                 "competition": "high",
                 "season_factor": 1.0
             },
             "recommendations": [
-                f"Оптимальное время отправления: утро (6-8 часов)",
-                f"Рекомендуемый отдых: каждые 4 часа",
-                f"Платные дороги на маршруте: да" if distance > 300 else "Платные дороги: нет"
+                "Оптимальное время отправления: утро (6-8 часов)",
+                "Рекомендуемый отдых: каждые 4 часа",
+                "Платные дороги на маршруте: да" if isinstance(distance, (int, float)) and distance > 300 else "Платные дороги: нет"
             ]
         }
 
 
 # Singleton instance
 ai_logist = AILogist()
-
-

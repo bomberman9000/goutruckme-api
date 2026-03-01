@@ -330,13 +330,18 @@ def quick_price(from_city: str, to_city: str, weight: float = 10,
     """
     result = ai_logist.calculate_price(from_city, to_city, truck_type, weight)
     
+    pricing = result.get("pricing") or {}
+    min_price = pricing.get("min")
+    max_price = pricing.get("max")
+
     return {
         "route": f"{from_city} → {to_city}",
         "truck_type": truck_type,
         "weight": weight,
-        "price": result["pricing"]["recommended"],
-        "price_range": f"{result['pricing']['min']} - {result['pricing']['max']} ₽",
-        "per_km": result["pricing"]["per_km"]
+        "price": pricing.get("recommended"),
+        "price_range": f"{min_price} - {max_price} ₽" if min_price is not None and max_price is not None else None,
+        "per_km": pricing.get("per_km"),
+        "warning": result.get("warning")
     }
 
 

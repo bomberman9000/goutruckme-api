@@ -104,6 +104,18 @@ class AIDispatcher:
         # Примерное расстояние
         estimated_distance = ai_logist.get_distance(load.from_city, load.to_city)
         
+        if not estimated_distance:
+            return {
+                "status": "unknown",
+                "message": "⚠️ Не удалось определить точное расстояние для проверки ставки",
+                "recommendation": "review",
+                "proposed_rate": proposed_rate,
+                "min_acceptable": None,
+                "max_acceptable": None,
+                "optimal_rate": None,
+                "profit_margin": None
+            }
+
         min_acceptable = base_rate * estimated_distance * 0.7
         max_acceptable = base_rate * estimated_distance * 1.5
         optimal = base_rate * estimated_distance
@@ -234,6 +246,5 @@ class AIDispatcher:
 
 # Singleton instance
 ai_dispatcher = AIDispatcher()
-
 
 
