@@ -11,6 +11,8 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 from enum import Enum
+from app.services.ai_logist import ai_logist
+from app.services.geo import canonicalize_city_name
 
 
 class RiskLevel(str, Enum):
@@ -426,21 +428,25 @@ class AILawyerLLM:
     def analyze_pricing(self, from_city: str, to_city: str, 
                         weight: float, price: float) -> dict:
         """Анализ адекватности цены."""
-        
+        from_city = canonicalize_city_name(from_city)
+        to_city = canonicalize_city_name(to_city)
         # Примерные тарифы (руб/км*тонна)
         BASE_RATE = 3.5
-        
-        # Примерные расстояния (заглушка)
-        distances = {
-            ("москва", "санкт-петербург"): 710,
-            ("москва", "казань"): 820,
-            ("москва", "нижний новгород"): 420,
-            ("москва", "екатеринбург"): 1780,
-            ("москва", "новосибирск"): 3350,
-        }
-        
-        key = (from_city.lower(), to_city.lower())
-        distance = distances.get(key, 500)
+        distance = ai_logist.get_distance(from_city, to_city)
+        if distance is None:
+            return {
+                "status": "unknown",
+                "message": "⚠️ Невозможно оценить рынок: маршрут не определён",
+                "risk": "unknown",
+                "analysis": {
+                    "proposed_price": price,
+                    "recommended_price": None,
+                    "min_acceptable": None,
+                    "max_acceptable": None,
+                    "distance_km": None,
+                    "rate_per_km_ton": BASE_RATE,
+                }
+            }
         
         # Расчёт рекомендуемой цены
         recommended_price = distance * weight * BASE_RATE
