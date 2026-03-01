@@ -161,16 +161,36 @@ def _normalize_sync_city(db: Session, value: Any) -> str | None:
     return None
 
 
-def _resolve_sync_user(db: Session, raw_user_id: Any) -> User | None:
+def _normalize_phone_digits(value: Any) -> str | None:
+    raw = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if not raw:
+        return None
+    if len(raw) >= 11:
+        return raw[-11:]
+    return raw
+
+
+def _resolve_sync_user(db: Session, raw_user_id: Any, *, phone: Any | None = None) -> User | None:
     numeric_user_id = _coerce_int(raw_user_id)
     if not numeric_user_id:
+        user = None
+    else:
+        user = db.query(User).filter(User.id == numeric_user_id).first()
+        if user:
+            return user
+
+        user = db.query(User).filter(User.telegram_id == numeric_user_id).first()
+        if user:
+            return user
+
+    normalized_phone = _normalize_phone_digits(phone)
+    if not normalized_phone:
         return None
 
-    user = db.query(User).filter(User.id == numeric_user_id).first()
-    if user:
-        return user
-
-    return db.query(User).filter(User.telegram_id == numeric_user_id).first()
+    for candidate in db.query(User).filter(User.phone.isnot(None)).all():
+        if _normalize_phone_digits(candidate.phone) == normalized_phone:
+            return candidate
+    return None
 
 
 def _resolve_user_for_login_token(db: Session, req: CreateLoginTokenRequest) -> User:
@@ -222,7 +242,11 @@ def _upsert_order_from_sync(
     delivery_lon = _coerce_float(order.get("delivery_lon") or order.get("to_lon"))
     loading_date = _coerce_date(order.get("loading_date") or order.get("load_date"))
     loading_time = _normalize_loading_time(order.get("loading_time") or order.get("load_time"))
-    owner = _resolve_sync_user(db, order.get("user_id")) or _resolve_sync_user(db, fallback_user_id)
+    owner = _resolve_sync_user(db, order.get("user_id"), phone=order.get("phone")) or _resolve_sync_user(
+        db,
+        fallback_user_id,
+        phone=order.get("phone"),
+    )
     owner_id = int(owner.id) if owner else None
 
     if not from_city or not to_city:
@@ -324,7 +348,11 @@ def _upsert_vehicle_from_sync(
     if not vehicle_id:
         return {"saved": False, "reason": "missing_vehicle_id"}
 
-    user = _resolve_sync_user(db, vehicle.get("user_id")) or _resolve_sync_user(db, fallback_user_id)
+    user = _resolve_sync_user(db, vehicle.get("user_id"), phone=vehicle.get("owner_phone")) or _resolve_sync_user(
+        db,
+        fallback_user_id,
+        phone=vehicle.get("owner_phone"),
+    )
     if not user:
         return {"saved": False, "reason": "missing_user_id"}
 
