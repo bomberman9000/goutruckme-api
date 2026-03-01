@@ -44,6 +44,63 @@ function defaultDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function parseDateInput(value: string): string | null {
+  const clean = value.trim();
+  if (!clean) {
+    return null;
+  }
+
+  let year = "";
+  let month = "";
+  let day = "";
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
+    [year, month, day] = clean.split("-");
+  } else if (/^\d{2}\.\d{2}\.\d{4}$/.test(clean)) {
+    [day, month, year] = clean.split(".");
+  } else {
+    return null;
+  }
+
+  const yyyy = Number.parseInt(year, 10);
+  const mm = Number.parseInt(month, 10);
+  const dd = Number.parseInt(day, 10);
+  if (!Number.isFinite(yyyy) || !Number.isFinite(mm) || !Number.isFinite(dd)) {
+    return null;
+  }
+
+  const dt = new Date(Date.UTC(yyyy, mm - 1, dd));
+  if (
+    dt.getUTCFullYear() !== yyyy
+    || dt.getUTCMonth() + 1 !== mm
+    || dt.getUTCDate() !== dd
+  ) {
+    return null;
+  }
+
+  return `${year.padStart(4, "0")}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+}
+
+function formatDateForField(value: string): string {
+  const iso = parseDateInput(value);
+  if (!iso) {
+    return value;
+  }
+  const [year, month, day] = iso.split("-");
+  return `${day}.${month}.${year}`;
+}
+
+function normalizeDateTyping(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) {
+    return digits;
+  }
+  if (digits.length <= 4) {
+    return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  }
+  return `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4)}`;
+}
+
 export function AddCargoForm({
   onSubmit,
   onCancel,
@@ -59,7 +116,7 @@ export function AddCargoForm({
   const [bodyType, setBodyType] = useState(initialValues?.bodyType ?? "тент");
   const [weight, setWeight] = useState(String(initialValues?.weight ?? 20));
   const [price, setPrice] = useState(String(initialValues?.price ?? 120000));
-  const [loadDate, setLoadDate] = useState(initialValues?.loadDate ?? defaultDate);
+  const [loadDate, setLoadDate] = useState(formatDateForField(initialValues?.loadDate ?? defaultDate()));
   const [loadTime, setLoadTime] = useState(initialValues?.loadTime ?? "");
   const [description, setDescription] = useState(initialValues?.description ?? "");
   const [paymentTerms, setPaymentTerms] = useState(initialValues?.paymentTerms ?? "");
@@ -76,7 +133,7 @@ export function AddCargoForm({
       && weightNumber > 0
       && Number.isFinite(priceNumber)
       && priceNumber > 0
-      && loadDate.trim().length === 10
+      && parseDateInput(loadDate) !== null
     );
   }, [destination, loadDate, origin, price, weight]);
 
@@ -134,13 +191,18 @@ export function AddCargoForm({
       return;
     }
 
+    const normalizedLoadDate = parseDateInput(loadDate);
+    if (!normalizedLoadDate) {
+      return;
+    }
+
     await onSubmit({
       origin: origin.trim(),
       destination: destination.trim(),
       bodyType: bodyType.trim(),
       weight: Number.parseFloat(weight),
       price: Number.parseInt(price, 10),
-      loadDate: loadDate.trim(),
+      loadDate: normalizedLoadDate,
       loadTime: loadTime.trim() || undefined,
       description: description.trim() || undefined,
       paymentTerms: paymentTerms.trim() || undefined,
@@ -238,9 +300,12 @@ export function AddCargoForm({
         <label className="truck-field">
           <span>Дата готовности</span>
           <input
-            type="date"
+            type="text"
             value={loadDate}
-            onChange={(event) => setLoadDate(event.target.value)}
+            onChange={(event) => setLoadDate(normalizeDateTyping(event.target.value))}
+            inputMode="numeric"
+            placeholder="01.03.2026"
+            maxLength={10}
             disabled={busy}
             required
           />
