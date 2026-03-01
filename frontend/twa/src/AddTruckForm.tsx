@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
+
+import { searchCities, type CitySuggestion } from "./api";
 
 type AddTruckFormProps = {
   onSubmit: (payload: {
@@ -28,19 +30,56 @@ export function AddTruckForm({
   busy = false,
   error = null,
 }: AddTruckFormProps) {
+  const locationListId = useId();
   const [bodyType, setBodyType] = useState("тент");
   const [capacityTons, setCapacityTons] = useState("20");
   const [locationCity, setLocationCity] = useState("");
   const [plateNumber, setPlateNumber] = useState("");
   const [markAvailable, setMarkAvailable] = useState(true);
+  const [locationSuggestions, setLocationSuggestions] = useState<CitySuggestion[]>([]);
+
+  const canSubmit = useMemo(() => {
+    const parsedTons = Number.parseFloat(capacityTons);
+    if (!Number.isFinite(parsedTons) || parsedTons <= 0) {
+      return false;
+    }
+    if (markAvailable && locationCity.trim().length < 2) {
+      return false;
+    }
+    return true;
+  }, [capacityTons, locationCity, markAvailable]);
+
+  useEffect(() => {
+    if (locationCity.trim().length < 2) {
+      setLocationSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const items = await searchCities(locationCity, 5);
+        if (!cancelled) {
+          setLocationSuggestions(items);
+        }
+      } catch {
+        if (!cancelled) {
+          setLocationSuggestions([]);
+        }
+      }
+    }, 220);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [locationCity]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    const parsedTons = Number.parseFloat(capacityTons);
-    if (!Number.isFinite(parsedTons) || parsedTons <= 0) {
+    if (!canSubmit) {
       return;
     }
+    const parsedTons = Number.parseFloat(capacityTons);
 
     await onSubmit({
       bodyType: bodyType.trim(),
@@ -89,8 +128,19 @@ export function AddTruckForm({
             value={locationCity}
             onChange={(event) => setLocationCity(event.target.value)}
             placeholder="Казань"
+            list={locationListId}
             disabled={busy}
+            required={markAvailable}
           />
+          <datalist id={locationListId}>
+            {locationSuggestions.map((item) => (
+              <option
+                key={`vehicle-location-${item.full_name}`}
+                value={item.name}
+                label={item.full_name}
+              />
+            ))}
+          </datalist>
         </label>
 
         <label className="truck-field">
@@ -118,7 +168,7 @@ export function AddTruckForm({
       {error && <div className="error truck-form-error">{error}</div>}
 
       <div className="truck-form-actions">
-        <button type="submit" className="action-btn primary" disabled={busy}>
+        <button type="submit" className="action-btn primary" disabled={busy || !canSubmit}>
           {busy ? "⏳ Сохраняем" : "✅ Добавить машину"}
         </button>
         <button
@@ -130,6 +180,9 @@ export function AddTruckForm({
           Отмена
         </button>
       </div>
+      {!canSubmit && markAvailable && (
+        <div className="muted">Чтобы сразу вывести машину на линию, укажи город базирования.</div>
+      )}
     </form>
   );
 }
