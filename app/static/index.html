@@ -4860,41 +4860,86 @@
         // Show Load Card
         function showLoadCard(loadId) {
             document.getElementById('loadCardPanel').classList.remove('hidden');
-            // Load card content
+            const load = Array.isArray(cargoState.allLoads)
+                ? cargoState.allLoads.find(item => String(item.id) === String(loadId))
+                : null;
+
+            if (!load) {
+                document.getElementById('loadCardContent').innerHTML = `
+                    <div class="space-y-4">
+                        <div class="text-sm text-gray-400">Груз не найден. Обновите список и попробуйте снова.</div>
+                    </div>
+                `;
+                return;
+            }
+
+            const fromCity = load.from_city || '—';
+            const toCity = load.to_city || '—';
+            const weight = toFiniteNumber(load.weight);
+            const volume = toFiniteNumber(load.volume);
+            const distance = toFiniteNumber(load.distance_km ?? load.distance);
+            const price = toFiniteNumber(load.total_price ?? load.price);
+            const ratePerKm = toFiniteNumber(load.price_per_km ?? load.rate_per_km);
+            const aiScore = toFiniteNumber(load.ai_score);
+            const riskLevel = deriveRiskLevel(load.risk_level, aiScore);
+
+            const suitabilityText = load.truck_type
+                ? `🚛 Рекомендуемый кузов: ${load.truck_type}`
+                : '🚛 Тип машины уточняется';
+
+            const riskText = riskLevel === 'high'
+                ? 'высокие'
+                : riskLevel === 'medium'
+                    ? 'средние'
+                    : riskLevel === 'low'
+                        ? 'низкие'
+                        : 'не определены';
+
+            const travelTimeHours = distance && distance > 0 ? Math.max(1, Math.round((distance / 60) * 10) / 10) : null;
+            const minRecommended = price && price > 0 ? Math.round(price * 0.9) : null;
+            const maxRecommended = price && price > 0 ? Math.round(price * 1.1) : null;
+            const aiExplain = load.ai_explain || '';
+
+            const actionsHTML = `
+                <div class="space-y-2 pt-4 border-t border-dark-border">
+                    <button class="w-full px-4 py-2 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark rounded-lg font-semibold transition-all">
+                        Взять груз
+                    </button>
+                    <button class="w-full px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg transition-all">
+                        Связаться
+                    </button>
+                    <button class="w-full px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg transition-all">
+                        🤖 AI ведёт переговоры
+                    </button>
+                </div>
+            `;
+
             document.getElementById('loadCardContent').innerHTML = `
                 <div class="space-y-4">
                     <div>
                         <div class="text-sm text-gray-400 mb-1">Маршрут</div>
-                        <div class="font-semibold">Москва → Казань</div>
+                        <div class="font-semibold">${fromCity} → ${toCity}</div>
                     </div>
                     <div>
                         <div class="text-sm text-gray-400 mb-1">Габариты</div>
-                        <div>10 т / 20 м³</div>
+                        <div>${weight !== null ? weight : '—'} т / ${volume !== null ? volume : '—'} м³</div>
                     </div>
                     <div>
                         <div class="text-sm text-gray-400 mb-1">Ставка</div>
-                        <div class="font-semibold text-green-400">25 000 ₽</div>
+                        <div class="font-semibold text-green-400">${formatPrice(price)}</div>
+                        <div class="text-xs text-gray-400 mt-1">${formatRatePerKm(ratePerKm, price, distance)}</div>
                     </div>
                     <div class="pt-4 border-t border-dark-border">
                         <div class="text-sm font-semibold mb-2">🧠 AI Summary</div>
                         <div class="text-sm text-gray-400 space-y-1">
-                            <div>✅ Подходит ваша машина</div>
-                            <div>📊 Прогноз ставки: 25-30к</div>
-                            <div>⚠️ Риски: низкие</div>
-                            <div>⏱ Время в пути: ~12ч</div>
+                            <div>${suitabilityText}</div>
+                            <div>📊 Прогноз ставки: ${minRecommended !== null && maxRecommended !== null ? `${formatPrice(minRecommended)} - ${formatPrice(maxRecommended)}` : 'недостаточно данных'}</div>
+                            <div>⚠️ Риски: ${riskText}</div>
+                            <div>⏱ Время в пути: ${travelTimeHours !== null ? `~${travelTimeHours}ч` : '—'}</div>
+                            ${aiExplain ? `<div class="pt-1 text-xs text-gray-500">${aiExplain}</div>` : ''}
                         </div>
                     </div>
-                    <div class="space-y-2 pt-4 border-t border-dark-border">
-                        <button class="w-full px-4 py-2 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark rounded-lg font-semibold transition-all">
-                            Взять груз
-                        </button>
-                        <button class="w-full px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg transition-all">
-                            Связаться
-                        </button>
-                        <button class="w-full px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg transition-all">
-                            🤖 AI ведёт переговоры
-                        </button>
-                    </div>
+                    ${actionsHTML}
                 </div>
             `;
         }
