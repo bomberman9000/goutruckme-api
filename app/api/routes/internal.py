@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.database import get_db
+from app.dicts.vehicles import LEGACY_BODY_KIND
 from app.models.models import CargoStatus, City, Load, User, Vehicle
 from app.services.login_tokens import create_login_token, verify_login_token
 from app.services.geo import is_city_like_name, is_supported_city, normalize_city_name
@@ -160,6 +161,18 @@ def _normalize_sync_city(db: Session, value: Any) -> str | None:
     return None
 
 
+def _resolve_sync_user(db: Session, raw_user_id: Any) -> User | None:
+    numeric_user_id = _coerce_int(raw_user_id)
+    if not numeric_user_id:
+        return None
+
+    user = db.query(User).filter(User.id == numeric_user_id).first()
+    if user:
+        return user
+
+    return db.query(User).filter(User.telegram_id == numeric_user_id).first()
+
+
 def _resolve_user_for_login_token(db: Session, req: CreateLoginTokenRequest) -> User:
     user = db.query(User).filter(User.telegram_id == req.telegram_user_id).first()
     if user:
@@ -209,18 +222,14 @@ def _upsert_order_from_sync(
     delivery_lon = _coerce_float(order.get("delivery_lon") or order.get("to_lon"))
     loading_date = _coerce_date(order.get("loading_date") or order.get("load_date"))
     loading_time = _normalize_loading_time(order.get("loading_time") or order.get("load_time"))
-    owner_id = _coerce_int(order.get("user_id")) or fallback_user_id
+    owner = _resolve_sync_user(db, order.get("user_id")) or _resolve_sync_user(db, fallback_user_id)
+    owner_id = int(owner.id) if owner else None
 
     if not from_city or not to_city:
         return {"saved": False, "reason": "invalid_route"}
 
     if price is None or price <= 0:
         price = 1.0
-
-    if owner_id is not None:
-        owner = db.query(User).filter(User.id == owner_id).first()
-        if not owner:
-            owner_id = None
 
     load = db.query(Load).filter(Load.id == order_id).first() if order_id else None
     created = False
@@ -309,54 +318,77 @@ def _upsert_vehicle_from_sync(
     *,
     vehicle: dict[str, Any],
     fallback_user_id: int | None,
+    event_source: str | None,
 ) -> dict[str, Any]:
     vehicle_id = _coerce_int(vehicle.get("id"))
     if not vehicle_id:
         return {"saved": False, "reason": "missing_vehicle_id"}
 
-    user_id = _coerce_int(vehicle.get("user_id")) or fallback_user_id
-    if not user_id:
+    user = _resolve_sync_user(db, vehicle.get("user_id")) or _resolve_sync_user(db, fallback_user_id)
+    if not user:
         return {"saved": False, "reason": "missing_user_id"}
 
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        return {"saved": False, "reason": "user_not_found"}
+    source_normalized = (event_source or vehicle.get("source") or "").strip().lower()
+    sync_vehicle_id = vehicle_id + 900_000_000 if source_normalized == "tg-bot" else vehicle_id
 
-    from_city_raw = str(vehicle.get("from_city") or vehicle.get("location_city") or "").strip() or "Москва"
+    from_city_raw = str(vehicle.get("from_city") or vehicle.get("location_city") or "").strip()
     to_city_raw = str(vehicle.get("to_city") or vehicle.get("location_region") or "").strip() or None
-    from_city = _normalize_sync_city(db, from_city_raw) or "Москва"
+    from_city = _normalize_sync_city(db, from_city_raw)
     to_city = _normalize_sync_city(db, to_city_raw) if to_city_raw else None
+    if not from_city:
+        return {"saved": False, "reason": "invalid_location_city"}
+
     body_type = str(vehicle.get("body_type") or "тент").strip() or "тент"
+    vehicle_kind = LEGACY_BODY_KIND.get(body_type, "EUROFURA_TENT_20T")
     capacity_tons = _coerce_float(vehicle.get("capacity_t") or vehicle.get("capacity_tons")) or 20.0
     volume_m3 = _coerce_float(vehicle.get("volume_m3") or vehicle.get("volume")) or 82.0
+    plate_number = str(vehicle.get("plate_number") or "").strip() or None
+    is_available = _coerce_bool(vehicle.get("is_available"))
+    available_from = date.today() if is_available is not False else date.today() + timedelta(days=1)
+    status = str(vehicle.get("status") or "active").strip() or "active"
 
-    obj = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
+    obj = None
+    if plate_number:
+        obj = (
+            db.query(Vehicle)
+            .filter(Vehicle.owner_user_id == int(user.id), Vehicle.plate_number == plate_number)
+            .first()
+        )
+    if not obj:
+        obj = db.query(Vehicle).filter(Vehicle.id == sync_vehicle_id).first()
     created = False
 
     if not obj:
         obj = Vehicle(
-            id=vehicle_id,
-            carrier_id=user_id,
-            owner_user_id=user_id,
+            id=sync_vehicle_id,
+            carrier_id=int(user.id),
+            owner_user_id=int(user.id),
+            name=str(vehicle.get("name") or f"{body_type.title()} {capacity_tons:g}т").strip(),
+            vehicle_kind=vehicle_kind,
             body_type=body_type,
             capacity_tons=float(capacity_tons),
             volume_m3=float(volume_m3),
+            plate_number=plate_number,
             location_city=from_city,
             location_region=to_city,
-            available_from=date.today(),
-            status=str(vehicle.get("status") or "active"),
+            available_from=available_from,
+            status=status,
         )
         db.add(obj)
         created = True
     else:
-        obj.carrier_id = user_id
-        obj.owner_user_id = user_id
+        obj.carrier_id = int(user.id)
+        obj.owner_user_id = int(user.id)
+        obj.name = str(vehicle.get("name") or obj.name or f"{body_type.title()} {capacity_tons:g}т").strip()
+        obj.vehicle_kind = str(vehicle.get("vehicle_kind") or obj.vehicle_kind or vehicle_kind).strip() or vehicle_kind
         obj.body_type = body_type
         obj.capacity_tons = float(capacity_tons)
         obj.volume_m3 = float(volume_m3)
+        obj.plate_number = plate_number or obj.plate_number
         obj.location_city = from_city
         obj.location_region = to_city
-        obj.status = str(vehicle.get("status") or obj.status or "active")
+        obj.available_from = available_from
+        obj.status = status or obj.status or "active"
 
     return {
         "saved": True,
@@ -392,7 +424,12 @@ def internal_sync(
 
     vehicle_sync = {"saved": False}
     if isinstance(body.vehicle, dict):
-        vehicle_sync = _upsert_vehicle_from_sync(db, vehicle=body.vehicle, fallback_user_id=body.user_id)
+        vehicle_sync = _upsert_vehicle_from_sync(
+            db,
+            vehicle=body.vehicle,
+            fallback_user_id=body.user_id,
+            event_source=body.source,
+        )
 
     db.commit()
 
