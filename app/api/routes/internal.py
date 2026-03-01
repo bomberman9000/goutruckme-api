@@ -9,8 +9,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.database import get_db
-from app.models.models import CargoStatus, Load, User, Vehicle
+from app.models.models import CargoStatus, City, Load, User, Vehicle
 from app.services.login_tokens import create_login_token, verify_login_token
+from app.services.geo import is_city_like_name, is_supported_city, normalize_city_name
 from app.services.sync_warmup import get_warmup_context, warmup_search_context
 
 
@@ -140,6 +141,25 @@ def _map_load_status(value: Any) -> str:
     return mapping.get(raw, CargoStatus.active.value)
 
 
+def _normalize_sync_city(db: Session, value: Any) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if not is_city_like_name(raw):
+        return None
+
+    normalized = normalize_city_name(raw)
+    city = (
+        db.query(City)
+        .filter(City.name_norm == normalized)
+        .order_by(City.population.desc().nullslast(), City.name.asc())
+        .first()
+    )
+    if is_supported_city(city):
+        return city.name
+    return None
+
+
 def _resolve_user_for_login_token(db: Session, req: CreateLoginTokenRequest) -> User:
     user = db.query(User).filter(User.telegram_id == req.telegram_user_id).first()
     if user:
@@ -165,8 +185,10 @@ def _upsert_order_from_sync(
     fallback_user_id: int | None,
 ) -> dict[str, Any]:
     order_id = _coerce_int(order.get("id"))
-    from_city = str(order.get("from_city") or "").strip()
-    to_city = str(order.get("to_city") or "").strip()
+    from_city_raw = str(order.get("from_city") or "").strip()
+    to_city_raw = str(order.get("to_city") or "").strip()
+    from_city = _normalize_sync_city(db, from_city_raw)
+    to_city = _normalize_sync_city(db, to_city_raw)
     price = _coerce_float(order.get("price_rub") or order.get("total_price") or order.get("price"))
     weight = _coerce_float(order.get("weight_t") or order.get("weight"))
     cargo_description = str(order.get("cargo_description") or "").strip() or None
@@ -190,7 +212,7 @@ def _upsert_order_from_sync(
     owner_id = _coerce_int(order.get("user_id")) or fallback_user_id
 
     if not from_city or not to_city:
-        return {"saved": False, "reason": "missing_route"}
+        return {"saved": False, "reason": "invalid_route"}
 
     if price is None or price <= 0:
         price = 1.0
@@ -300,8 +322,10 @@ def _upsert_vehicle_from_sync(
     if not user:
         return {"saved": False, "reason": "user_not_found"}
 
-    from_city = str(vehicle.get("from_city") or vehicle.get("location_city") or "").strip() or "Москва"
-    to_city = str(vehicle.get("to_city") or vehicle.get("location_region") or "").strip() or None
+    from_city_raw = str(vehicle.get("from_city") or vehicle.get("location_city") or "").strip() or "Москва"
+    to_city_raw = str(vehicle.get("to_city") or vehicle.get("location_region") or "").strip() or None
+    from_city = _normalize_sync_city(db, from_city_raw) or "Москва"
+    to_city = _normalize_sync_city(db, to_city_raw) if to_city_raw else None
     body_type = str(vehicle.get("body_type") or "тент").strip() or "тент"
     capacity_tons = _coerce_float(vehicle.get("capacity_t") or vehicle.get("capacity_tons")) or 20.0
     volume_m3 = _coerce_float(vehicle.get("volume_m3") or vehicle.get("volume")) or 82.0
