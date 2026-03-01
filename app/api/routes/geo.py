@@ -70,7 +70,6 @@ def search_cities(
 
     rows = (
         db.query(City)
-        .filter(City.country == "RU")
         .filter(City.name_norm.like(contains_pattern))
         .order_by(prefix_rank.asc(), length_penalty.asc(), population_score.desc(), City.name.asc())
         .limit(limit)

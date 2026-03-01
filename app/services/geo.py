@@ -10,13 +10,26 @@ from app.models.models import City
 
 _CITY_CLEAN_RE = re.compile(r"[^0-9a-zа-я\s\-]", flags=re.IGNORECASE)
 _SPACE_RE = re.compile(r"[\s\-–—]+")
+_CITY_PREFIX_RE = re.compile(r"^(?:г\.?|город)\s+", flags=re.IGNORECASE)
+_CITY_ALIASES = {
+    "спб": "санкт петербург",
+    "питер": "санкт петербург",
+    "мск": "москва",
+    "ташкен": "ташкент",
+    "ташкенд": "ташкент",
+    "тошкент": "ташкент",
+    "город бишкек": "бишкек",
+    "чимкент": "шымкент",
+}
 
 
 def normalize_city_name(value: str | None) -> str:
     text = str(value or "").strip().lower().replace("ё", "е")
+    text = _CITY_PREFIX_RE.sub("", text)
     text = _CITY_CLEAN_RE.sub(" ", text)
     text = _SPACE_RE.sub(" ", text)
-    return text.strip()
+    text = text.strip()
+    return _CITY_ALIASES.get(text, text)
 
 
 # MVP-справочник (расширяемый): крупнейшие города РФ для автокомплита.
@@ -121,6 +134,29 @@ DEFAULT_CITY_ROWS: tuple[dict, ...] = (
     {"name": "Стерлитамак", "region": "Республика Башкортостан", "country": "RU", "population": 279000},
     {"name": "Керчь", "region": "Республика Крым", "country": "RU", "population": 145000},
     {"name": "Трёхгорный", "region": "Челябинская область", "country": "RU", "population": 33000},
+    {"name": "Минск", "region": "Минская область", "country": "BY", "population": 1997000, "lat": 53.9006, "lon": 27.5590},
+    {"name": "Брест", "region": "Брестская область", "country": "BY", "population": 345000, "lat": 52.0976, "lon": 23.7341},
+    {"name": "Гомель", "region": "Гомельская область", "country": "BY", "population": 503000, "lat": 52.4345, "lon": 30.9754},
+    {"name": "Пинск", "region": "Брестская область", "country": "BY", "population": 126000, "lat": 52.1229, "lon": 26.0951},
+    {"name": "Борисов", "region": "Минская область", "country": "BY", "population": 136000, "lat": 54.2279, "lon": 28.5050},
+    {"name": "Ташкент", "region": "Ташкент", "country": "UZ", "population": 3024000, "lat": 41.2995, "lon": 69.2401},
+    {"name": "Андижан", "region": "Андижанская область", "country": "UZ", "population": 450000, "lat": 40.7821, "lon": 72.3442},
+    {"name": "Наманган", "region": "Наманганская область", "country": "UZ", "population": 626000, "lat": 40.9983, "lon": 71.6726},
+    {"name": "Фергана", "region": "Ферганская область", "country": "UZ", "population": 299000, "lat": 40.3734, "lon": 71.7978},
+    {"name": "Самарканд", "region": "Самаркандская область", "country": "UZ", "population": 573000, "lat": 39.6542, "lon": 66.9597},
+    {"name": "Карши", "region": "Кашкадарьинская область", "country": "UZ", "population": 278000, "lat": 38.8606, "lon": 65.7891},
+    {"name": "Бухара", "region": "Бухарская область", "country": "UZ", "population": 280000, "lat": 39.7747, "lon": 64.4286},
+    {"name": "Навои", "region": "Навоийская область", "country": "UZ", "population": 145000, "lat": 40.1039, "lon": 65.3687},
+    {"name": "Зарафшан", "region": "Навоийская область", "country": "UZ", "population": 85000, "lat": 41.5799, "lon": 64.2076},
+    {"name": "Ургенч", "region": "Хорезмская область", "country": "UZ", "population": 145000, "lat": 41.5507, "lon": 60.6330},
+    {"name": "Нукус", "region": "Каракалпакстан", "country": "UZ", "population": 329000, "lat": 42.4600, "lon": 59.6166},
+    {"name": "Джизак", "region": "Джизакская область", "country": "UZ", "population": 186000, "lat": 40.1158, "lon": 67.8422},
+    {"name": "Коканд", "region": "Ферганская область", "country": "UZ", "population": 259000, "lat": 40.5286, "lon": 70.9427},
+    {"name": "Бишкек", "region": "Бишкек", "country": "KG", "population": 1074000, "lat": 42.8746, "lon": 74.5698},
+    {"name": "Ош", "region": "Ошская область", "country": "KG", "population": 322000, "lat": 40.5283, "lon": 72.7985},
+    {"name": "Алматы", "region": "Алматы", "country": "KZ", "population": 2275000, "lat": 43.2383, "lon": 76.9456},
+    {"name": "Астана", "region": "Астана", "country": "KZ", "population": 1435000, "lat": 51.1694, "lon": 71.4491},
+    {"name": "Шымкент", "region": "Шымкент", "country": "KZ", "population": 1220000, "lat": 42.3417, "lon": 69.5901},
 )
 
 
