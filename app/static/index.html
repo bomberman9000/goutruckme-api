@@ -801,6 +801,14 @@
                     </div>
                 </div>
 
+                <div id="vehiclesSourceSummary" class="bg-dark-card border border-dark-border rounded-xl p-4">
+                    <div class="flex flex-wrap items-center gap-3 text-sm">
+                        <span class="px-3 py-2 rounded-lg bg-dark border border-dark-border text-gray-300">Всего: 0</span>
+                        <span class="px-3 py-2 rounded-lg bg-dark border border-dark-border text-gray-300">🌐 Сайт: 0</span>
+                        <span class="px-3 py-2 rounded-lg bg-dark border border-dark-border text-gray-300">📱 Mini App: 0</span>
+                    </div>
+                </div>
+
                 <div class="bg-dark-card border border-dark-border rounded-xl overflow-hidden">
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm">
@@ -8399,6 +8407,11 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
             dictsLoading: false,
             selectedCity: null,
             editingVehicleId: null,
+            sourceSummary: {
+                total: 0,
+                site: 0,
+                mini_app: 0,
+            },
             filters: {
                 city: '',
                 source: '',
@@ -10789,6 +10802,22 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
             sizeNode.value = String(size);
         }
 
+        function renderVehiclesSourceSummary() {
+            const node = document.getElementById('vehiclesSourceSummary');
+            if (!node) return;
+            const summary = vehiclesState.sourceSummary || {};
+            const total = Number(summary.total || 0);
+            const site = Number(summary.site || 0);
+            const miniApp = Number(summary.mini_app || 0);
+            node.innerHTML = `
+                <div class="flex flex-wrap items-center gap-3 text-sm">
+                    <span class="px-3 py-2 rounded-lg bg-dark border border-dark-border text-gray-300">Всего: ${total}</span>
+                    <span class="px-3 py-2 rounded-lg bg-dark border border-dark-border text-gray-300">🌐 Сайт: ${site}</span>
+                    <span class="px-3 py-2 rounded-lg bg-dark border border-dark-border text-gray-300">📱 Mini App: ${miniApp}</span>
+                </div>
+            `;
+        }
+
         function changeVehiclePage(delta) {
             const next = Number(vehiclesState.page || 1) + Number(delta || 0);
             const totalPages = Number(vehiclesState.totalPages || 1);
@@ -10820,6 +10849,7 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
                 renderVehiclesTable();
                 renderVehiclesCards();
                 renderVehiclesPagination();
+                renderVehiclesSourceSummary();
                 return;
             }
 
@@ -10845,10 +10875,20 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
                 const total = Number(rows?.total || items.length || 0);
                 const page = Number(rows?.page || vehiclesState.page || 1);
                 const size = Number(rows?.size || vehiclesState.size || 50);
+                const sourceSummary = rows?.source_summary || {
+                    total,
+                    site: items.filter(v => String(v?.source || '') !== 'mini_app').length,
+                    mini_app: items.filter(v => String(v?.source || '') === 'mini_app').length,
+                };
 
                 vehiclesState.allVehicles = items;
                 vehiclesState.filteredVehicles = items;
                 vehiclesState.total = total;
+                vehiclesState.sourceSummary = {
+                    total: Number(sourceSummary.total || 0),
+                    site: Number(sourceSummary.site || 0),
+                    mini_app: Number(sourceSummary.mini_app || 0),
+                };
                 vehiclesState.page = page;
                 vehiclesState.size = size;
                 vehiclesState.totalPages = Math.max(1, Math.ceil(total / Math.max(1, size)));
@@ -10863,14 +10903,17 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
                 renderVehiclesTable();
                 renderVehiclesCards();
                 renderVehiclesPagination();
+                renderVehiclesSourceSummary();
             } catch (error) {
                 vehiclesState.allVehicles = [];
                 vehiclesState.filteredVehicles = [];
                 vehiclesState.total = 0;
                 vehiclesState.totalPages = 1;
+                vehiclesState.sourceSummary = { total: 0, site: 0, mini_app: 0 };
                 renderVehiclesTable();
                 renderVehiclesCards();
                 renderVehiclesPagination();
+                renderVehiclesSourceSummary();
                 showNotification(`❌ Не удалось загрузить машины: ${error.message}`, 'error');
                 if (String(error.message || '').toLowerCase().includes('сессия')) {
                     openModal('login');

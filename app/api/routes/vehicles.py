@@ -1143,6 +1143,11 @@ def list_vehicles(
         vehicles = [vehicle for vehicle in vehicles if int(vehicle.crew_size or 1) >= 2]
 
     total = len(vehicles)
+    source_summary = {
+        "total": total,
+        "site": sum(1 for vehicle in vehicles if int(vehicle.id or 0) < 900_000_000),
+        "mini_app": sum(1 for vehicle in vehicles if int(vehicle.id or 0) >= 900_000_000),
+    }
     start = (page - 1) * size
     end = start + size
     items = vehicles[start:end]
@@ -1150,6 +1155,7 @@ def list_vehicles(
     return {
         "items": [_vehicle_to_dict(vehicle, db) for vehicle in items],
         "total": total,
+        "source_summary": source_summary,
         "page": page,
         "size": size,
     }
