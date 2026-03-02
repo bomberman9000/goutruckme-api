@@ -14,3 +14,9 @@ queue-stat:
 
 logs-workers:
 	docker compose --profile parser-v2 logs -f parser-worker
+
+deploy:
+	git pull
+	docker compose --profile parser-v2 build --no-cache
+	docker compose --profile parser-v2 up -d --force-recreate
+	docker compose ps
