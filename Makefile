@@ -1,4 +1,6 @@
-.PHONY: up-v2 scale-workers clear-stream queue-stat logs-workers
+.PHONY: deploy up-v2 scale-workers clear-stream queue-stat logs-workers
+
+.DEFAULT_GOAL := deploy
 
 up-v2:
 	docker compose --profile parser-v2 up -d
@@ -16,6 +18,7 @@ logs-workers:
 	docker compose --profile parser-v2 logs -f parser-worker
 
 deploy:
+	git stash
 	git pull
 	docker compose --profile parser-v2 build --no-cache
 	docker compose --profile parser-v2 up -d --force-recreate
