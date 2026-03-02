@@ -273,16 +273,18 @@ async def parse_cargo_nlp(text: str) -> dict | None:
                 cargo_type = (j.get("cargo_type") or "груз").strip()
         except Exception as e:
             logger.warning("parse_cargo_nlp AI error: %s", e)
-    else:
-        # Simple alias-based fallback
+
+    # Alias-based fallback — runs when client is absent OR when AI call failed
+    if not from_city or not to_city:
         found: list[str] = []
         for alias, city in CITY_ALIASES.items():
             if alias in text_lower and city not in found:
                 found.append(city)
         if len(found) >= 2:
-            from_city, to_city = found[0], found[1]
+            from_city = from_city or found[0]
+            to_city = to_city or found[1]
         elif found:
-            from_city = found[0]
+            from_city = from_city or found[0]
 
     if not from_city or not to_city:
         return None
