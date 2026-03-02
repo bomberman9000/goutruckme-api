@@ -736,6 +736,8 @@ async def _process_message(
                 trust.verdict,
             )
 
+        if trust is None:
+            trust = ScoreResult(inn=None, score=60, verdict="yellow", comment="no_inn", provider="default", details={})
         is_spam = _is_spam(trust)
         if is_spam:
             await _save_ingest_event(
