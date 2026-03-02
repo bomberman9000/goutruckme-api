@@ -231,9 +231,9 @@ async def parse_cargo_nlp(text: str) -> dict | None:
         if parsed_dt:
             load_date = parsed_dt[0].strftime("%Y-%m-%d")
             load_time = parsed_dt[1]
-    # Fallback: look for time like "в 9 часов", "в 9:00"
+    # Fallback: look for time like "в 9 часов", "на 9 часов", "в 9:00"
     if not load_time:
-        tm = re.search(r"в\s+(\d{1,2})(?:\s*(?:часов?|:00))?\s*(?:срочно?|$|\s)", text_lower)
+        tm = re.search(r"(?:в|на)\s+(\d{1,2})(?:\s*(?:часов?|:00))?\s*(?:срочно?|$|\s)", text_lower)
         if tm:
             h = int(tm.group(1))
             if 0 <= h <= 23:
