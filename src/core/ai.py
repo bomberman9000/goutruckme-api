@@ -16,7 +16,7 @@ CITY_ALIASES = {
     "спб": "Санкт-Петербург", "питер": "Санкт-Петербург", "петербург": "Санкт-Петербург",
     "нск": "Новосибирск", "новосиб": "Новосибирск",
     "екб": "Екатеринбург", "ёбург": "Екатеринбург",
-    "казань": "Казань", "кзн": "Казань",
+    "казань": "Казань", "казан": "Казань", "кзн": "Казань",
     "нн": "Нижний Новгород", "нижний": "Нижний Новгород",
     "самара": "Самара", "самар": "Самара",
     "ростов": "Ростов-на-Дону", "рнд": "Ростов-на-Дону",
@@ -276,15 +276,23 @@ async def parse_cargo_nlp(text: str) -> dict | None:
 
     # Alias-based fallback — runs when client is absent OR when AI call failed
     if not from_city or not to_city:
-        found: list[str] = []
+        # Collect (position, city) to preserve order of mention in text
+        hits: list[tuple[int, str]] = []
         for alias, city in CITY_ALIASES.items():
-            if alias in text_lower and city not in found:
-                found.append(city)
-        if len(found) >= 2:
-            from_city = from_city or found[0]
-            to_city = to_city or found[1]
-        elif found:
-            from_city = from_city or found[0]
+            idx = text_lower.find(alias)
+            if idx != -1:
+                hits.append((idx, city))
+        hits.sort(key=lambda x: x[0])
+        # Deduplicate preserving order
+        seen: list[str] = []
+        for _, city in hits:
+            if city not in seen:
+                seen.append(city)
+        if len(seen) >= 2:
+            from_city = from_city or seen[0]
+            to_city = to_city or seen[1]
+        elif seen:
+            from_city = from_city or seen[0]
 
     if not from_city or not to_city:
         return None
