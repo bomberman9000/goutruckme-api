@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import {
   fetchRecommendedCargoRate,
@@ -151,6 +151,10 @@ export function AddCargoForm({
   const [paymentTerms, setPaymentTerms] = useState(initialValues?.paymentTerms ?? "");
   const [originSuggestions, setOriginSuggestions] = useState<CitySuggestion[]>([]);
   const [destinationSuggestions, setDestinationSuggestions] = useState<CitySuggestion[]>([]);
+  const [originFocused, setOriginFocused] = useState(false);
+  const [destinationFocused, setDestinationFocused] = useState(false);
+  const originRef = useRef<HTMLDivElement>(null);
+  const destinationRef = useRef<HTMLDivElement>(null);
   const [recommendedRate, setRecommendedRate] = useState<RecommendedCargoRate | null>(null);
   const [recommendedRateError, setRecommendedRateError] = useState<string | null>(null);
 
@@ -289,49 +293,59 @@ export function AddCargoForm({
   return (
     <form className="cargo-form" onSubmit={handleSubmit}>
       <div className="cargo-form-grid">
-        <label className="truck-field">
+        <div className="truck-field city-autocomplete" ref={originRef}>
           <span>Откуда</span>
           <input
             type="text"
             value={origin}
             onChange={(event) => setOrigin(event.target.value)}
+            onFocus={() => setOriginFocused(true)}
+            onBlur={() => setTimeout(() => setOriginFocused(false), 150)}
             placeholder="Москва"
-            list={originListId}
             disabled={busy}
             required
+            autoComplete="off"
           />
-          <datalist id={originListId}>
-            {originSuggestions.map((item) => (
-              <option
-                key={`origin-${item.full_name}`}
-                value={item.name}
-                label={item.full_name}
-              />
-            ))}
-          </datalist>
-        </label>
+          {originFocused && originSuggestions.length > 0 && (
+            <ul className="city-suggestions">
+              {originSuggestions.map((item) => (
+                <li
+                  key={`origin-${item.full_name}`}
+                  onMouseDown={() => { setOrigin(item.name); setOriginFocused(false); }}
+                >
+                  {item.full_name}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
-        <label className="truck-field">
+        <div className="truck-field city-autocomplete" ref={destinationRef}>
           <span>Куда</span>
           <input
             type="text"
             value={destination}
             onChange={(event) => setDestination(event.target.value)}
+            onFocus={() => setDestinationFocused(true)}
+            onBlur={() => setTimeout(() => setDestinationFocused(false), 150)}
             placeholder="Казань"
-            list={destinationListId}
             disabled={busy}
             required
+            autoComplete="off"
           />
-          <datalist id={destinationListId}>
-            {destinationSuggestions.map((item) => (
-              <option
-                key={`destination-${item.full_name}`}
-                value={item.name}
-                label={item.full_name}
-              />
-            ))}
-          </datalist>
-        </label>
+          {destinationFocused && destinationSuggestions.length > 0 && (
+            <ul className="city-suggestions">
+              {destinationSuggestions.map((item) => (
+                <li
+                  key={`destination-${item.full_name}`}
+                  onMouseDown={() => { setDestination(item.name); setDestinationFocused(false); }}
+                >
+                  {item.full_name}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         <label className="truck-field">
           <span>Тип кузова</span>
@@ -352,8 +366,8 @@ export function AddCargoForm({
           <span>Тоннаж, т</span>
           <input
             type="number"
-            min="0.5"
-            step="0.5"
+            min="0.01"
+            step="0.01"
             value={weight}
             onChange={(event) => setWeight(event.target.value)}
             disabled={busy}
