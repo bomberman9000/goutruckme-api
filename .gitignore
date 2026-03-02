@@ -17,3 +17,7 @@ node_modules/
 # IDE / tooling (не пушить в main)
 .cursor/
 .codex/
+
+# Leftovers
+app/
+*.db
