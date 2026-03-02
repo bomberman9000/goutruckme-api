@@ -18,7 +18,7 @@ logs-workers:
 	docker compose --profile parser-v2 logs -f parser-worker
 
 deploy:
-	git stash
+	git stash --include-untracked || true
 	git pull
 	docker compose --profile parser-v2 build --no-cache
 	docker compose --profile parser-v2 up -d --force-recreate
