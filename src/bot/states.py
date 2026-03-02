@@ -75,5 +75,9 @@ class ClaimForm(StatesGroup):
     amount = State()
 
 
+class CargoNLPConfirm(StatesGroup):
+    wait_confirm = State()
+
+
 class LegalCheck(StatesGroup):
     inn = State()

@@ -186,6 +186,123 @@ def _parse_load_datetime_ai(text: str):
         logger.error(f"AI cargo parse error: {e}")
     return None
 
+async def parse_cargo_nlp(text: str) -> dict | None:
+    """
+    Parse a one-line free-text cargo creation message.
+    Example: "самар- казан 200 кг тнп на завтра на 9 часов срочно"
+    Returns dict with keys: from_city, to_city, weight, cargo_type,
+    load_date (YYYY-MM-DD), load_time (HH:MM), is_urgent, price (optional).
+    Returns None if the text doesn't look like a cargo description.
+    """
+    text_lower = text.strip().lower()
+
+    # Must contain a weight marker to be considered a cargo description
+    weight_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(кг|т\b|тн\b|тонн)", text_lower)
+    if not weight_match:
+        return None
+
+    raw_weight = float(weight_match.group(1).replace(",", "."))
+    unit = weight_match.group(2).strip()
+    weight = round(raw_weight / 1000, 3) if unit == "кг" else raw_weight
+
+    is_urgent = bool(re.search(r"\bсрочно?\b", text_lower))
+
+    # Optional price (e.g. "50к", "50000 руб", "50 тыс")
+    price: int | None = None
+    pm = re.search(r"(\d+(?:[.,]\d+)?)\s*к(?:\s|$|руб|р|₽)", text_lower)
+    if pm:
+        price = int(float(pm.group(1).replace(",", ".")) * 1000)
+    else:
+        pm = re.search(r"(\d{5,})\s*(?:руб|р|₽)", text_lower)
+        if pm:
+            price = int(pm.group(1))
+
+    # Parse date/time (reuse existing parse_load_datetime)
+    load_date: str | None = None
+    load_time: str | None = None
+    date_m = re.search(
+        r"(?:на\s+)?(?:завтра|послезавтра|сегодня)(?:\s+(?:в|at)\s+\d{1,2}[:.]\d{2})?|"
+        r"\d{1,2}\.\d{2}(?:\.\d{4})?\s*(?:в\s*\d{1,2}[:.]\d{2})?",
+        text_lower,
+    )
+    if date_m:
+        date_str = re.sub(r"^на\s+", "", date_m.group(0).strip())
+        parsed_dt = parse_load_datetime(date_str)
+        if parsed_dt:
+            load_date = parsed_dt[0].strftime("%Y-%m-%d")
+            load_time = parsed_dt[1]
+    # Fallback: look for time like "в 9 часов", "в 9:00"
+    if not load_time:
+        tm = re.search(r"в\s+(\d{1,2})(?:\s*(?:часов?|:00))?\s*(?:срочно?|$|\s)", text_lower)
+        if tm:
+            h = int(tm.group(1))
+            if 0 <= h <= 23:
+                load_time = f"{h:02d}:00"
+
+    # AI extracts cities and cargo_type
+    from_city: str | None = None
+    to_city: str | None = None
+    cargo_type = "груз"
+
+    if client:
+        try:
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Ты парсер заявок на грузоперевозку. "
+                            'Извлеки из сообщения ТОЛЬКО JSON: {"from_city":"...","to_city":"...","cargo_type":"..."}. '
+                            "Города пиши полностью с большой буквы: самар→Самара, казан→Казань, мск→Москва, "
+                            "спб/питер→Санкт-Петербург, нн→Нижний Новгород, екб→Екатеринбург, рнд→Ростов-на-Дону. "
+                            "Тип груза: аббревиатуры оставляй как есть (тнп, пнг) или пиши кратко (сборный, паллеты). "
+                            "Если поле не найдено — null."
+                        ),
+                    },
+                    {"role": "user", "content": text},
+                ],
+                max_tokens=100,
+                temperature=0,
+            )
+            raw = response.choices[0].message.content.strip()
+            if "{" in raw and "}" in raw:
+                j = json.loads(raw[raw.find("{") : raw.rfind("}") + 1])
+                from_city = j.get("from_city") or None
+                to_city = j.get("to_city") or None
+                cargo_type = (j.get("cargo_type") or "груз").strip()
+        except Exception as e:
+            logger.warning("parse_cargo_nlp AI error: %s", e)
+    else:
+        # Simple alias-based fallback
+        found: list[str] = []
+        for alias, city in CITY_ALIASES.items():
+            if alias in text_lower and city not in found:
+                found.append(city)
+        if len(found) >= 2:
+            from_city, to_city = found[0], found[1]
+        elif found:
+            from_city = found[0]
+
+    if not from_city or not to_city:
+        return None
+
+    result: dict = {
+        "from_city": from_city,
+        "to_city": to_city,
+        "weight": weight,
+        "cargo_type": cargo_type,
+        "is_urgent": is_urgent,
+    }
+    if load_date:
+        result["load_date"] = load_date
+    if load_time:
+        result["load_time"] = load_time
+    if price:
+        result["price"] = price
+    return result
+
+
 async def parse_cargo_search(text: str) -> dict | None:
     """
     Парсит поисковый запрос из естественного языка.
