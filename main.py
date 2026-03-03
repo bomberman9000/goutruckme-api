@@ -165,6 +165,7 @@ from src.api.subscriptions import router as subscriptions_router
 from src.api.escrow import router as escrow_router
 from src.api.geo import router as geo_router
 from src.api.match import router as match_router
+from src.core.ai_diag import explain_health
 from src.core.services.watchdog import watchdog
 
 app.include_router(admin_panel_router)
@@ -212,6 +213,19 @@ async def health_check():
 async def health_detailed():
     """Детальный health check."""
     return await watchdog.check_health()
+
+
+@app.get("/health/ai")
+@app.get("/health_ai")
+async def health_ai():
+    """Health check with human-readable diagnosis."""
+    health = await watchdog.check_health()
+    return {
+        "status": "ok",
+        "timestamp": health["timestamp"],
+        "diagnosis": explain_health(health),
+        "health": health,
+    }
 
 
 @app.get("/api/health")

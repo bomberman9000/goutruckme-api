@@ -7,6 +7,7 @@ from datetime import datetime
 
 import httpx
 
+from src.core.ai_diag import explain_health
 from src.core.config import settings
 from src.core.logger import logger
 
@@ -51,6 +52,8 @@ class BotWatchdog:
             "synced_24h": None,
             "ignored_24h": None,
             "last_event_age_min": None,
+            "heartbeat_key": (settings.parser_heartbeat_key or "").strip() or "parser:heartbeat",
+            "heartbeat_age_sec": None,
         }
 
         try:
@@ -58,6 +61,16 @@ class BotWatchdog:
 
             redis = await get_redis()
             metrics["queue_depth"] = await redis.xlen(settings.parser_stream_name)
+            heartbeat_raw = await redis.get(metrics["heartbeat_key"])
+            if heartbeat_raw:
+                try:
+                    heartbeat_ts = int(float(heartbeat_raw))
+                    metrics["heartbeat_age_sec"] = max(
+                        0,
+                        int(datetime.utcnow().timestamp() - heartbeat_ts),
+                    )
+                except (TypeError, ValueError):
+                    pass
             try:
                 groups = await redis.xinfo_groups(settings.parser_stream_name)
                 group = next(
@@ -215,6 +228,21 @@ class BotWatchdog:
                     )
                 else:
                     results["checks"]["parser_queue"] = f"✅ OK (depth={queue_depth})"
+
+            if settings.parser_enabled:
+                heartbeat_age_sec = parser_metrics.get("heartbeat_age_sec")
+                if heartbeat_age_sec is None:
+                    results["checks"]["parser_heartbeat"] = "⚠️ No heartbeat"
+                elif heartbeat_age_sec > max(60, int(settings.parser_self_kill_after_sec)):
+                    results["checks"]["parser_heartbeat"] = (
+                        f"❌ Stale {heartbeat_age_sec}s"
+                    )
+                else:
+                    results["checks"]["parser_heartbeat"] = (
+                        f"✅ {heartbeat_age_sec}s ago"
+                    )
+            else:
+                results["checks"]["parser_heartbeat"] = "ℹ️ Parser disabled"
         except Exception:
             results["checks"]["parser"] = "⚠️ Unable to check"
 
@@ -282,7 +310,7 @@ async def watchdog_loop():
             for name, status in health["checks"].items():
                 if "❌" in str(status):
                     await notify_admin(
-                        f"Компонент {name} недоступен:\n{status}",
+                        f"Компонент {name} недоступен:\n{status}\n\n{explain_health(health)}",
                         alert_key=f"check_{name}",
                     )
 
@@ -290,11 +318,16 @@ async def watchdog_loop():
             if "No new events for" in parser_status:
                 await notify_admin(
                     f"⚠️ Парсер простаивает!\n\n{parser_status}\n\n"
-                    "Возможные причины:\n"
-                    "• Telegram заблокировал сессию\n"
-                    "• parser-bot / parser-worker упал\n"
-                    "• Нет активности в отслеживаемых чатах",
+                    f"{explain_health(health)}",
                     alert_key="parser_stale",
+                )
+
+            parser_heartbeat = str(health["checks"].get("parser_heartbeat", ""))
+            if "No heartbeat" in parser_heartbeat or "Stale" in parser_heartbeat:
+                await notify_admin(
+                    f"⚠️ Heartbeat парсера проблемный:\n{parser_heartbeat}\n\n"
+                    f"{explain_health(health)}",
+                    alert_key="parser_heartbeat",
                 )
 
             parser_metrics = health.get("metrics", {}).get("parser", {})
@@ -309,7 +342,7 @@ async def watchdog_loop():
                     "⚠️ Очередь ручной проверки переполнена!\n\n"
                     f"Сейчас: {manual_review_count}\n"
                     f"Порог: {threshold}\n\n"
-                    "Проверь /admin/manual-review и /admin/parser",
+                    f"{explain_health(health)}",
                     alert_key="manual_review_backlog",
                 )
 

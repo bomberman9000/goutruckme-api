@@ -2,6 +2,7 @@ from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import Command
 from sqlalchemy import select, func
+from src.core.ai_diag import explain_health
 from src.core.config import settings
 from src.core.database import async_session
 from src.core.models import User, Cargo, Feedback
@@ -26,6 +27,20 @@ async def cmd_health(message: Message):
 
     health = await watchdog.check_health()
     text = watchdog.format_status(health)
+
+    await msg.edit_text(text, parse_mode="HTML")
+
+
+@router.message(Command("health_ai"))
+async def cmd_health_ai(message: Message):
+    """Проверка здоровья системы с расшифровкой причин (только для админа)"""
+    if not is_admin(message.from_user.id):
+        return
+
+    msg = await message.answer("⏳ Собираю метрики и диагноз...")
+
+    health = await watchdog.check_health()
+    text = watchdog.format_status(health) + "\n\n" + explain_health(health)
 
     await msg.edit_text(text, parse_mode="HTML")
 
