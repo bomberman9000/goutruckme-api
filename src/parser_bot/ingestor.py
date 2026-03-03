@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -24,6 +25,49 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | parser-ingestor | %(message)s",
 )
 logger = logging.getLogger("parser-ingestor")
+
+
+def _heartbeat_key() -> str:
+    return (settings.parser_heartbeat_key or "").strip() or "parser:heartbeat"
+
+
+async def _touch_heartbeat(redis_client: redis.Redis) -> None:
+    ttl = max(60, int(settings.parser_heartbeat_ttl_sec))
+    now_ts = int(time.time())
+    await redis_client.set(_heartbeat_key(), str(now_ts), ex=ttl)
+
+
+async def _self_health_check(redis_client: redis.Redis, *, started_monotonic: float) -> None:
+    grace_sec = max(60, int(settings.parser_self_kill_grace_sec))
+    stale_after_sec = max(grace_sec, int(settings.parser_self_kill_after_sec))
+
+    while True:
+        await asyncio.sleep(60)
+
+        if (time.monotonic() - started_monotonic) < grace_sec:
+            continue
+
+        raw = await redis_client.get(_heartbeat_key())
+        if raw is None:
+            logger.error(
+                "parser heartbeat missing after grace=%ss. Exiting for clean restart.",
+                grace_sec,
+            )
+            os._exit(1)
+
+        try:
+            age_sec = max(0.0, time.time() - float(raw))
+        except (TypeError, ValueError):
+            logger.error("parser heartbeat is invalid (%r). Exiting for clean restart.", raw)
+            os._exit(1)
+
+        if age_sec > stale_after_sec:
+            logger.error(
+                "parser heartbeat stale age=%.1fs threshold=%ss. Exiting for clean restart.",
+                age_sec,
+                stale_after_sec,
+            )
+            os._exit(1)
 
 
 def _parse_chat_ids(raw: str) -> list[int | str]:
@@ -193,6 +237,9 @@ async def _enqueue_message(
             len(blocks),
         )
 
+    if total:
+        await _touch_heartbeat(stream.redis)
+
     return total
 
 
@@ -249,6 +296,7 @@ async def _startup_backfill(
 
 async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> None:
     client = TelegramClient(_build_session(), settings.parser_tg_api_id, settings.parser_tg_api_hash)
+    health_task: asyncio.Task[None] | None = None
     await client.start()
     resolved_chat_ids = await _resolve_chat_filters(client, chat_ids)
     if not resolved_chat_ids:
@@ -256,6 +304,10 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
         await client.disconnect()
         return
     watched_chat_ids = set(resolved_chat_ids)
+    await _touch_heartbeat(stream.redis)
+    health_task = asyncio.create_task(
+        _self_health_check(stream.redis, started_monotonic=time.monotonic())
+    )
     await _startup_backfill(client, stream, watched_chat_ids)
 
     @client.on(events.NewMessage())
@@ -294,6 +346,10 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
     try:
         await client.run_until_disconnected()
     finally:
+        if health_task is not None:
+            health_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await health_task
         with contextlib.suppress(Exception):
             await client.disconnect()
 

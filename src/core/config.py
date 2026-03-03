@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     parser_stream_claim_idle_ms: int = 60000
     parser_startup_backfill_limit: int = 10
     parser_startup_backfill_minutes: int = 30
+    parser_heartbeat_key: str = "parser:heartbeat"
+    parser_heartbeat_ttl_sec: int = 1800
+    parser_self_kill_after_sec: int = 600
+    parser_self_kill_grace_sec: int = 300
     parser_worker_name: str = "worker-1"
     parser_worker_max_retries: int = 3
     parser_worker_enable_inn_moderation: bool = False
