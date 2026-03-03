@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class SharedOrderSchema(BaseModel):
-    id: str
+    id: str | None = None
     search_id: str | None = None
     user_id: int | None = None
     from_city: str | None = None
@@ -17,12 +17,12 @@ class SharedOrderSchema(BaseModel):
     price_rub: int | None = None
     load_date: str | None = None
     status: str | None = None
-    source: Literal["tg-bot", "gruzpotok-api", "unknown"] = "unknown"
+    source: str = "unknown"
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
 class SharedVehicleSchema(BaseModel):
-    id: str
+    id: str | None = None
     search_id: str | None = None
     user_id: int | None = None
     from_city: str | None = None
@@ -41,7 +41,7 @@ class SharedVehicleSchema(BaseModel):
     owner_phone: str | None = None
     owner_company: str | None = None
     status: str | None = None
-    source: Literal["tg-bot", "gruzpotok-api", "unknown"] = "unknown"
+    source: str = "unknown"
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -56,7 +56,7 @@ class InternalNotifyUserRequest(BaseModel):
 class SharedSyncEvent(BaseModel):
     event_id: str
     event_type: str
-    source: Literal["tg-bot", "gruzpotok-api", "unknown"] = "unknown"
+    source: str = "unknown"
     occurred_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     search_id: str | None = None
     user_id: int | None = None
@@ -71,5 +71,5 @@ class BotInternalEvent(BaseModel):
     event_type: str
     data: dict[str, Any] = Field(default_factory=dict)
     event_id: str | None = None
-    source: Literal["tg-bot", "gruzpotok-api", "unknown"] = "unknown"
+    source: str = "unknown"
     occurred_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

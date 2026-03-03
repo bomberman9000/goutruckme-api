@@ -10,7 +10,7 @@ from src.bot.bot import bot
 from src.core.config import settings
 from src.core.database import async_session
 from src.core.logger import logger
-from src.core.models import RouteSubscription
+from src.core.models import Cargo, CargoStatus, RouteSubscription
 from src.core.schemas.sync import BotInternalEvent, InternalNotifyUserRequest, SharedSyncEvent
 
 
@@ -292,6 +292,59 @@ async def internal_event(
     }
 
 
+async def _create_cargo_from_order(body: SharedSyncEvent) -> int | None:
+    """Create a Cargo DB record from a parser sync event. Returns cargo id or None."""
+    order = body.order
+    if not order:
+        return None
+
+    owner_id = _event_user_id(body)
+    if not owner_id and settings.parser_default_user_id:
+        try:
+            owner_id = int(settings.parser_default_user_id)
+        except (ValueError, TypeError):
+            pass
+    if not owner_id:
+        return None
+
+    from datetime import datetime
+    load_date_dt: datetime
+    if order.load_date:
+        try:
+            load_date_dt = datetime.fromisoformat(order.load_date)
+        except ValueError:
+            load_date_dt = datetime.utcnow()
+    else:
+        load_date_dt = datetime.utcnow()
+
+    cargo = Cargo(
+        owner_id=owner_id,
+        from_city=(order.from_city or "не указан")[:100],
+        to_city=(order.to_city or "не указан")[:100],
+        cargo_type=(order.cargo_type or "тент")[:100],
+        weight=float(order.weight_t or 1.0),
+        price=int(order.price_rub or 0),
+        load_date=load_date_dt,
+        comment=body.metadata.get("raw_text", "")[:500] or None,
+        status=CargoStatus.NEW,
+    )
+
+    async with async_session() as session:
+        session.add(cargo)
+        await session.commit()
+        await session.refresh(cargo)
+
+    logger.info(
+        "internal.sync_data cargo_created id=%s route=%s->%s owner=%s source=%s",
+        cargo.id,
+        cargo.from_city,
+        cargo.to_city,
+        owner_id,
+        body.source,
+    )
+    return cargo.id
+
+
 @router.post("/internal/sync")
 @router.post("/internal/sync-data")
 @router.post("/api/sync")
@@ -300,6 +353,17 @@ async def internal_sync_data(
     x_internal_token: str | None = Header(default=None),
 ) -> dict[str, Any]:
     _require_internal_token(x_internal_token)
+
+    cargo_id = None
+    if body.event_type in {"order.created", "cargo.created"}:
+        try:
+            cargo_id = await _create_cargo_from_order(body)
+        except Exception as exc:
+            logger.warning(
+                "internal.sync_data.cargo_create_failed event_id=%s error=%s",
+                body.event_id,
+                str(exc)[:200],
+            )
 
     user_id = _event_user_id(body)
     notified = False
@@ -324,10 +388,10 @@ async def internal_sync_data(
             )
 
     logger.info(
-        "internal.sync_data accepted event_type=%s event_id=%s search_id=%s notified=%s",
+        "internal.sync_data accepted event_type=%s event_id=%s cargo_id=%s notified=%s",
         body.event_type,
         body.event_id,
-        body.search_id,
+        cargo_id,
         notified,
     )
     return {
@@ -335,6 +399,7 @@ async def internal_sync_data(
         "event_id": body.event_id,
         "event_type": body.event_type,
         "search_id": body.search_id,
+        "cargo_id": cargo_id,
         "notified": notified,
         "message_id": message_id,
     }
