@@ -13,7 +13,6 @@ import redis.asyncio as redis
 from playwright.async_api import Browser, BrowserContext, Error as PlaywrightError, Page, async_playwright
 
 from src.core.config import settings
-from src.parser_bot.extractor import parse_cargo_message
 from src.parser_bot.stream import RedisLogisticsStream
 
 
@@ -145,10 +144,8 @@ def _looks_like_customer_request(text: str, *, seed: AvitoSeed, keywords: list[s
     if not any(marker in lowered for marker in (*COMMON_POSITIVE_MARKERS, *seed.positive_markers)):
         return False
 
-    parsed = parse_cargo_message(text, keywords=keywords)
-    if not parsed:
-        return False
-    return bool(parsed.from_city and parsed.to_city)
+    # Producer should only do coarse intent filtering. Route extraction happens in parser-worker.
+    return True
 
 
 async def _page_pause() -> None:
