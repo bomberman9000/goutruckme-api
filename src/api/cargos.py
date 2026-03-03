@@ -34,6 +34,31 @@ class ManualCargoCreate(BaseModel):
     payment_terms: str | None = Field(default=None, max_length=120)
 
 
+class ManualCargoPreviewRequest(BaseModel):
+    raw_text: str = Field(min_length=5, max_length=4000)
+
+
+class ManualCargoParsedPreview(BaseModel):
+    from_city: str
+    to_city: str
+    body_type: str
+    cargo_type: str
+    weight: float
+    volume_m3: float | None = None
+    price: int | None = None
+    load_date: str | None = None
+    load_time: str | None = None
+    price_source: str
+    ai_score: int
+    ai_verdict: str
+    ai_comment: str
+
+
+class ManualCargoPreviewResponse(BaseModel):
+    ok: bool = True
+    parsed: ManualCargoParsedPreview
+
+
 class ManualCargoResponse(BaseModel):
     ok: bool = True
     cargo_id: int
@@ -169,6 +194,135 @@ def _format_volume_dimensions(volume: float | None) -> str | None:
     if volume is None:
         return None
     return f"{volume:g} м³"
+
+
+def _build_ai_score_preview(
+    *,
+    stated_price: int | None,
+    estimated_price: int | None,
+    has_volume: bool,
+    cargo_type: str,
+    body_type: str,
+) -> tuple[int, str, str, str]:
+    score = 58
+    notes: list[str] = ["маршрут подтверждён"]
+    price_source = "missing"
+
+    if stated_price and estimated_price:
+        price_source = "provided"
+        ratio = stated_price / max(1, estimated_price)
+        if 0.75 <= ratio <= 1.35:
+            score += 18
+            notes.append("цена близка к рынку")
+        elif 0.55 <= ratio <= 1.7:
+            score += 8
+            notes.append("цена в рабочем диапазоне")
+        else:
+            score -= 10
+            notes.append("цена выбивается из рынка")
+    elif stated_price:
+        price_source = "provided"
+        score += 8
+        notes.append("цена указана вручную")
+    elif estimated_price:
+        price_source = "estimated"
+        score += 12
+        notes.append("цена рассчитана автоматически")
+
+    if has_volume:
+        score += 5
+        notes.append("есть кубатура")
+    if cargo_type and cargo_type != "Груз":
+        score += 6
+        notes.append(f"характер груза: {cargo_type.lower()}")
+    if body_type and body_type != "тент":
+        score += 3
+        notes.append(f"тип кузова: {body_type}")
+
+    score = max(0, min(100, score))
+    if score >= 75:
+        verdict = "green"
+        comment = "Маршрут реалистичный, цена близка к рынку, риск низкий."
+    elif score >= 45:
+        verdict = "yellow"
+        comment = "Маршрут выглядит рабочим, но проверь цену и условия перед публикацией."
+    else:
+        verdict = "red"
+        comment = "Данных мало или цена выглядит рискованно. Проверь детали вручную."
+
+    return score, verdict, comment, price_source
+
+
+async def _build_smart_preview(raw_text: str) -> tuple[ManualCargoParsedPreview, object, int | None]:
+    parsed = await parse_cargo_nlp(raw_text)
+    if not parsed:
+        raise HTTPException(
+            status_code=422,
+            detail="Не удалось распознать данные груза. Добавьте маршрут, вес или кубатуру в текст.",
+        )
+
+    origin = str(parsed.get("from_city") or "").strip()
+    destination = str(parsed.get("to_city") or "").strip()
+    if not origin or not destination:
+        raise HTTPException(status_code=422, detail="Не удалось распознать маршрут. Укажи откуда и куда в тексте.")
+
+    if parsed.get("weight") is None:
+        raise HTTPException(status_code=422, detail="Не удалось распознать вес. Укажи тоннаж или килограммы.")
+
+    route_geo = await get_geo_service().resolve_route(origin, destination)
+    if not route_geo:
+        raise HTTPException(status_code=422, detail="Invalid cities detected")
+
+    parsed_body_type = str(parsed.get("body_type") or "").strip()
+    parsed_cargo_type = str(parsed.get("cargo_type") or "").strip()
+    if not parsed_body_type and parsed_cargo_type in {"тент", "рефрижератор", "трал", "борт", "контейнер", "изотерм"}:
+        parsed_body_type = parsed_cargo_type
+        parsed_cargo_type = "Груз"
+
+    body_type = parsed_body_type or "тент"
+    cargo_type = parsed_cargo_type or "Груз"
+    weight = float(parsed["weight"])
+    volume = float(parsed["volume_m3"]) if parsed.get("volume_m3") is not None else None
+    stated_price = int(parsed["price"]) if parsed.get("price") else None
+
+    estimated_price: int | None = None
+    try:
+        estimate = await _estimate_recommended_rate(
+            route_geo.origin.name,
+            route_geo.destination.name,
+            weight,
+            body_type,
+        )
+        raw_price = estimate.get("price")
+        if isinstance(raw_price, int) and raw_price > 0:
+            estimated_price = raw_price
+    except Exception:
+        estimated_price = None
+
+    ai_score, ai_verdict, ai_comment, price_source = _build_ai_score_preview(
+        stated_price=stated_price,
+        estimated_price=estimated_price,
+        has_volume=volume is not None,
+        cargo_type=cargo_type,
+        body_type=body_type,
+    )
+
+    preview = ManualCargoParsedPreview(
+        from_city=route_geo.origin.name,
+        to_city=route_geo.destination.name,
+        body_type=body_type,
+        cargo_type=cargo_type,
+        weight=weight,
+        volume_m3=volume,
+        price=stated_price or estimated_price,
+        load_date=parsed.get("load_date"),
+        load_time=parsed.get("load_time"),
+        price_source=price_source,
+        ai_score=ai_score,
+        ai_verdict=ai_verdict,
+        ai_comment=ai_comment,
+    )
+    return preview, route_geo, estimated_price
 
 
 async def _estimate_recommended_rate(
@@ -309,6 +463,16 @@ async def _resolve_manual_create_payload(body: ManualCargoCreate) -> dict:
         "payment_terms": payment_terms,
         "raw_text": None,
     }
+
+
+@router.post("/api/v1/cargos/manual/preview", response_model=ManualCargoPreviewResponse)
+async def preview_manual_cargo(
+    body: ManualCargoPreviewRequest,
+    tma_user: TelegramTMAUser = Depends(get_required_tma_user),
+) -> ManualCargoPreviewResponse:
+    del tma_user
+    preview, _route_geo, _estimated = await _build_smart_preview(body.raw_text)
+    return ManualCargoPreviewResponse(parsed=preview)
 
 
 @router.post("/api/v1/cargos/manual", response_model=ManualCargoResponse)

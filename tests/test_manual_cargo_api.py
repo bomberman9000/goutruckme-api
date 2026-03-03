@@ -236,6 +236,50 @@ def test_create_manual_cargo_from_raw_text_extracts_volume_and_estimates_price(m
     assert dispatched == [1]
 
 
+def test_preview_manual_cargo_returns_ai_score(monkeypatch):
+    app = FastAPI()
+    app.include_router(cargos_api.router)
+
+    async def _parse(_text: str):
+        return {
+            "from_city": "Самара",
+            "to_city": "Казань",
+            "weight": 20.0,
+            "volume_m3": 86.0,
+            "cargo_type": "тент",
+            "load_date": "2026-03-04",
+        }
+
+    async def _estimate(origin: str, destination: str, weight: float, body_type: str):
+        assert origin == "Самара"
+        assert destination == "Казань"
+        assert weight == 20.0
+        assert body_type == "тент"
+        return {"price": 145000, "source": "market", "details": "ok"}
+
+    monkeypatch.setattr(cargos_api, "get_geo_service", lambda: _FakeGeoService())
+    monkeypatch.setattr(cargos_api, "parse_cargo_nlp", _parse)
+    monkeypatch.setattr(cargos_api, "_estimate_recommended_rate", _estimate)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/cargos/manual/preview",
+        headers=_build_tma_header(888),
+        json={"raw_text": "Самара Казань 20т 86м3 тент"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["parsed"]["from_city"] == "Самара"
+    assert body["parsed"]["to_city"] == "Казань"
+    assert body["parsed"]["weight"] == 20.0
+    assert body["parsed"]["volume_m3"] == 86.0
+    assert body["parsed"]["price"] == 145000
+    assert body["parsed"]["ai_verdict"] == "green"
+    assert body["parsed"]["ai_score"] >= 75
+
+
 def test_recommended_rate_uses_geo_and_smart_estimate(monkeypatch):
     app = FastAPI()
     app.include_router(cargos_api.router)
