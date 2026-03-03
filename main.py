@@ -111,8 +111,9 @@ async def lifespan(app: FastAPI):
             await dp.start_polling(
                 bot,
                 allowed_updates=["message", "callback_query", "inline_query", "pre_checkout_query"],
+                handle_signals=False,
             )
-        except Exception as e:
+        except BaseException as e:
             logger.error("Polling crashed: %s", e, exc_info=True)
 
     polling_task = asyncio.create_task(_run_polling())
