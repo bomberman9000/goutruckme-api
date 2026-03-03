@@ -19,16 +19,21 @@ PHONE_RE = re.compile(
 )
 INN_RE = re.compile(r"\b\d{10}(?:\d{2})?\b")
 ROUTE_RE = re.compile(
-    r"(?P<from>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ.\- '’ʻ`]{2,40}?)\s*(?:[)\]}])?\s*(?:>{2,}|->|=>|→|➞|➡|—|–|_{2,}|\s-\s|\s/\s|\s\|\s)\s*(?P<to>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ.\- '’ʻ`]{2,40})",
+    r"(?P<from>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ.,\- '’ʻ`]{2,60}?)\s*(?:[)\]}])?\s*(?:>{2,}|->|=>|→|➞|➡|—|–|_{2,}|\s-\s|\s/\s|\s\|\s)\s*(?P<to>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ.,\- '’ʻ`]{2,60})",
     re.IGNORECASE,
 )
 ROUTE_COMPACT_RE = re.compile(
     r"\b(?P<from>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ'’ʻ`]{3,20})-(?P<to>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ'’ʻ`]{3,20})\b",
     re.IGNORECASE,
 )
+ROUTE_UZ_FROM_SUFFIX_RE = re.compile(
+    r"\b(?P<from>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ'’ʻ`]{3,25}?)\s*(?:dan|den|дан)\s+"
+    r"(?P<to>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ'’ʻ`]{3,25})\b",
+    re.IGNORECASE,
+)
 ROUTE_UZ_SUFFIX_RE = re.compile(
-    r"\b(?P<from>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ'’ʻ`]{3,25}?)(?:dan|den|дан)\s+"
-    r"(?P<to>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ'’ʻ`]{3,25}?)(?:ga|qa|ka|га|қа|ка)\b",
+    r"\b(?P<from>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ'’ʻ`]{3,25}?)\s*(?:dan|den|дан)\s+"
+    r"(?P<to>[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ'’ʻ`]{3,25}?)\s*(?:ga|qa|ka|га|қа|ка)\b",
     re.IGNORECASE,
 )
 WEIGHT_RE = re.compile(
@@ -36,11 +41,11 @@ WEIGHT_RE = re.compile(
     re.IGNORECASE,
 )
 PRICE_RE = re.compile(
-    r"(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{2,8}(?:[.,]\d+)?)\s*(?P<suffix>к(?![A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ])|k(?![A-Za-z])|тыс|тыс\.|млн|мил|₽|р|руб(?:лей)?|\$|usd|дол(?:лар(?:ов|а)?)?)",
+    r"(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{2,8}(?:[.,]\d+)?)\s*(?P<suffix>(?:к(?![A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ])|k(?![A-Za-z])|тыс\b|тыс\.(?!\w)|млн\b|мил\b|₽|(?:р|руб(?:лей)?)\b|\$|usd\b|дол(?:лар(?:ов|а)?)?\b))",
     re.IGNORECASE,
 )
 PRICE_BY_KEYWORD_RE = re.compile(
-    r"(?:фрахт|ставка|цена|оплата)\s*[:=]?\s*(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{5,9}(?:[.,]\d+)?)(?:\s*(?P<suffix>к(?![A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ])|k(?![A-Za-z])|тыс|тыс\.|млн|мил|₽|р|руб(?:лей)?|\$|usd|дол(?:лар(?:ов|а)?)?))?",
+    r"(?:фрахт|ставка|цена|оплата)\s*[:=]?\s*(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{5,9}(?:[.,]\d+)?)(?:\s*(?P<suffix>(?:к(?![A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ])|k(?![A-Za-z])|тыс\b|тыс\.(?!\w)|млн\b|мил\b|₽|(?:р|руб(?:лей)?)\b|\$|usd\b|дол(?:лар(?:ов|а)?)?\b)))?",
     re.IGNORECASE,
 )
 PRICE_BY_NDS_RE = re.compile(
@@ -289,6 +294,8 @@ CITY_ALIASES = {
     "ташкенд": "Ташкент",
     "тошкент": "Ташкент",
     "toshkent": "Ташкент",
+    "шимкент": "Шымкент",
+    "чимкент": "Шымкент",
     "сырдаря": "Сырдарья",
     "сирдарё": "Сырдарья",
     "бухоро": "Бухара",
@@ -296,6 +303,8 @@ CITY_ALIASES = {
     "самарқанд": "Самарканд",
     "самарканд": "Самарканд",
     "samarqand": "Самарканд",
+    "навоий": "Навои",
+    "navoiy": "Навои",
     "жиззах": "Джизак",
     "карши": "Карши",
     "нукус": "Нукус",
@@ -443,7 +452,8 @@ class ParsedCargo:
 
 
 def _normalize_city(value: str) -> str:
-    words = [w.strip(".,:;()[]{}") for w in value.replace("ё", "е").replace("Ё", "Е").split()]
+    head = (value or "").split(",", 1)[0]
+    words = [w.strip(".,:;()[]{}") for w in head.replace("ё", "е").replace("Ё", "Е").split()]
     words = [w for w in words if w]
     while words and words[0].lower() in CITY_STOP_WORDS:
         words.pop(0)
@@ -612,7 +622,10 @@ def _parse_body_type(text_lc: str) -> str | None:
 def _parse_route(text: str) -> tuple[str, str] | tuple[None, None]:
     route_text = re.sub(r"[\U0001F1E6-\U0001F1FF]", "", text or "")
     route_text = _ROUTE_NOISE_RE.sub(" ", route_text)
+    route_text = route_text.replace('"', " ")
     route_text = re.sub(r"[ \t]+", " ", route_text).strip()
+
+    candidates: list[tuple[int, str, str]] = []
 
     for route in ROUTE_RE.finditer(route_text):
         from_city = _normalize_city(route.group("from"))
@@ -623,7 +636,7 @@ def _parse_route(text: str) -> tuple[str, str] | tuple[None, None]:
             if from_key not in CITY_ALIASES and to_key not in CITY_ALIASES:
                 continue
         if from_city and to_city and not _is_invalid_city_name(from_city) and not _is_invalid_city_name(to_city):
-            return from_city, to_city
+            candidates.append((route.start(), from_city, to_city))
 
     for compact in ROUTE_COMPACT_RE.finditer(route_text):
         compact_token = f"{compact.group('from')}-{compact.group('to')}"
@@ -633,13 +646,24 @@ def _parse_route(text: str) -> tuple[str, str] | tuple[None, None]:
         from_city = _normalize_city(compact.group("from"))
         to_city = _normalize_city(compact.group("to"))
         if from_city and to_city and not _is_invalid_city_name(from_city) and not _is_invalid_city_name(to_city):
-            return from_city, to_city
+            candidates.append((compact.start(), from_city, to_city))
+
+    for suffix_route in ROUTE_UZ_FROM_SUFFIX_RE.finditer(route_text):
+        from_city = _normalize_city(suffix_route.group("from"))
+        to_city = _normalize_city(suffix_route.group("to"))
+        if from_city and to_city and not _is_invalid_city_name(from_city) and not _is_invalid_city_name(to_city):
+            candidates.append((suffix_route.start(), from_city, to_city))
 
     for suffix_route in ROUTE_UZ_SUFFIX_RE.finditer(route_text):
         from_city = _normalize_city(suffix_route.group("from"))
         to_city = _normalize_city(suffix_route.group("to"))
         if from_city and to_city and not _is_invalid_city_name(from_city) and not _is_invalid_city_name(to_city):
-            return from_city, to_city
+            candidates.append((suffix_route.start(), from_city, to_city))
+
+    if candidates:
+        candidates.sort(key=lambda item: item[0])
+        _, from_city, to_city = candidates[0]
+        return from_city, to_city
 
     return None, None
 

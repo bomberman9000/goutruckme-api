@@ -346,6 +346,39 @@ def test_parse_price_ignores_million_with_payment_transfer_hints():
     assert parsed.rate_rub is None
 
 
+def test_parse_cargo_message_prefers_earliest_comma_route_over_customs_line():
+    text = (
+        "#EGS08629\n"
+        "Долгопрудный, Московская область, Россия → Ташкент, Узбекистан\n"
+        "Затаможка - Черная Грязь\n"
+        "Реф 12т\n"
+        "55 млн перечисления\n"
+    )
+    parsed = parse_cargo_message(text, keywords=["реф", "груз"])
+    assert parsed is not None
+    assert parsed.from_city == "Долгопрудный"
+    assert parsed.to_city == "Ташкент"
+    assert parsed.rate_rub is None
+
+
+def test_parse_cargo_message_prefers_earlier_uz_suffix_route_over_later_arrow():
+    text = (
+        'Srochna\n'
+        'Mersin "tarsus" dan\n'
+        'Toshkent\n'
+        'Mandarin yuklanadi\n'
+        '22 tonna\n'
+        '1ta ref kerak\n'
+        '8.500$....\n'
+        'ЧИМКЕНТ >>>>НАВОИЙ'
+    )
+    parsed = parse_cargo_message(text, keywords=["реф"])
+    assert parsed is not None
+    assert parsed.from_city == "Tarsus"
+    assert parsed.to_city == "Ташкент"
+    assert parsed.rate_rub == 850000
+
+
 def test_parse_route_with_apostrophe_city_names():
     text = "Toshkent-Farg'ona 20t 120k +79991112233"
     parsed = parse_cargo_message(text, keywords=["реф"])
