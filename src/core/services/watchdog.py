@@ -163,12 +163,24 @@ class BotWatchdog:
 
         # Telegram API
         try:
+            idle_seconds = (
+                datetime.utcnow() - self.last_activity
+            ).total_seconds()
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(
                     f"https://api.telegram.org/bot{settings.bot_token}/getMe"
                 )
                 if resp.status_code == 200:
                     results["checks"]["telegram"] = "✅ OK"
+                elif resp.status_code == 401:
+                    if idle_seconds <= 900 and self.is_healthy:
+                        results["checks"]["telegram"] = (
+                            "ℹ️ Bot API probe returned 401, but polling activity is healthy"
+                        )
+                    else:
+                        results["checks"]["telegram"] = (
+                            "ℹ️ Bot API probe returned 401"
+                        )
                 else:
                     results["checks"]["telegram"] = (
                         f"⚠️ Status {resp.status_code}"
