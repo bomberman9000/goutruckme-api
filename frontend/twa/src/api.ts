@@ -159,17 +159,25 @@ export async function fetchFeed(params: {
   if (params.body_type) query.set("body_type", params.body_type);
   if (params.load_date) query.set("load_date", params.load_date);
 
+  const providedInitData = typeof params.initData === "string" ? params.initData.trim() : "";
+  const resolvedInitData = providedInitData || (await resolveOptionalInitData(1, 120)) || "";
   const headers: Record<string, string> = {};
-  if (params.initData) {
-    headers.Authorization = `tma ${params.initData}`;
+  if (resolvedInitData) {
+    headers.Authorization = `tma ${resolvedInitData}`;
   }
 
-  const response = await fetch(`/api/v1/feed?${query.toString()}`, {
+  const url = `/api/v1/feed?${query.toString()}`;
+  let response = await fetch(url, {
     credentials: "include",
     headers,
   });
+  if (response.status === 401 && headers.Authorization) {
+    response = await fetch(url, {
+      credentials: "include",
+    });
+  }
   if (!response.ok) {
-    throw new Error(`Feed request failed: ${response.status}`);
+    throw await buildApiError(response, "Feed request failed");
   }
   return (await response.json()) as FeedResponse;
 }

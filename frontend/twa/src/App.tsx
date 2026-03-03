@@ -266,7 +266,16 @@ export function App() {
       setCursor(data.next_cursor);
       setHasMore(data.has_more);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      const message = err instanceof Error ? err.message : "Unknown error";
+      if (
+        /401/.test(message)
+        || /Missing Authorization/i.test(message)
+        || /Invalid Telegram initData/i.test(message)
+      ) {
+        setError("Не удалось подтвердить Telegram-сессию. Откройте Mini App заново из бота.");
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
