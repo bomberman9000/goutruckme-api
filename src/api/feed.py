@@ -20,6 +20,7 @@ router = APIRouter(tags=["feed"])
 class FeedItem(BaseModel):
     id: int
     stream_entry_id: str
+    source: str
     from_city: str | None
     to_city: str | None
     from_lat: float | None = None
@@ -50,6 +51,7 @@ class FeedItem(BaseModel):
     freshness: str | None = None
     suggested_response: str | None = None
     reply_link: str | None = None
+    external_url: str | None = None
     phone_blacklisted: bool = False
     ati_link: str | None = None
     payment_status: str | None = None
@@ -122,6 +124,17 @@ def _extract_distance_km(details_json: str | None) -> int | None:
         return distance_km
     if isinstance(distance_km, float) and distance_km > 0:
         return int(round(distance_km))
+    return None
+
+
+def _extract_external_url(details_json: str | None) -> str | None:
+    payload = _extract_details_payload(details_json)
+    value = payload.get("external_url")
+    if not isinstance(value, str):
+        return None
+    url = value.strip()
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
     return None
 
 
@@ -340,9 +353,12 @@ async def get_feed(
         manual_cargo = manual_cargo_map.get(_extract_manual_cargo_id(getattr(item, "details_json", None)) or -1)
         owner_company = company_map.get(int(manual_cargo.owner_id)) if manual_cargo else None
         payment_status = _payment_status_value(getattr(manual_cargo, "payment_status", None)) if manual_cargo else None
+        external_url = _extract_external_url(getattr(item, "details_json", None))
+        reply_link = external_url or (f"tel:{item.phone}" if can_view_contact and item.phone else None)
         feed_items.append(FeedItem(
             id=item.id,
             stream_entry_id=item.stream_entry_id,
+            source=item.source,
             from_city=item.from_city,
             to_city=item.to_city,
             from_lat=item.from_lat,
@@ -372,7 +388,8 @@ async def get_feed(
             distance_km=dist,
             freshness=_freshness(item.created_at),
             suggested_response=item.suggested_response if can_view_contact else None,
-            reply_link=f"tel:{item.phone}" if can_view_contact and item.phone else None,
+            reply_link=reply_link,
+            external_url=external_url,
             phone_blacklisted=item.phone_blacklisted,
             ati_link=f"https://ati.su/firms?inn={item.inn}" if item.inn else None,
             payment_status=payment_status,
@@ -396,6 +413,7 @@ async def get_feed(
 class CargoDetailResponse(BaseModel):
     """Full enriched cargo detail."""
     id: int
+    source: str
     from_city: str | None
     to_city: str | None
     body_type: str | None
@@ -420,6 +438,7 @@ class CargoDetailResponse(BaseModel):
     freshness: str | None = None
     suggested_response: str | None = None
     reply_link: str | None = None
+    external_url: str | None = None
     phone_blacklisted: bool = False
     ati_link: str | None = None
     payment_status: str | None = None
@@ -460,9 +479,12 @@ async def get_cargo_detail(
         distance_hint=distance_hint,
     )
     payment_status = _payment_status_value(getattr(manual_cargo, "payment_status", None)) if manual_cargo else None
+    external_url = _extract_external_url(getattr(event, "details_json", None))
+    reply_link = external_url or (f"tel:{event.phone}" if can_view and event.phone else None)
 
     return CargoDetailResponse(
         id=event.id,
+        source=event.source,
         from_city=event.from_city,
         to_city=event.to_city,
         body_type=event.body_type,
@@ -486,7 +508,8 @@ async def get_cargo_detail(
         distance_km=dist,
         freshness=_freshness(event.created_at),
         suggested_response=event.suggested_response if can_view else None,
-        reply_link=f"tel:{event.phone}" if can_view and event.phone else None,
+        reply_link=reply_link,
+        external_url=external_url,
         phone_blacklisted=event.phone_blacklisted,
         ati_link=f"https://ati.su/firms?inn={event.inn}" if event.inn else None,
         payment_status=payment_status,

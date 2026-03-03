@@ -367,8 +367,17 @@ export function App() {
 
   function onCallClick(item: FeedItem) {
     void trackClick(item.id).catch(() => {});
-    if (item.can_view_contact && item.phone) {
-      window.location.href = `tel:${item.phone}`;
+    if (item.reply_link) {
+      if (item.reply_link.startsWith("http://") || item.reply_link.startsWith("https://")) {
+        const tg = (window as any)?.Telegram?.WebApp;
+        if (tg?.openLink) {
+          tg.openLink(item.reply_link);
+        } else {
+          window.open(item.reply_link, "_blank", "noopener,noreferrer");
+        }
+      } else {
+        window.location.href = item.reply_link;
+      }
       return;
     }
     handleBuyPremium("Номер скрыт. Premium открывает полный контакт.");
@@ -1003,7 +1012,7 @@ export function App() {
 
           <div className="card-actions">
             <button className="action-btn primary" onClick={() => onCallClick(item)}>
-              {item.can_view_contact && item.phone ? `📞 ${item.phone}` : "📞 Premium"}
+              {item.external_url ? "🔗 Открыть на Avito" : item.can_view_contact && item.phone ? `📞 ${item.phone}` : "📞 Premium"}
             </button>
             {item.suggested_response && (
               <button className="action-btn reply" onClick={() => onReplyClick(item)}>

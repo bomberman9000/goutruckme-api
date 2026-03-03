@@ -1,0 +1,14 @@
+FROM mcr.microsoft.com/playwright/python:v1.58.0-noble
+
+WORKDIR /app
+
+RUN pip install uv
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+COPY . .
+
+CMD ["python", "-m", "src.parser_bot.avito_producer"]

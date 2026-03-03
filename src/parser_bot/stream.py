@@ -14,6 +14,7 @@ class StreamMessage:
     chat_id: str
     message_id: int
     source: str
+    external_url: str | None
     received_at: int
     retry_count: int
 
@@ -31,19 +32,23 @@ class RedisLogisticsStream:
         chat_id: str,
         message_id: int,
         source: str,
+        external_url: str | None = None,
         received_at: int,
         retry_count: int = 0,
     ) -> str:
+        fields = {
+            "raw_text": raw_text,
+            "chat_id": str(chat_id),
+            "message_id": str(int(message_id)),
+            "source": source,
+            "received_at": str(int(received_at)),
+            "retry_count": str(int(retry_count)),
+        }
+        if external_url:
+            fields["external_url"] = str(external_url)
         return await self.redis.xadd(
             self.stream_name,
-            {
-                "raw_text": raw_text,
-                "chat_id": str(chat_id),
-                "message_id": str(int(message_id)),
-                "source": source,
-                "received_at": str(int(received_at)),
-                "retry_count": str(int(retry_count)),
-            },
+            fields,
             maxlen=self.maxlen,
             approximate=True,
         )
@@ -113,6 +118,7 @@ class RedisLogisticsStream:
             chat_id=str(fields.get("chat_id") or "unknown"),
             message_id=self._to_int(fields.get("message_id"), default=0),
             source=str(fields.get("source") or "unknown"),
+            external_url=str(fields.get("external_url") or "").strip() or None,
             received_at=self._to_int(fields.get("received_at"), default=0),
             retry_count=self._to_int(fields.get("retry_count"), default=0),
         )

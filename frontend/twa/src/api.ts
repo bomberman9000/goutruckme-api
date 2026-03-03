@@ -1,6 +1,7 @@
 export type FeedItem = {
   id: number;
   stream_entry_id: string;
+  source: string;
   from_city: string | null;
   to_city: string | null;
   from_lat: number | null;
@@ -28,6 +29,7 @@ export type FeedItem = {
   is_hot_deal: boolean;
   suggested_response: string | null;
   reply_link: string | null;
+  external_url: string | null;
   phone_blacklisted: boolean;
   rate_per_km: number | null;
   distance_km: number | null;

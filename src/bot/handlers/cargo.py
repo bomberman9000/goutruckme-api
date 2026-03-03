@@ -545,6 +545,8 @@ async def restore_cargo(cb: CallbackQuery):
             load_date=datetime.now(),
             load_time=cargo.load_time,
             comment=cargo.comment,
+            external_url=cargo.external_url,
+            source_platform=cargo.source_platform,
             status=CargoStatus.NEW,
             tracking_enabled=False,
         )
@@ -875,6 +877,7 @@ async def cargo_confirm_yes(cb: CallbackQuery, state: FSMContext):
             load_date=load_date,
             load_time=data.get('load_time'),
             comment=data.get('comment'),
+            source_platform="tg-bot",
         )
         session.add(cargo)
         await session.commit()
@@ -909,6 +912,7 @@ async def cargo_confirm_no(cb: CallbackQuery, state: FSMContext):
     await cb.message.edit_text("❌ Отменено", reply_markup=main_menu())
     await cb.answer()
 
+
 def _nlp_confirm_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Создать", callback_data="nlp_cargo_confirm"),
@@ -927,12 +931,12 @@ async def nlp_cargo_detect(message: Message, state: FSMContext):
         return
     logger.info("NLP parsed: %s", parsed)
     if not parsed:
-        return  # let other handlers deal with it
+        return
 
-    # If price not given, fetch estimate
     if not parsed.get("price"):
         try:
             from src.core.ai import estimate_price_smart
+
             est = await estimate_price_smart(
                 parsed["from_city"], parsed["to_city"], parsed["weight"], parsed.get("cargo_type", "тент")
             )
@@ -942,16 +946,16 @@ async def nlp_cargo_detect(message: Message, state: FSMContext):
         except Exception as e:
             logger.warning("estimate_price_smart error: %s", e)
 
-    # Build preview
     weight_display = parsed["weight"]
-    load_date_str = ""
     if parsed.get("load_date"):
         from datetime import datetime as _dt
+
         load_date_str = _dt.strptime(parsed["load_date"], "%Y-%m-%d").strftime("%d.%m.%Y")
         if parsed.get("load_time"):
             load_date_str += f" в {parsed['load_time']}"
     else:
         from datetime import datetime as _dt
+
         load_date_str = _dt.now().strftime("%d.%m.%Y")
         parsed.setdefault("load_date", _dt.now().strftime("%Y-%m-%d"))
 
@@ -1030,7 +1034,6 @@ async def nlp_cargo_cancel(cb: CallbackQuery, state: FSMContext):
     await state.clear()
     await cb.message.edit_text("❌ Отменено", reply_markup=main_menu())
     await cb.answer()
-
 
 @router.message(F.text.startswith("/cargo_"))
 async def show_cargo(message: Message):

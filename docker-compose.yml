@@ -86,6 +86,27 @@ services:
       - backend-network
     restart: on-failure
 
+  avito-producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.avito
+    command: ["python", "-m", "src.parser_bot.avito_producer"]
+    profiles: ["parser", "parser-v2"]
+    env_file:
+      - .env
+    environment:
+      AVITO_ENABLED: ${AVITO_ENABLED:-false}
+      AVITO_POLL_INTERVAL_MIN: ${AVITO_POLL_INTERVAL_MIN:-15}
+      AVITO_MAX_PAGES_PER_RUN: ${AVITO_MAX_PAGES_PER_RUN:-3}
+      PARSER_KEYWORDS: ${PARSER_KEYWORDS:-груз,погрузка,выгрузка,тент,реф,ндс,ставка,догруз,фрахт}
+      PARSER_STREAM_NAME: ${PARSER_STREAM_NAME:-logistics_stream}
+      PARSER_STREAM_MAXLEN: ${PARSER_STREAM_MAXLEN:-200000}
+    depends_on:
+      - redis
+    networks:
+      - backend-network
+    restart: always
+
   redis:
     image: redis:alpine
     volumes:

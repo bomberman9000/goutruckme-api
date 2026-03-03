@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -13,6 +13,7 @@ class SharedOrderSchema(BaseModel):
     from_city: str | None = None
     to_city: str | None = None
     cargo_type: str | None = None
+    body_type: str | None = None
     weight_t: float | None = None
     price_rub: int | None = None
     load_date: str | None = None

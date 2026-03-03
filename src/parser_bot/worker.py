@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
+import hashlib
 import json
 import logging
 import re
@@ -132,6 +133,7 @@ def _build_sync_payload(
     if settings.parser_default_user_id:
         order["user_id"] = int(settings.parser_default_user_id)
     if parsed.body_type:
+        order["cargo_type"] = parsed.body_type
         order["body_type"] = parsed.body_type
         order["required_body_type"] = parsed.body_type
     if parsed.inn:
@@ -191,6 +193,8 @@ def _build_sync_payload(
         "is_hot_deal": parsed.is_hot_deal,
         "phone_blacklisted": parsed.phone_blacklisted,
     }
+    if message.external_url:
+        metadata["external_url"] = message.external_url
     if parsed.from_lat is not None and parsed.from_lon is not None:
         metadata["pickup_lat"] = parsed.from_lat
         metadata["pickup_lon"] = parsed.from_lon
@@ -203,7 +207,7 @@ def _build_sync_payload(
         metadata["trust_comment"] = trust.comment
         metadata["trust_provider"] = trust.provider
 
-    return {
+    payload = {
         "event_id": f"parser-{uuid.uuid4().hex}",
         "event_type": "order.created",
         "source": source_name,
@@ -211,6 +215,9 @@ def _build_sync_payload(
         "metadata": metadata,
         "order": order,
     }
+    if message.external_url:
+        payload["action_link"] = message.external_url
+    return payload
 
 
 def _normalize_source_name(value: str) -> str:
@@ -455,12 +462,15 @@ async def _save_ingest_event(
     status: str,
     parse_method: str | None = None,
     error: str | None = None,
+    extra_details: dict[str, Any] | None = None,
 ) -> None:
     details: dict[str, Any] = {
         "matched_keywords": parsed.matched_keywords if parsed else [],
         "received_at": message.received_at or int(time.time()),
         "retry_count": message.retry_count,
     }
+    if message.external_url:
+        details["external_url"] = message.external_url
     if parse_method:
         details["parse_method"] = parse_method
     if trust:
@@ -472,6 +482,8 @@ async def _save_ingest_event(
         }
     if parsed and parsed.route_distance_km:
         details["distance_km"] = int(parsed.route_distance_km)
+    if extra_details:
+        details.update(extra_details)
 
     from_coords = None
     to_coords = None
@@ -519,7 +531,7 @@ async def _save_ingest_event(
         is_spam=is_spam,
         status=status,
         error=(error or "")[:255] or None,
-        raw_text=message.raw_text[:4000],
+        raw_text=(message.raw_text[:200] if parsed else message.raw_text[:4000]),
         details_json=json.dumps(details, ensure_ascii=False),
     )
 
@@ -531,9 +543,33 @@ async def _save_ingest_event(
         logger.warning("ingest_event save skipped id=%s error=%s", message.entry_id, str(exc)[:160])
 
 
-async def _push_to_api(http_client: httpx.AsyncClient, sync_url: str, payload: dict[str, Any]) -> None:
+async def _push_to_api(
+    http_client: httpx.AsyncClient,
+    sync_url: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
     response = await http_client.post(sync_url, headers=_internal_headers(), json=payload)
     response.raise_for_status()
+    try:
+        data = response.json()
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _extract_cargo_id(sync_result: dict[str, Any]) -> int | None:
+    try:
+        value = sync_result.get("cargo_id")
+        if value is None:
+            return None
+        cargo_id = int(value)
+    except (TypeError, ValueError):
+        return None
+    return cargo_id if cargo_id > 0 else None
+
+
+def _external_url_dedupe_key(url: str) -> str:
+    return f"parser:url:{hashlib.sha1(url.encode('utf-8')).hexdigest()}"
 
 
 async def _process_message(
@@ -552,6 +588,8 @@ async def _process_message(
     parse_method: str | None = None
     trust: ScoreResult | None = None
     is_spam = False
+    content_key: str | None = None
+    url_dedupe_key: str | None = None
 
     try:
         text = (message.raw_text or "").strip()
@@ -759,6 +797,25 @@ async def _process_message(
             )
             return
 
+        if message.external_url:
+            url_dedupe_key = _external_url_dedupe_key(message.external_url)
+            url_is_new = await stream.redis.set(url_dedupe_key, "1", ex=dedupe_ttl, nx=True)
+            if not url_is_new:
+                await _save_ingest_event(
+                    message=message,
+                    parsed=parsed,
+                    trust=None,
+                    is_spam=False,
+                    status="duplicate",
+                    parse_method=parse_method,
+                )
+                logger.info(
+                    "external-url dedupe hit id=%s url=%s",
+                    message.entry_id,
+                    message.external_url,
+                )
+                return
+
         from src.core.services.responses import build_default_response
         from src.core.services.phone_blacklist import is_phone_blacklisted
 
@@ -790,8 +847,6 @@ async def _process_message(
                 trust.verdict,
             )
 
-        if trust is None:
-            trust = ScoreResult(inn=None, score=60, verdict="yellow", comment="no_inn", provider="default", details={})
         is_spam = _is_spam(trust)
         if is_spam:
             await _save_ingest_event(
@@ -814,7 +869,8 @@ async def _process_message(
         sync_payload = _build_sync_payload(parsed, message, trust=trust)
 
         try:
-            await _push_to_api(http_client, sync_url, sync_payload)
+            sync_result = await _push_to_api(http_client, sync_url, sync_payload)
+            cargo_id = _extract_cargo_id(sync_result)
             await _save_ingest_event(
                 message=message,
                 parsed=parsed,
@@ -822,23 +878,30 @@ async def _process_message(
                 is_spam=False,
                 status="synced",
                 parse_method=parse_method,
+                extra_details={"cargo_id": cargo_id} if cargo_id else None,
             )
             logger.info(
-                "synced id=%s route=%s->%s inn=%s score=%s",
+                "synced id=%s route=%s->%s cargo_id=%s inn=%s score=%s",
                 message.entry_id,
                 parsed.from_city,
                 parsed.to_city,
+                cargo_id or "n/a",
                 parsed.inn or "n/a",
                 trust.score if trust else "n/a",
             )
         except Exception as exc:
             await stream.redis.delete(dedupe_key)
+            if content_key:
+                await stream.redis.delete(content_key)
+            if url_dedupe_key:
+                await stream.redis.delete(url_dedupe_key)
             if message.retry_count < max_retries:
                 await stream.add_raw_message(
                     raw_text=message.raw_text,
                     chat_id=message.chat_id,
                     message_id=message.message_id,
                     source=message.source,
+                    external_url=message.external_url,
                     received_at=message.received_at or int(time.time()),
                     retry_count=message.retry_count + 1,
                 )

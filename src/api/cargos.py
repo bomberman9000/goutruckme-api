@@ -270,6 +270,7 @@ async def create_manual_cargo(
             load_date=datetime.combine(body.load_date, datetime.min.time()),
             load_time=_normalize_text(body.load_time),
             comment=description,
+            source_platform="manual_client",
             status=CargoStatus.NEW,
             payment_status=CargoPaymentStatus.UNSECURED,
         )

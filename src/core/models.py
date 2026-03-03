@@ -102,7 +102,9 @@ class Cargo(Base):
     load_date: Mapped[datetime] = mapped_column(DateTime)
     load_time: Mapped[str | None] = mapped_column(String(10), nullable=True)  # формат "HH:MM"
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
+    external_url: Mapped[str | None] = mapped_column(String(500), nullable=True, index=True)
+    source_platform: Mapped[str] = mapped_column(String(64), default="manual", index=True)
+
     status: Mapped[CargoStatus] = mapped_column(Enum(CargoStatus), default=CargoStatus.NEW)
     tracking_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

@@ -93,6 +93,9 @@ class Settings(BaseSettings):
     parser_worker_enable_inn_moderation: bool = False
     parser_worker_inn_timeout_sec: int = 8
     parser_manual_review_alert_threshold: int = 20
+    avito_enabled: bool = False
+    avito_poll_interval_min: int = 15
+    avito_max_pages_per_run: int = 3
 
     # Parser LLM extractor
     parser_use_llm: bool = False
