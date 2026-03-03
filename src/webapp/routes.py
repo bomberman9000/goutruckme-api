@@ -50,6 +50,37 @@ def _get_webapp_url() -> str:
     return "/webapp"
 
 
+async def _ensure_webapp_user(session, tma_user: TelegramTMAUser) -> User:
+    user_id = int(tma_user.user_id)
+    user = await session.scalar(
+        select(User).where(User.id == user_id)
+    )
+    if user:
+        return user
+
+    raw = tma_user.raw or {}
+    username = raw.get("username")
+    first_name = (raw.get("first_name") or "").strip()
+    last_name = (raw.get("last_name") or "").strip()
+    full_name = " ".join(part for part in (first_name, last_name) if part).strip()
+    if not full_name:
+        full_name = (username or "").strip() or f"User {user_id}"
+
+    user = User(
+        id=user_id,
+        username=username,
+        full_name=full_name,
+    )
+    session.add(user)
+
+    wallet = await session.get(UserWallet, user_id)
+    if not wallet:
+        session.add(UserWallet(user_id=user_id))
+
+    await session.flush()
+    return user
+
+
 # --------------- HTML page ---------------
 
 @router.get("/webapp", response_class=HTMLResponse)
@@ -235,11 +266,7 @@ async def webapp_profile(
     user_id = tma_user.user_id
 
     async with async_session() as session:
-        user = await session.scalar(
-            select(User).where(User.id == user_id)
-        )
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+        user = await _ensure_webapp_user(session, tma_user)
 
         company = await session.scalar(
             select(CompanyDetails).where(

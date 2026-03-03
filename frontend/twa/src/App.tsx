@@ -61,6 +61,7 @@ type ActionGuide = {
 } | null;
 
 const BODY_TYPES = ["тент", "рефрижератор", "трал", "борт", "контейнер", "изотерм"];
+const BOT_HOME_LINK = "https://t.me/gotruck_ai_bot";
 
 function trustStars(score: number | null): string {
   if (score == null) return "☆☆☆";
@@ -331,6 +332,32 @@ export function App() {
       setProfileLoading(false);
     }
   }, []);
+
+  const handleRefreshAccess = useCallback(() => {
+    const tg = (window as any)?.Telegram?.WebApp;
+    try {
+      tg?.ready?.();
+      tg?.expand?.();
+    } catch {
+      // ignore bridge quirks
+    }
+
+    const liveInitData = typeof tg?.initData === "string" ? tg.initData.trim() : "";
+    if (liveInitData) {
+      void loadProfileSummary();
+      return;
+    }
+
+    if (tg?.close) {
+      tg.close();
+      return;
+    }
+    if (tg?.openTelegramLink) {
+      tg.openTelegramLink(BOT_HOME_LINK);
+      return;
+    }
+    window.open(BOT_HOME_LINK, "_blank");
+  }, [loadProfileSummary]);
 
   const loadMatchSummary = useCallback(async () => {
     setMatchSummaryError(null);
@@ -1190,7 +1217,7 @@ export function App() {
               <>
                 <div className="cabinet-meta">{profileError || "Кабинет недоступен"}</div>
                 {profileError && (
-                  <button className="action-btn" onClick={() => void loadProfileSummary()}>
+                  <button className="action-btn" onClick={handleRefreshAccess}>
                     Обновить доступ
                   </button>
                 )}
@@ -1219,7 +1246,7 @@ export function App() {
               <>
                 <div className="cabinet-meta">{profileLoading ? "Загружаем…" : "Нет данных"}</div>
                 {profileError && !profileLoading && (
-                  <button className="action-btn" onClick={() => void loadProfileSummary()}>
+                  <button className="action-btn" onClick={handleRefreshAccess}>
                     Обновить доступ
                   </button>
                 )}
@@ -1474,7 +1501,7 @@ export function App() {
           <div className="error">
             {profileError}
             <div style={{ marginTop: "10px" }}>
-              <button className="action-btn" onClick={() => void loadProfileSummary()}>
+              <button className="action-btn" onClick={handleRefreshAccess}>
                 Обновить доступ
               </button>
             </div>
