@@ -47,6 +47,20 @@ PRICE_BY_NDS_RE = re.compile(
     r"(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{5,9}(?:[.,]\d+)?)\s*(?:с|без)\s*ндс",
     re.IGNORECASE,
 )
+NON_RUB_MILLION_HINT_RE = re.compile(
+    r"(?:"
+    r"сум|сўм|сумм|sum\b|som\b|so'm\b"
+    r"|перечис(?:ление|л)?|пречесл|ичида|пули|берилади"
+    r"|тулов|тўлов|tolov|tolov"
+    r"|накд|нақд|naqd"
+    r"|\+998"
+    r")",
+    re.IGNORECASE,
+)
+RUB_HINT_RE = re.compile(
+    r"(?:₽|руб(?:лей)?|рос(?:сийских)?\s*руб)",
+    re.IGNORECASE,
+)
 
 BODY_TYPES = {
     "тент": "тент",
@@ -517,6 +531,9 @@ def _extract_inn(text: str, *, phone: str | None = None) -> str | None:
 
 def _parse_price(text: str) -> int | None:
     usd_to_rub = 100
+    text_lc = (text or "").lower()
+    has_non_rub_million_hint = bool(NON_RUB_MILLION_HINT_RE.search(text_lc))
+    has_rub_hint = bool(RUB_HINT_RE.search(text_lc))
 
     def _parse_amount(raw: str, *, suffix: str = "") -> int | None:
         token = (raw or "").strip().replace("\xa0", " ")
@@ -528,6 +545,8 @@ def _parse_price(text: str) -> int | None:
         if suffix_norm in {"к", "k", "тыс", "тыс."}:
             multiplier = 1000
         elif suffix_norm in {"млн", "мил"}:
+            if has_non_rub_million_hint and not has_rub_hint:
+                return None
             multiplier = 1_000_000
         elif suffix_norm in {"$", "usd", "дол", "доллар", "доллара", "долларов"}:
             multiplier = usd_to_rub

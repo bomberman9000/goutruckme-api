@@ -319,6 +319,33 @@ def test_parse_cargo_message_rejects_bordi_keldi_meta_route():
     assert parsed is None
 
 
+def test_parse_price_ignores_uzs_million_payment_hints():
+    text = (
+        "Краснодар - Ургенч\n"
+        "Груз сахар 22.5тон\n"
+        "13 мил сум перечисления\n"
+        "+998933631886\n"
+    )
+    parsed = parse_cargo_message(text, keywords=["груз"])
+    assert parsed is not None
+    assert parsed.from_city == "Краснодар"
+    assert parsed.to_city == "Ургенч"
+    assert parsed.rate_rub is None
+
+
+def test_parse_price_ignores_million_with_payment_transfer_hints():
+    text = (
+        "Питер - Бухоро\n"
+        "Тонна 22-23 тонна\n"
+        "Оплата ичида 20 млн пречесления bor\n"
+    )
+    parsed = parse_cargo_message(text, keywords=["фура"])
+    assert parsed is not None
+    assert parsed.from_city == "Санкт-Петербург"
+    assert parsed.to_city == "Бухара"
+    assert parsed.rate_rub is None
+
+
 def test_parse_route_with_apostrophe_city_names():
     text = "Toshkent-Farg'ona 20t 120k +79991112233"
     parsed = parse_cargo_message(text, keywords=["реф"])
