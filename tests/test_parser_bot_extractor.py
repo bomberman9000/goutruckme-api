@@ -288,6 +288,37 @@ def test_parse_price_in_usd_suffix():
     assert parsed.rate_rub == 180000
 
 
+def test_parse_cargo_message_does_not_treat_kg_suffix_as_thousand_price():
+    text = (
+        "📦 Груз: соус / кетчуп\n"
+        "⚖️ Вес: 22 320 кг\n"
+        "🚚 Требуется: стандартная фура (2 машины)\n"
+    )
+    parsed = parse_cargo_message(text, keywords=["груз", "фура"])
+    assert parsed is None
+
+
+def test_parse_cargo_message_ignores_long_bare_numeric_id_after_price_keyword():
+    text = (
+        "Москва (Ступино) - Ташкент\n"
+        "Груз: Корм\n"
+        "Вес: до 22 тонн\n"
+        "Ставка:\n"
+        "330017798\n"
+    )
+    parsed = parse_cargo_message(text, keywords=["груз", "тент"])
+    assert parsed is not None
+    assert parsed.from_city == "Ступино"
+    assert parsed.to_city == "Ташкент"
+    assert parsed.rate_rub is None
+
+
+def test_parse_cargo_message_rejects_bordi_keldi_meta_route():
+    text = "BORDI - KELDI 4300$ Tent 22t"
+    parsed = parse_cargo_message(text, keywords=["tent"])
+    assert parsed is None
+
+
 def test_parse_route_with_apostrophe_city_names():
     text = "Toshkent-Farg'ona 20t 120k +79991112233"
     parsed = parse_cargo_message(text, keywords=["реф"])

@@ -36,11 +36,11 @@ WEIGHT_RE = re.compile(
     re.IGNORECASE,
 )
 PRICE_RE = re.compile(
-    r"(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{2,8}(?:[.,]\d+)?)\s*(?P<suffix>к|k|тыс|тыс\.|млн|мил|₽|р|руб(?:лей)?|\$|usd|дол(?:лар(?:ов|а)?)?)",
+    r"(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{2,8}(?:[.,]\d+)?)\s*(?P<suffix>к(?![A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ])|k(?![A-Za-z])|тыс|тыс\.|млн|мил|₽|р|руб(?:лей)?|\$|usd|дол(?:лар(?:ов|а)?)?)",
     re.IGNORECASE,
 )
 PRICE_BY_KEYWORD_RE = re.compile(
-    r"(?:фрахт|ставка|цена|оплата)\s*[:=]?\s*(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{5,9}(?:[.,]\d+)?)",
+    r"(?:фрахт|ставка|цена|оплата)\s*[:=]?\s*(?P<price>\d{1,3}(?:[\s.,]\d{3})+|\d{5,9}(?:[.,]\d+)?)(?:\s*(?P<suffix>к(?![A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ])|k(?![A-Za-z])|тыс|тыс\.|млн|мил|₽|р|руб(?:лей)?|\$|usd|дол(?:лар(?:ов|а)?)?))?",
     re.IGNORECASE,
 )
 PRICE_BY_NDS_RE = re.compile(
@@ -126,6 +126,10 @@ CITY_STOP_WORDS = {
 CITY_INVALID_EXACT = {
     "оплата",
     "оптала",
+    "борди",
+    "bordi",
+    "келди",
+    "keldi",
     "нал",
     "без нала",
     "belarussia",
@@ -151,6 +155,7 @@ CITY_INVALID_EXACT = {
     "тулов",
     "тўлов",
     "tolov",
+    "юк",
     "накд",
     "нақд",
     "naqd",
@@ -528,6 +533,10 @@ def _parse_price(text: str) -> int | None:
             multiplier = usd_to_rub
 
         compact = token.replace(" ", "")
+        if multiplier == 1 and compact.isdigit() and len(compact) >= 8:
+            # Long bare numeric ids in chats are usually phone-like contact
+            # handles or shipment references, not a ruble rate.
+            return None
         if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", compact):
             digits = re.sub(r"\D", "", compact)
             return int(digits) * multiplier if digits else None
@@ -551,7 +560,10 @@ def _parse_price(text: str) -> int | None:
 
     keyword_match = PRICE_BY_KEYWORD_RE.search(text)
     if keyword_match:
-        parsed = _parse_amount(keyword_match.group("price"))
+        parsed = _parse_amount(
+            keyword_match.group("price"),
+            suffix=keyword_match.group("suffix") or "",
+        )
         if parsed:
             return parsed
 
@@ -586,6 +598,11 @@ def _parse_route(text: str) -> tuple[str, str] | tuple[None, None]:
     for route in ROUTE_RE.finditer(route_text):
         from_city = _normalize_city(route.group("from"))
         to_city = _normalize_city(route.group("to"))
+        if "/" in route.group(0):
+            from_key = _city_key(from_city)
+            to_key = _city_key(to_city)
+            if from_key not in CITY_ALIASES and to_key not in CITY_ALIASES:
+                continue
         if from_city and to_city and not _is_invalid_city_name(from_city) and not _is_invalid_city_name(to_city):
             return from_city, to_city
 
