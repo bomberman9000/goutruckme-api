@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   fetchRecommendedCargoRate,
+  previewManualCargo,
   searchCities,
   type CitySuggestion,
+  type ManualCargoParsedPreview,
   type RecommendedCargoRate,
 } from "./api";
 
@@ -159,6 +161,27 @@ function formatRub(value: number | null | undefined): string {
   return new Intl.NumberFormat("ru-RU").format(numeric);
 }
 
+function scoreTone(score: number, verdict: string): string {
+  if (verdict === "green" || score >= 75) {
+    return "green";
+  }
+  if (verdict === "yellow" || score >= 45) {
+    return "yellow";
+  }
+  return "red";
+}
+
+function scoreLabel(score: number, verdict: string): string {
+  const tone = scoreTone(score, verdict);
+  if (tone === "green") {
+    return "Низкий риск";
+  }
+  if (tone === "yellow") {
+    return "Нужно проверить";
+  }
+  return "Высокий риск";
+}
+
 export function AddCargoForm({
   onSubmit,
   onCancel,
@@ -170,6 +193,9 @@ export function AddCargoForm({
 }: AddCargoFormProps) {
   const [mode, setMode] = useState<"form" | "text">(allowSmartPaste ? "text" : "form");
   const [rawText, setRawText] = useState("");
+  const [preview, setPreview] = useState<ManualCargoParsedPreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [origin, setOrigin] = useState(initialValues?.origin ?? "");
   const [destination, setDestination] = useState(initialValues?.destination ?? "");
   const [bodyType, setBodyType] = useState(initialValues?.bodyType ?? "тент");
@@ -191,7 +217,7 @@ export function AddCargoForm({
 
   const canSubmit = useMemo(() => {
     if (mode === "text") {
-      return rawText.trim().length >= 8;
+      return rawText.trim().length >= 8 && preview !== null && !previewLoading;
     }
     const weightNumber = Number.parseFloat(weight);
     const priceNumber = parseIntegerInput(price);
@@ -203,13 +229,56 @@ export function AddCargoForm({
       && priceNumber !== null
       && parseDateInput(loadDate) !== null
     );
-  }, [destination, loadDate, mode, origin, price, rawText, weight]);
+  }, [destination, loadDate, mode, origin, preview, previewLoading, price, rawText, weight]);
 
   useEffect(() => {
     if (!allowSmartPaste && mode !== "form") {
       setMode("form");
     }
   }, [allowSmartPaste, mode]);
+
+  useEffect(() => {
+    if (mode !== "text") {
+      setPreview(null);
+      setPreviewError(null);
+      setPreviewLoading(false);
+      return;
+    }
+
+    const text = rawText.trim();
+    if (text.length < 8) {
+      setPreview(null);
+      setPreviewError(null);
+      setPreviewLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setPreviewLoading(true);
+      try {
+        const parsed = await previewManualCargo(text);
+        if (!cancelled) {
+          setPreview(parsed);
+          setPreviewError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setPreview(null);
+          setPreviewError(err instanceof Error ? err.message : "Не удалось разобрать текст");
+        }
+      } finally {
+        if (!cancelled) {
+          setPreviewLoading(false);
+        }
+      }
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [mode, rawText]);
 
   useEffect(() => {
     if (origin.trim().length < 2) {
@@ -380,6 +449,37 @@ export function AddCargoForm({
           <div className="cargo-form-note">
             Маршрут, тоннаж и объём подтянем автоматически. Если цены в тексте нет, рассчитаем ставку сами.
           </div>
+
+          {previewLoading && <div className="cargo-form-note">Разбираем текст и считаем риск…</div>}
+          {previewError && <div className="error truck-form-error">{previewError}</div>}
+
+          {preview && (
+            <section className={`smart-preview-card ${scoreTone(preview.ai_score, preview.ai_verdict)}`}>
+              <div className="smart-preview-head">
+                <div>
+                  <strong>{preview.from_city} → {preview.to_city}</strong>
+                  <div className="smart-preview-meta">
+                    {preview.weight}т{preview.volume_m3 ? ` / ${preview.volume_m3}м³` : ""} • {preview.body_type}
+                  </div>
+                </div>
+                <div className={`smart-score-badge ${scoreTone(preview.ai_score, preview.ai_verdict)}`}>
+                  AI-Score {preview.ai_score}/100
+                </div>
+              </div>
+              <div className="smart-preview-grid">
+                <div><span>Тип</span><strong>{preview.body_type} ({preview.cargo_type})</strong></div>
+                <div><span>Ставка</span><strong>{preview.price ? `${formatRub(preview.price)} ₽` : "—"}</strong></div>
+                <div><span>Источник цены</span><strong>{preview.price_source === "estimated" ? "авторасчёт" : "из текста"}</strong></div>
+                <div><span>Вердикт</span><strong>{scoreLabel(preview.ai_score, preview.ai_verdict)}</strong></div>
+              </div>
+              {(preview.load_date || preview.load_time) && (
+                <div className="smart-preview-schedule">
+                  Готовность: {preview.load_date ?? "сегодня"}{preview.load_time ? ` ${preview.load_time}` : ""}
+                </div>
+              )}
+              <div className="smart-preview-comment">{preview.ai_comment}</div>
+            </section>
+          )}
         </>
       ) : (
         <div className="cargo-form-grid">

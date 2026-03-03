@@ -325,10 +325,31 @@ export type ManualCargoPayload = {
   payment_terms?: string | null;
 };
 
+export type ManualCargoParsedPreview = {
+  from_city: string;
+  to_city: string;
+  body_type: string;
+  cargo_type: string;
+  weight: number;
+  volume_m3: number | null;
+  price: number | null;
+  load_date: string | null;
+  load_time: string | null;
+  price_source: string;
+  ai_score: number;
+  ai_verdict: "green" | "yellow" | "red" | string;
+  ai_comment: string;
+};
+
 export type ManualCargoResponse = {
   ok: boolean;
   cargo_id: number;
   feed_id: number;
+};
+
+export type ManualCargoPreviewResponse = {
+  ok: boolean;
+  parsed: ManualCargoParsedPreview;
 };
 
 export type RecommendedCargoRate = {
@@ -622,6 +643,24 @@ export async function createManualCargo(payload: ManualCargoPayload): Promise<Ma
   }
 
   return response.json();
+}
+
+export async function previewManualCargo(rawText: string): Promise<ManualCargoParsedPreview> {
+  const headers = { "Content-Type": "application/json", ...(await buildRequiredTmaHeaders("Smart-разбор груза")) };
+
+  const response = await fetch("/api/v1/cargos/manual/preview", {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: JSON.stringify({ raw_text: rawText }),
+  });
+
+  if (!response.ok) {
+    throw await buildApiError(response, "Preview cargo failed");
+  }
+
+  const data = (await response.json()) as ManualCargoPreviewResponse;
+  return data.parsed;
 }
 
 export async function fetchRecommendedCargoRate(params: {
