@@ -916,7 +916,7 @@ def _nlp_confirm_kb() -> InlineKeyboardMarkup:
     ]])
 
 
-@router.message(StateFilter(None), F.text.regexp(r"(?i)\d+\s*(кг|т\b|тн\b|тонн)"))
+@router.message(StateFilter(None), F.text.regexp(r"(?is).*\d+(?:[.,]\d+)?\s*(кг|т\b|тн\b|тонн).*"))
 async def nlp_cargo_detect(message: Message, state: FSMContext):
     """Detect free-text cargo descriptions and offer quick creation."""
     logger.info("NLP handler called: user=%s text=%r", message.from_user.id, message.text)

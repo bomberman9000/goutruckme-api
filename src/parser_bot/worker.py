@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 import json
 import logging
 import re
@@ -12,6 +13,7 @@ from typing import Any
 
 import httpx
 import redis.asyncio as redis
+from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -38,6 +40,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("parser-worker")
 
+REDIS_RECOVERABLE_ERRORS = (RedisConnectionError, RedisTimeoutError, OSError)
+
 _CARGO_INTENT_RE = re.compile(
     r"(?:\bгруз\s+готов\b|\bгруз\s+бор\b|\bюк\s+бор\b|\byuk\s+bor\b|\bмашина\s+(?:керак|нужна|нужен)\b|\bmashina\s+kerak\b|\bрастаможка\b|\bчерез\s+паром\b)",
     re.IGNORECASE,
@@ -58,6 +62,56 @@ def _internal_headers() -> dict[str, str]:
 
 def _parse_keywords(raw: str) -> list[str]:
     return [item.strip().lower() for item in (raw or "").split(",") if item.strip()]
+
+
+def _stream_socket_timeout(block_ms: int) -> float:
+    return max(5.0, (max(100, int(block_ms)) / 1000.0) + 2.0)
+
+
+def _build_redis_client(*, block_ms: int) -> redis.Redis:
+    return redis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        health_check_interval=30,
+        retry_on_timeout=True,
+        socket_connect_timeout=5,
+        socket_timeout=_stream_socket_timeout(block_ms),
+    )
+
+
+async def _connect_stream(*, block_ms: int, group_name: str) -> tuple[redis.Redis, RedisLogisticsStream]:
+    redis_client = _build_redis_client(block_ms=block_ms)
+    stream = RedisLogisticsStream(
+        redis_client,
+        stream_name=settings.parser_stream_name,
+        maxlen=settings.parser_stream_maxlen,
+    )
+    await stream.ensure_group(group_name)
+    return redis_client, stream
+
+
+async def _close_redis_client(redis_client: redis.Redis | None) -> None:
+    if redis_client is None:
+        return
+    with suppress(Exception):
+        await redis_client.aclose()
+
+
+async def _reconnect_stream(
+    *,
+    block_ms: int,
+    group_name: str,
+    redis_client: redis.Redis | None,
+) -> tuple[redis.Redis, RedisLogisticsStream]:
+    await _close_redis_client(redis_client)
+    while True:
+        try:
+            new_client, stream = await _connect_stream(block_ms=block_ms, group_name=group_name)
+            logger.info("redis stream connection restored")
+            return new_client, stream
+        except REDIS_RECOVERABLE_ERRORS as exc:
+            logger.warning("redis reconnect failed: %s", str(exc)[:200])
+            await asyncio.sleep(1)
 
 
 def _build_sync_payload(
@@ -808,6 +862,9 @@ async def _process_message(
                 status,
                 str(exc)[:180],
             )
+    except REDIS_RECOVERABLE_ERRORS:
+        should_ack = False
+        raise
     except Exception as exc:
         should_ack = False
         logger.exception("worker crashed for id=%s error=%s", message.entry_id, str(exc)[:200])
@@ -834,16 +891,10 @@ async def run() -> None:
     dedupe_ttl = max(60, int(settings.parser_dedupe_ttl_sec))
     max_retries = max(0, int(settings.parser_worker_max_retries))
 
-    redis_client = redis.from_url(settings.redis_url, decode_responses=True)
-    stream = RedisLogisticsStream(
-        redis_client,
-        stream_name=settings.parser_stream_name,
-        maxlen=settings.parser_stream_maxlen,
-    )
+    redis_client, stream = await _connect_stream(block_ms=block_ms, group_name=group_name)
     sync_url = _join_url(settings.gruzpotok_api_internal_url, settings.gruzpotok_sync_path)
     http_client = httpx.AsyncClient(timeout=max(3, int(settings.parser_http_timeout)))
 
-    await stream.ensure_group(group_name)
     logger.info(
         "worker started stream=%s group=%s worker=%s batch=%s block_ms=%s claim_idle_ms=%s",
         settings.parser_stream_name,
@@ -856,38 +907,46 @@ async def run() -> None:
 
     try:
         while True:
-            messages = await stream.read_group(
-                group_name=group_name,
-                consumer_name=worker_name,
-                count=batch,
-                block_ms=block_ms,
-            )
-
-            if not messages:
-                messages = await stream.claim_stale(
+            try:
+                messages = await stream.read_group(
                     group_name=group_name,
                     consumer_name=worker_name,
-                    min_idle_ms=claim_idle_ms,
                     count=batch,
+                    block_ms=block_ms,
                 )
 
-            if not messages:
-                continue
+                if not messages:
+                    messages = await stream.claim_stale(
+                        group_name=group_name,
+                        consumer_name=worker_name,
+                        min_idle_ms=claim_idle_ms,
+                        count=batch,
+                    )
 
-            for message in messages:
-                await _process_message(
-                    stream=stream,
-                    http_client=http_client,
-                    sync_url=sync_url,
-                    keywords=keywords,
+                if not messages:
+                    continue
+
+                for message in messages:
+                    await _process_message(
+                        stream=stream,
+                        http_client=http_client,
+                        sync_url=sync_url,
+                        keywords=keywords,
+                        group_name=group_name,
+                        dedupe_ttl=dedupe_ttl,
+                        max_retries=max_retries,
+                        message=message,
+                    )
+            except REDIS_RECOVERABLE_ERRORS as exc:
+                logger.warning("redis stream connection lost, reconnecting: %s", str(exc)[:200])
+                redis_client, stream = await _reconnect_stream(
+                    block_ms=block_ms,
                     group_name=group_name,
-                    dedupe_ttl=dedupe_ttl,
-                    max_retries=max_retries,
-                    message=message,
+                    redis_client=redis_client,
                 )
     finally:
         await http_client.aclose()
-        await redis_client.aclose()
+        await _close_redis_client(redis_client)
 
 
 def main() -> None:

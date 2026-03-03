@@ -4,6 +4,19 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.core.database import Base
 import enum
 
+
+def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    return [str(member.value) for member in enum_cls]
+
+
+def _string_enum(enum_cls: type[enum.Enum]) -> Enum:
+    return Enum(
+        enum_cls,
+        values_callable=_enum_values,
+        native_enum=False,
+        validate_strings=True,
+    )
+
 class User(Base):
     __tablename__ = "users"
     
@@ -94,7 +107,8 @@ class Cargo(Base):
     tracking_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     payment_status: Mapped[CargoPaymentStatus] = mapped_column(
-        Enum(CargoPaymentStatus), default=CargoPaymentStatus.UNSECURED
+        _string_enum(CargoPaymentStatus),
+        default=CargoPaymentStatus.UNSECURED,
     )
     payment_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -646,7 +660,10 @@ class EscrowDeal(Base):
     amount_rub: Mapped[int] = mapped_column(Integer)
     platform_fee_rub: Mapped[int] = mapped_column(Integer, default=0)
     carrier_amount_rub: Mapped[int] = mapped_column(Integer, default=0)
-    status: Mapped[EscrowStatus] = mapped_column(Enum(EscrowStatus), default=EscrowStatus.PAYMENT_PENDING)
+    status: Mapped[EscrowStatus] = mapped_column(
+        _string_enum(EscrowStatus),
+        default=EscrowStatus.PAYMENT_PENDING,
+    )
     provider: Mapped[str] = mapped_column(String(32), default="mock_tochka")
     tochka_payment_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     payment_link: Mapped[str | None] = mapped_column(String(500), nullable=True)

@@ -83,7 +83,7 @@ class Settings(BaseSettings):
     parser_stream_name: str = "logistics_stream"
     parser_stream_maxlen: int = 200000
     parser_stream_group: str = "parser_workers"
-    parser_stream_block_ms: int = 5000
+    parser_stream_block_ms: int = 1000
     parser_stream_batch: int = 100
     parser_stream_claim_idle_ms: int = 60000
     parser_startup_backfill_limit: int = 10
