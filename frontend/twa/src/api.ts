@@ -312,12 +312,14 @@ export type MatchSummary = {
 };
 
 export type ManualCargoPayload = {
-  origin: string;
-  destination: string;
-  body_type: string;
-  weight: number;
-  price: number;
-  load_date: string;
+  raw_text?: string | null;
+  origin?: string;
+  destination?: string;
+  body_type?: string;
+  weight?: number;
+  volume?: number | null;
+  price?: number | null;
+  load_date?: string;
   load_time?: string | null;
   description?: string | null;
   payment_terms?: string | null;
@@ -348,6 +350,7 @@ export type MyCargoItem = {
   to_city: string;
   body_type: string;
   weight: number;
+  volume: number | null;
   price: number;
   load_date: string;
   load_time: string | null;

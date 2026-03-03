@@ -10,6 +10,11 @@ client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
 
 # Паттерн времени ЧЧ:ММ или ЧЧ.ММ
 _TIME_RE = re.compile(r"(?:в\s+)?(\d{1,2})[.:](\d{2})\s*$", re.I)
+_WEIGHT_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(кг|т\b|тн\b|тонн)", re.I)
+_VOLUME_RE = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*(?:м3|м³|m3|куб(?:\.|а|ов)?(?:ик)?|cube?s?|volume)\b",
+    re.I,
+)
 
 CITY_ALIASES = {
     "мск": "Москва", "москва": "Москва",
@@ -197,13 +202,18 @@ async def parse_cargo_nlp(text: str) -> dict | None:
     text_lower = text.strip().lower()
 
     # Must contain a weight marker to be considered a cargo description
-    weight_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(кг|т\b|тн\b|тонн)", text_lower)
+    weight_match = _WEIGHT_RE.search(text_lower)
     if not weight_match:
         return None
 
     raw_weight = float(weight_match.group(1).replace(",", "."))
     unit = weight_match.group(2).strip()
     weight = round(raw_weight / 1000, 3) if unit == "кг" else raw_weight
+
+    volume_m3: float | None = None
+    volume_match = _VOLUME_RE.search(text_lower)
+    if volume_match:
+        volume_m3 = round(float(volume_match.group(1).replace(",", ".")), 3)
 
     is_urgent = bool(re.search(r"\bсрочно?\b", text_lower))
 
@@ -304,6 +314,8 @@ async def parse_cargo_nlp(text: str) -> dict | None:
         "cargo_type": cargo_type,
         "is_urgent": is_urgent,
     }
+    if volume_m3:
+        result["volume_m3"] = volume_m3
     if load_date:
         result["load_date"] = load_date
     if load_time:

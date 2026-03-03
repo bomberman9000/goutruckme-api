@@ -152,8 +152,9 @@ def test_create_manual_cargo_creates_cargo_and_feed_event(monkeypatch):
     assert cargo.from_city == "Москва"
     assert cargo.to_city == "Казань"
     assert cargo.price == 120000
+    assert cargo.source_platform == "manual_web"
 
-    assert event.source == "manual_client"
+    assert event.source == "manual_web"
     assert event.status == "synced"
     assert event.from_city == "Москва"
     assert event.to_city == "Казань"
@@ -165,6 +166,73 @@ def test_create_manual_cargo_creates_cargo_and_feed_event(monkeypatch):
     assert event.to_lon == 49.12
 
     assert user.full_name == "Alex Logist"
+    assert dispatched == [1]
+
+
+def test_create_manual_cargo_from_raw_text_extracts_volume_and_estimates_price(monkeypatch):
+    fake_session = _FakeSession()
+    dispatched: list[int] = []
+
+    app = FastAPI()
+    app.include_router(cargos_api.router)
+
+    cargos_api.async_session = lambda: fake_session  # type: ignore[assignment]
+
+    async def _clear_cached(_prefix: str) -> None:
+        return None
+
+    async def _notify(cargo_id: int) -> int:
+        dispatched.append(cargo_id)
+        return 1
+
+    async def _parse(_text: str):
+        return {
+            "from_city": "Самара",
+            "to_city": "Казань",
+            "weight": 20.0,
+            "volume_m3": 86.0,
+            "cargo_type": "тент",
+            "load_date": "2026-03-04",
+        }
+
+    async def _estimate(origin: str, destination: str, weight: float, body_type: str):
+        assert origin == "Самара"
+        assert destination == "Казань"
+        assert weight == 20.0
+        assert body_type == "тент"
+        return {"price": 145000, "source": "market", "details": "ok"}
+
+    monkeypatch.setattr(cargos_api, "clear_cached", _clear_cached)
+    monkeypatch.setattr(cargos_api, "notify_matching_carriers", _notify)
+    monkeypatch.setattr(cargos_api, "get_geo_service", lambda: _FakeGeoService())
+    monkeypatch.setattr(cargos_api, "parse_cargo_nlp", _parse)
+    monkeypatch.setattr(cargos_api, "_estimate_recommended_rate", _estimate)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/cargos/manual",
+        headers=_build_tma_header(777),
+        json={
+            "raw_text": "Самара Казань 20т 86м3 тент",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["cargo_id"] == 1
+
+    cargo = fake_session.cargos[0]
+    event = fake_session.events[0]
+
+    assert cargo.from_city == "Самара"
+    assert cargo.to_city == "Казань"
+    assert cargo.weight == 20.0
+    assert cargo.volume == 86.0
+    assert cargo.price == 145000
+    assert cargo.source_platform == "manual_web"
+    assert event.source == "manual_web"
+    assert event.dimensions == "86 м³"
+    assert event.raw_text == "Самара Казань 20т 86м3 тент"
+    assert "\"volume_m3\": 86.0" in (event.details_json or "")
     assert dispatched == [1]
 
 

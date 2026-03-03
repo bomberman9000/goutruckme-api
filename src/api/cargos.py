@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
 from src.core.audit import log_audit_event
+from src.core.ai import parse_cargo_nlp
 from src.core.cache import clear_cached
 from src.core.database import async_session
 from src.core.models import Cargo, CargoPaymentStatus, CargoStatus, EscrowDeal, EscrowStatus, ParserIngestEvent, User
@@ -20,12 +21,14 @@ router = APIRouter(tags=["cargos"])
 
 
 class ManualCargoCreate(BaseModel):
-    origin: str = Field(min_length=2, max_length=100)
-    destination: str = Field(min_length=2, max_length=100)
-    body_type: str = Field(min_length=2, max_length=100)
-    weight: float = Field(gt=0, le=1000)
-    price: int = Field(gt=0, le=1_000_000_000)
-    load_date: date
+    raw_text: str | None = Field(default=None, min_length=5, max_length=4000)
+    origin: str | None = Field(default=None, min_length=2, max_length=100)
+    destination: str | None = Field(default=None, min_length=2, max_length=100)
+    body_type: str | None = Field(default=None, min_length=2, max_length=100)
+    weight: float | None = Field(default=None, gt=0, le=1000)
+    volume: float | None = Field(default=None, gt=0, le=10_000)
+    price: int | None = Field(default=None, gt=0, le=1_000_000_000)
+    load_date: date | None = None
     load_time: str | None = Field(default=None, max_length=10)
     description: str | None = Field(default=None, max_length=1000)
     payment_terms: str | None = Field(default=None, max_length=120)
@@ -56,6 +59,7 @@ class MyCargoItem(BaseModel):
     to_city: str
     body_type: str
     weight: float
+    volume: float | None = None
     price: int
     load_date: str
     load_time: str | None
@@ -82,6 +86,7 @@ class ManualCargoUpdate(BaseModel):
     destination: str | None = Field(default=None, min_length=2, max_length=100)
     body_type: str | None = Field(default=None, min_length=2, max_length=100)
     weight: float | None = Field(default=None, gt=0, le=1000)
+    volume: float | None = Field(default=None, gt=0, le=10_000)
     price: int | None = Field(default=None, gt=0, le=1_000_000_000)
     load_date: date | None = None
     load_time: str | None = Field(default=None, max_length=10)
@@ -99,6 +104,9 @@ class CargoMutationResponse(BaseModel):
 def _normalize_text(value: str | None) -> str | None:
     clean = (value or "").strip()
     return clean or None
+
+
+MANUAL_FEED_SOURCES = ("manual_client", "manual_web")
 
 
 def _ensure_user_full_name(raw_user: dict, user_id: int) -> tuple[str | None, str]:
@@ -139,6 +147,7 @@ def _build_manual_raw_text(
     destination: str,
     body_type: str,
     weight: float,
+    volume: float | None,
     price: int,
     description: str | None,
 ) -> str:
@@ -148,11 +157,18 @@ def _build_manual_raw_text(
             f"{origin} - {destination}",
             body_type,
             f"{weight}т",
+            (f"{volume:g}м3" if volume else ""),
             f"{price}₽",
             description or "",
         )
         if part
     )
+
+
+def _format_volume_dimensions(volume: float | None) -> str | None:
+    if volume is None:
+        return None
+    return f"{volume:g} м³"
 
 
 async def _estimate_recommended_rate(
@@ -171,7 +187,7 @@ async def _find_manual_feed_event(session, owner_id: int, cargo_id: int) -> Pars
         await session.execute(
             select(ParserIngestEvent)
             .where(
-                ParserIngestEvent.source == "manual_client",
+                ParserIngestEvent.source.in_(MANUAL_FEED_SOURCES),
                 ParserIngestEvent.chat_id == f"user:{owner_id}",
             )
             .order_by(ParserIngestEvent.id.desc())
@@ -208,6 +224,7 @@ def _serialize_my_cargo(cargo: Cargo, event: ParserIngestEvent | None, escrow: E
         to_city=cargo.to_city,
         body_type=cargo.cargo_type,
         weight=float(cargo.weight),
+        volume=float(cargo.volume) if cargo.volume is not None else None,
         price=int(cargo.price),
         load_date=cargo.load_date.date().isoformat(),
         load_time=cargo.load_time,
@@ -225,17 +242,90 @@ def _serialize_my_cargo(cargo: Cargo, event: ParserIngestEvent | None, escrow: E
     )
 
 
+async def _resolve_manual_create_payload(body: ManualCargoCreate) -> dict:
+    raw_text = _normalize_text(body.raw_text)
+    description = _normalize_text(body.description)
+    payment_terms = _normalize_text(body.payment_terms)
+
+    if raw_text:
+        parsed = await parse_cargo_nlp(raw_text)
+        if not parsed:
+            raise HTTPException(
+                status_code=422,
+                detail="Не удалось распознать маршрут и тоннаж. Добавьте города и вес в текст.",
+            )
+
+        origin = str(parsed["from_city"]).strip()
+        destination = str(parsed["to_city"]).strip()
+        body_type = str(parsed.get("cargo_type") or "тент").strip()
+        weight = float(parsed["weight"])
+        volume = body.volume if body.volume is not None else parsed.get("volume_m3")
+        price = body.price
+        parsed_load_date = parsed.get("load_date")
+        load_date = body.load_date
+        if load_date is None and parsed_load_date:
+            load_date = date.fromisoformat(str(parsed_load_date))
+        load_date = load_date or date.today()
+        load_time = _normalize_text(body.load_time) or _normalize_text(parsed.get("load_time"))
+        return {
+            "origin": origin,
+            "destination": destination,
+            "body_type": body_type,
+            "weight": weight,
+            "volume": float(volume) if volume is not None else None,
+            "price": int(price) if price is not None else None,
+            "load_date": load_date,
+            "load_time": load_time,
+            "description": description or raw_text,
+            "payment_terms": payment_terms,
+            "raw_text": raw_text,
+        }
+
+    required_fields = {
+        "origin": body.origin,
+        "destination": body.destination,
+        "body_type": body.body_type,
+        "weight": body.weight,
+        "price": body.price,
+        "load_date": body.load_date,
+    }
+    missing = [name for name, value in required_fields.items() if value is None]
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Missing required fields: {', '.join(missing)}",
+        )
+
+    return {
+        "origin": body.origin.strip(),
+        "destination": body.destination.strip(),
+        "body_type": body.body_type.strip(),
+        "weight": float(body.weight),
+        "volume": float(body.volume) if body.volume is not None else None,
+        "price": int(body.price),
+        "load_date": body.load_date,
+        "load_time": _normalize_text(body.load_time),
+        "description": description,
+        "payment_terms": payment_terms,
+        "raw_text": None,
+    }
+
+
 @router.post("/api/v1/cargos/manual", response_model=ManualCargoResponse)
 async def create_manual_cargo(
     body: ManualCargoCreate,
     background_tasks: BackgroundTasks,
     tma_user: TelegramTMAUser = Depends(get_required_tma_user),
 ) -> ManualCargoResponse:
-    origin = body.origin.strip()
-    destination = body.destination.strip()
-    body_type = body.body_type.strip()
-    description = _normalize_text(body.description)
-    payment_terms = _normalize_text(body.payment_terms)
+    payload = await _resolve_manual_create_payload(body)
+    origin = payload["origin"]
+    destination = payload["destination"]
+    body_type = payload["body_type"]
+    weight = float(payload["weight"])
+    volume = payload["volume"]
+    price = payload["price"]
+    description = payload["description"]
+    payment_terms = payload["payment_terms"]
     username, full_name = _ensure_user_full_name(tma_user.raw, tma_user.user_id)
     route_geo = await get_geo_service().resolve_route(origin, destination)
     if not route_geo:
@@ -243,6 +333,12 @@ async def create_manual_cargo(
 
     origin = route_geo.origin.name
     destination = route_geo.destination.name
+    if price is None:
+        estimate = await _estimate_recommended_rate(origin, destination, weight, body_type)
+        estimated_price = estimate.get("price")
+        if not isinstance(estimated_price, int) or estimated_price <= 0:
+            raise HTTPException(status_code=422, detail="Не удалось определить ставку. Укажите цену вручную.")
+        price = int(estimated_price)
 
     async with async_session() as session:
         user = await session.get(User, tma_user.user_id)
@@ -264,13 +360,13 @@ async def create_manual_cargo(
             from_city=origin,
             to_city=destination,
             cargo_type=body_type,
-            weight=float(body.weight),
-            volume=None,
-            price=int(body.price),
-            load_date=datetime.combine(body.load_date, datetime.min.time()),
-            load_time=_normalize_text(body.load_time),
+            weight=weight,
+            volume=volume,
+            price=price,
+            load_date=datetime.combine(payload["load_date"], datetime.min.time()),
+            load_time=payload["load_time"],
             comment=description,
-            source_platform="manual_client",
+            source_platform="manual_web",
             status=CargoStatus.NEW,
             payment_status=CargoPaymentStatus.UNSECURED,
         )
@@ -282,20 +378,20 @@ async def create_manual_cargo(
             stream_entry_id=f"manual-{uuid.uuid4().hex}",
             chat_id=f"user:{tma_user.user_id}",
             message_id=0,
-            source="manual_client",
+            source="manual_web",
             from_city=origin,
             to_city=destination,
             body_type=body_type,
             phone=user.phone,
             inn=None,
-            rate_rub=int(body.price),
-            weight_t=float(body.weight),
-            load_date=body.load_date.isoformat(),
-            load_time=_normalize_text(body.load_time),
+            rate_rub=price,
+            weight_t=weight,
+            load_date=payload["load_date"].isoformat(),
+            load_time=payload["load_time"],
             cargo_description=description,
             payment_terms=payment_terms,
             is_direct_customer=True,
-            dimensions=None,
+            dimensions=_format_volume_dimensions(volume),
             is_hot_deal=False,
             suggested_response=None,
             phone_blacklisted=False,
@@ -309,20 +405,22 @@ async def create_manual_cargo(
             provider="manual",
             is_spam=False,
             status="synced",
-            raw_text=_build_manual_raw_text(
+            raw_text=payload["raw_text"] or _build_manual_raw_text(
                 origin=origin,
                 destination=destination,
                 body_type=body_type,
-                weight=float(body.weight),
-                price=int(body.price),
+                weight=weight,
+                volume=volume,
+                price=price,
                 description=description,
             ),
             details_json=json.dumps(
                 {
-                    "created_via": "twa_manual_form",
+                    "created_via": "twa_manual_form" if not payload["raw_text"] else "twa_smart_paste",
                     "cargo_id": cargo.id,
                     "owner_id": tma_user.user_id,
                     "distance_km": route_geo.distance_km,
+                    "volume_m3": volume,
                 },
                 ensure_ascii=False,
             ),
@@ -425,7 +523,7 @@ async def get_my_cargos(
             await session.execute(
                 select(ParserIngestEvent)
                 .where(
-                    ParserIngestEvent.source == "manual_client",
+                    ParserIngestEvent.source.in_(MANUAL_FEED_SOURCES),
                     ParserIngestEvent.chat_id == f"user:{tma_user.user_id}",
                 )
                 .order_by(ParserIngestEvent.id.desc())
@@ -496,6 +594,8 @@ async def update_my_cargo(
             cargo.cargo_type = updates["body_type"].strip()
         if "weight" in updates:
             cargo.weight = float(updates["weight"])
+        if "volume" in updates:
+            cargo.volume = float(updates["volume"]) if updates["volume"] is not None else None
         if "price" in updates:
             cargo.price = int(updates["price"])
         if "load_date" in updates:
@@ -506,6 +606,7 @@ async def update_my_cargo(
             cargo.comment = _normalize_text(updates["description"])
 
         if event:
+            details = _load_details_payload(event.details_json)
             if route_geo:
                 event.from_city = cargo.from_city
                 event.to_city = cargo.to_city
@@ -513,9 +614,7 @@ async def update_my_cargo(
                 event.from_lon = route_geo.origin.lon
                 event.to_lat = route_geo.destination.lat
                 event.to_lon = route_geo.destination.lon
-                details = _load_details_payload(event.details_json)
                 details["distance_km"] = route_geo.distance_km
-                event.details_json = json.dumps(details, ensure_ascii=False)
             elif "origin" in updates:
                 event.from_city = cargo.from_city
             elif "destination" in updates:
@@ -524,6 +623,9 @@ async def update_my_cargo(
                 event.body_type = cargo.cargo_type
             if "weight" in updates:
                 event.weight_t = float(cargo.weight)
+            if "volume" in updates:
+                event.dimensions = _format_volume_dimensions(cargo.volume)
+                details["volume_m3"] = cargo.volume
             if "price" in updates:
                 event.rate_rub = int(cargo.price)
             if "load_date" in updates:
@@ -540,9 +642,11 @@ async def update_my_cargo(
                 destination=cargo.to_city,
                 body_type=cargo.cargo_type,
                 weight=float(cargo.weight),
+                volume=float(cargo.volume) if cargo.volume is not None else None,
                 price=int(cargo.price),
                 description=cargo.comment,
             )
+            event.details_json = json.dumps(details, ensure_ascii=False)
 
         await session.commit()
 

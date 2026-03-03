@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   fetchRecommendedCargoRate,
@@ -7,26 +7,37 @@ import {
   type RecommendedCargoRate,
 } from "./api";
 
-type AddCargoFormProps = {
-  onSubmit: (payload: {
+export type AddCargoFormPayload =
+  | {
+    mode: "text";
+    rawText: string;
+  }
+  | {
+    mode: "form";
     origin: string;
     destination: string;
     bodyType: string;
     weight: number;
+    volume?: number;
     price: number;
     loadDate: string;
     loadTime?: string;
     description?: string;
     paymentTerms?: string;
-  }) => Promise<void>;
+  };
+
+type AddCargoFormProps = {
+  onSubmit: (payload: AddCargoFormPayload) => Promise<void>;
   onCancel: () => void;
   busy?: boolean;
   error?: string | null;
+  allowSmartPaste?: boolean;
   initialValues?: {
     origin?: string;
     destination?: string;
     bodyType?: string;
     weight?: number;
+    volume?: number | null;
     price?: number;
     loadDate?: string;
     loadTime?: string | null;
@@ -122,6 +133,24 @@ function parseIntegerInput(value: string): number | null {
   return parsed;
 }
 
+function normalizeDecimalTyping(value: string): string {
+  const clean = value.replace(",", ".");
+  const match = clean.match(/^\d*(?:\.\d{0,3})?/);
+  return match?.[0] ?? "";
+}
+
+function parseDecimalInput(value: string): number | null {
+  const clean = normalizeDecimalTyping(value);
+  if (!clean) {
+    return null;
+  }
+  const numeric = Number.parseFloat(clean);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return null;
+  }
+  return numeric;
+}
+
 function formatRub(value: number | null | undefined): string {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric) || numeric <= 0) {
@@ -135,15 +164,17 @@ export function AddCargoForm({
   onCancel,
   busy = false,
   error = null,
+  allowSmartPaste = true,
   initialValues,
   submitLabel,
 }: AddCargoFormProps) {
-  const originListId = useId();
-  const destinationListId = useId();
+  const [mode, setMode] = useState<"form" | "text">(allowSmartPaste ? "text" : "form");
+  const [rawText, setRawText] = useState("");
   const [origin, setOrigin] = useState(initialValues?.origin ?? "");
   const [destination, setDestination] = useState(initialValues?.destination ?? "");
   const [bodyType, setBodyType] = useState(initialValues?.bodyType ?? "тент");
   const [weight, setWeight] = useState(String(initialValues?.weight ?? 20));
+  const [volume, setVolume] = useState(initialValues?.volume ? String(initialValues.volume) : "");
   const [price, setPrice] = useState(String(initialValues?.price ?? 120000));
   const [loadDate, setLoadDate] = useState(formatDateForField(initialValues?.loadDate ?? defaultDate()));
   const [loadTime, setLoadTime] = useState(initialValues?.loadTime ?? "");
@@ -159,6 +190,9 @@ export function AddCargoForm({
   const [recommendedRateError, setRecommendedRateError] = useState<string | null>(null);
 
   const canSubmit = useMemo(() => {
+    if (mode === "text") {
+      return rawText.trim().length >= 8;
+    }
     const weightNumber = Number.parseFloat(weight);
     const priceNumber = parseIntegerInput(price);
     return (
@@ -169,7 +203,13 @@ export function AddCargoForm({
       && priceNumber !== null
       && parseDateInput(loadDate) !== null
     );
-  }, [destination, loadDate, origin, price, weight]);
+  }, [destination, loadDate, mode, origin, price, rawText, weight]);
+
+  useEffect(() => {
+    if (!allowSmartPaste && mode !== "form") {
+      setMode("form");
+    }
+  }, [allowSmartPaste, mode]);
 
   useEffect(() => {
     if (origin.trim().length < 2) {
@@ -222,7 +262,8 @@ export function AddCargoForm({
   useEffect(() => {
     const weightNumber = Number.parseFloat(weight);
     if (
-      origin.trim().length < 2
+      mode !== "form"
+      || origin.trim().length < 2
       || destination.trim().length < 2
       || !Number.isFinite(weightNumber)
       || weightNumber <= 0
@@ -259,11 +300,19 @@ export function AddCargoForm({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [bodyType, destination, origin, weight]);
+  }, [allowSmartPaste, bodyType, destination, mode, origin, weight]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canSubmit) {
+      return;
+    }
+
+    if (mode === "text") {
+      await onSubmit({
+        mode: "text",
+        rawText: rawText.trim(),
+      });
       return;
     }
 
@@ -278,10 +327,12 @@ export function AddCargoForm({
     }
 
     await onSubmit({
+      mode: "form",
       origin: origin.trim(),
       destination: destination.trim(),
       bodyType: bodyType.trim(),
       weight: Number.parseFloat(weight),
+      volume: parseDecimalInput(volume) ?? undefined,
       price: normalizedPrice,
       loadDate: normalizedLoadDate,
       loadTime: loadTime.trim() || undefined,
@@ -292,150 +343,202 @@ export function AddCargoForm({
 
   return (
     <form className="cargo-form" onSubmit={handleSubmit}>
-      <div className="cargo-form-grid">
-        <div className="truck-field city-autocomplete" ref={originRef}>
-          <span>Откуда</span>
-          <input
-            type="text"
-            value={origin}
-            onChange={(event) => setOrigin(event.target.value)}
-            onFocus={() => setOriginFocused(true)}
-            onBlur={() => setTimeout(() => setOriginFocused(false), 150)}
-            placeholder="Москва"
+      {allowSmartPaste && (
+        <div className="cargo-mode-toggle">
+          <button
+            type="button"
+            className={`action-btn${mode === "text" ? " primary" : ""}`}
             disabled={busy}
-            required
-            autoComplete="off"
-          />
-          {originFocused && originSuggestions.length > 0 && (
-            <ul className="city-suggestions">
-              {originSuggestions.map((item) => (
-                <li
-                  key={`origin-${item.full_name}`}
-                  onMouseDown={() => { setOrigin(item.name); setOriginFocused(false); }}
-                >
-                  {item.full_name}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <div className="truck-field city-autocomplete" ref={destinationRef}>
-          <span>Куда</span>
-          <input
-            type="text"
-            value={destination}
-            onChange={(event) => setDestination(event.target.value)}
-            onFocus={() => setDestinationFocused(true)}
-            onBlur={() => setTimeout(() => setDestinationFocused(false), 150)}
-            placeholder="Казань"
-            disabled={busy}
-            required
-            autoComplete="off"
-          />
-          {destinationFocused && destinationSuggestions.length > 0 && (
-            <ul className="city-suggestions">
-              {destinationSuggestions.map((item) => (
-                <li
-                  key={`destination-${item.full_name}`}
-                  onMouseDown={() => { setDestination(item.name); setDestinationFocused(false); }}
-                >
-                  {item.full_name}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
-        <label className="truck-field">
-          <span>Тип кузова</span>
-          <select
-            value={bodyType}
-            onChange={(event) => setBodyType(event.target.value)}
-            disabled={busy}
+            onClick={() => setMode("text")}
           >
-            {BODY_TYPES.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="truck-field">
-          <span>Тоннаж, т</span>
-          <input
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={weight}
-            onChange={(event) => setWeight(event.target.value)}
+            Текст
+          </button>
+          <button
+            type="button"
+            className={`action-btn${mode === "form" ? " primary" : ""}`}
             disabled={busy}
-            required
-          />
-        </label>
+            onClick={() => setMode("form")}
+          >
+            Форма
+          </button>
+        </div>
+      )}
 
-        <label className="truck-field">
-          <span>Ставка, ₽</span>
-          <input
-            type="text"
-            value={price}
-            onChange={(event) => setPrice(normalizeIntegerTyping(event.target.value))}
-            inputMode="numeric"
-            placeholder="120000"
-            disabled={busy}
-            required
-          />
-        </label>
+      {mode === "text" ? (
+        <>
+          <label className="truck-field cargo-description">
+            <span>Вставь текст из Telegram или WhatsApp</span>
+            <textarea
+              value={rawText}
+              onChange={(event) => setRawText(event.target.value)}
+              placeholder="Самара - Казань 20т 86м3 тент 145000 завтра"
+              disabled={busy}
+              rows={6}
+              required
+            />
+          </label>
+          <div className="cargo-form-note">
+            Маршрут, тоннаж и объём подтянем автоматически. Если цены в тексте нет, рассчитаем ставку сами.
+          </div>
+        </>
+      ) : (
+        <div className="cargo-form-grid">
+          <div className="truck-field city-autocomplete" ref={originRef}>
+            <span>Откуда</span>
+            <input
+              type="text"
+              value={origin}
+              onChange={(event) => setOrigin(event.target.value)}
+              onFocus={() => setOriginFocused(true)}
+              onBlur={() => setTimeout(() => setOriginFocused(false), 150)}
+              placeholder="Москва"
+              disabled={busy}
+              required
+              autoComplete="off"
+            />
+            {originFocused && originSuggestions.length > 0 && (
+              <ul className="city-suggestions">
+                {originSuggestions.map((item) => (
+                  <li
+                    key={`origin-${item.full_name}`}
+                    onMouseDown={() => { setOrigin(item.name); setOriginFocused(false); }}
+                  >
+                    {item.full_name}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
-        <label className="truck-field">
-          <span>Дата готовности</span>
-          <input
-            type="text"
-            value={loadDate}
-            onChange={(event) => setLoadDate(normalizeDateTyping(event.target.value))}
-            inputMode="numeric"
-            placeholder="01.03.2026"
-            maxLength={10}
-            disabled={busy}
-            required
-          />
-        </label>
+          <div className="truck-field city-autocomplete" ref={destinationRef}>
+            <span>Куда</span>
+            <input
+              type="text"
+              value={destination}
+              onChange={(event) => setDestination(event.target.value)}
+              onFocus={() => setDestinationFocused(true)}
+              onBlur={() => setTimeout(() => setDestinationFocused(false), 150)}
+              placeholder="Казань"
+              disabled={busy}
+              required
+              autoComplete="off"
+            />
+            {destinationFocused && destinationSuggestions.length > 0 && (
+              <ul className="city-suggestions">
+                {destinationSuggestions.map((item) => (
+                  <li
+                    key={`destination-${item.full_name}`}
+                    onMouseDown={() => { setDestination(item.name); setDestinationFocused(false); }}
+                  >
+                    {item.full_name}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
-        <label className="truck-field">
-          <span>Время (опционально)</span>
-          <input
-            type="time"
-            value={loadTime}
-            onChange={(event) => setLoadTime(event.target.value)}
-            disabled={busy}
-          />
-        </label>
+          <label className="truck-field">
+            <span>Тип кузова</span>
+            <select
+              value={bodyType}
+              onChange={(event) => setBodyType(event.target.value)}
+              disabled={busy}
+            >
+              {BODY_TYPES.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <label className="truck-field">
-          <span>Условия оплаты</span>
-          <input
-            type="text"
-            value={paymentTerms}
-            onChange={(event) => setPaymentTerms(event.target.value)}
-            placeholder="без НДС, безнал"
-            disabled={busy}
-          />
-        </label>
+          <label className="truck-field">
+            <span>Тоннаж, т</span>
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={weight}
+              onChange={(event) => setWeight(event.target.value)}
+              disabled={busy}
+              required
+            />
+          </label>
 
-        <label className="truck-field cargo-description">
-          <span>Описание</span>
-          <textarea
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder="Что за груз, сколько машин, особые условия"
-            disabled={busy}
-            rows={4}
-          />
-        </label>
-      </div>
+          <label className="truck-field">
+            <span>Объём, м³ (опционально)</span>
+            <input
+              type="text"
+              value={volume}
+              onChange={(event) => setVolume(normalizeDecimalTyping(event.target.value))}
+              inputMode="decimal"
+              placeholder="86"
+              disabled={busy}
+            />
+          </label>
 
-      {(recommendedRate || recommendedRateError) && (
+          <label className="truck-field">
+            <span>Ставка, ₽</span>
+            <input
+              type="text"
+              value={price}
+              onChange={(event) => setPrice(normalizeIntegerTyping(event.target.value))}
+              inputMode="numeric"
+              placeholder="120000"
+              disabled={busy}
+              required
+            />
+          </label>
+
+          <label className="truck-field">
+            <span>Дата готовности</span>
+            <input
+              type="text"
+              value={loadDate}
+              onChange={(event) => setLoadDate(normalizeDateTyping(event.target.value))}
+              inputMode="numeric"
+              placeholder="01.03.2026"
+              maxLength={10}
+              disabled={busy}
+              required
+            />
+          </label>
+
+          <label className="truck-field">
+            <span>Время (опционально)</span>
+            <input
+              type="time"
+              value={loadTime}
+              onChange={(event) => setLoadTime(event.target.value)}
+              disabled={busy}
+            />
+          </label>
+
+          <label className="truck-field">
+            <span>Условия оплаты</span>
+            <input
+              type="text"
+              value={paymentTerms}
+              onChange={(event) => setPaymentTerms(event.target.value)}
+              placeholder="без НДС, безнал"
+              disabled={busy}
+            />
+          </label>
+
+          <label className="truck-field cargo-description">
+            <span>Описание</span>
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="Что за груз, сколько машин, особые условия"
+              disabled={busy}
+              rows={4}
+            />
+          </label>
+        </div>
+      )}
+
+      {mode === "form" && (recommendedRate || recommendedRateError) && (
         <div className="cargo-rate-hint">
           <div className="cargo-rate-hint-head">
             <strong>💡 Рекомендованная ставка</strong>
@@ -473,7 +576,7 @@ export function AddCargoForm({
 
       <div className="truck-form-actions">
         <button type="submit" className="action-btn primary" disabled={busy || !canSubmit}>
-          {busy ? "⏳ Сохраняем" : (submitLabel ?? "✅ Добавить груз")}
+          {busy ? "⏳ Сохраняем" : (submitLabel ?? (mode === "text" ? "🧠 Разобрать и добавить" : "✅ Добавить груз"))}
         </button>
         <button
           type="button"

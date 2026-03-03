@@ -41,7 +41,7 @@ import {
 
 import { CargoMap } from "./CargoMap";
 import { AddTruckForm } from "./AddTruckForm";
-import { AddCargoForm } from "./AddCargoForm";
+import { AddCargoForm, type AddCargoFormPayload } from "./AddCargoForm";
 import { AddSubscriptionForm } from "./AddSubscriptionForm";
 
 type Verdict = "green" | "yellow" | "red";
@@ -507,17 +507,7 @@ export function App() {
     }
   }
 
-  async function handleAddCargo(payload: {
-    origin: string;
-    destination: string;
-    bodyType: string;
-    weight: number;
-    price: number;
-    loadDate: string;
-    loadTime?: string;
-    description?: string;
-    paymentTerms?: string;
-  }) {
+  async function handleAddCargo(payload: AddCargoFormPayload) {
     if (!canUseTelegramOnlyActions) {
       setCargoError("Публикация груза доступна только из Telegram Mini App");
       return;
@@ -527,17 +517,24 @@ export function App() {
     setCargoError(null);
 
     try {
-      const created = await createManualCargo({
-        origin: payload.origin,
-        destination: payload.destination,
-        body_type: payload.bodyType,
-        weight: payload.weight,
-        price: payload.price,
-        load_date: payload.loadDate,
-        load_time: payload.loadTime ?? null,
-        description: payload.description ?? null,
-        payment_terms: payload.paymentTerms ?? null,
-      });
+      const created = await createManualCargo(
+        payload.mode === "text"
+          ? {
+            raw_text: payload.rawText,
+          }
+          : {
+            origin: payload.origin,
+            destination: payload.destination,
+            body_type: payload.bodyType,
+            weight: payload.weight,
+            volume: payload.volume ?? null,
+            price: payload.price,
+            load_date: payload.loadDate,
+            load_time: payload.loadTime ?? null,
+            description: payload.description ?? null,
+            payment_terms: payload.paymentTerms ?? null,
+          },
+      );
 
       setShowAddCargo(false);
       setTab("cargos");
@@ -564,18 +561,12 @@ export function App() {
 
   async function handleEditCargo(
     cargoId: number,
-    payload: {
-      origin: string;
-      destination: string;
-      bodyType: string;
-      weight: number;
-      price: number;
-      loadDate: string;
-      loadTime?: string;
-      description?: string;
-      paymentTerms?: string;
-    },
+    payload: AddCargoFormPayload,
   ) {
+    if (payload.mode !== "form") {
+      setMyCargosError("Быстрое распознавание доступно только при создании нового груза");
+      return;
+    }
     setAddingCargo(true);
     setMyCargosError(null);
 
@@ -585,6 +576,7 @@ export function App() {
         destination: payload.destination,
         body_type: payload.bodyType,
         weight: payload.weight,
+        volume: payload.volume ?? null,
         price: payload.price,
         load_date: payload.loadDate,
         load_time: payload.loadTime ?? null,
@@ -1332,7 +1324,7 @@ export function App() {
                     <div>
                       <div className="my-cargo-route">{cargo.from_city} → {cargo.to_city}</div>
                       <div className="my-cargo-meta">
-                        {cargo.body_type} • {cargo.weight}т • {cargo.price.toLocaleString("ru")} ₽
+                        {cargo.body_type} • {cargo.weight}т{cargo.volume ? ` • ${cargo.volume}м³` : ""} • {cargo.price.toLocaleString("ru")} ₽
                       </div>
                     </div>
                     <div className="my-cargo-statuses">
@@ -1442,12 +1434,14 @@ export function App() {
                         destination: cargo.to_city,
                         bodyType: cargo.body_type,
                         weight: cargo.weight,
+                        volume: cargo.volume,
                         price: cargo.price,
                         loadDate: cargo.load_date,
                         loadTime: cargo.load_time,
                         description: cargo.description,
                         paymentTerms: cargo.payment_terms,
                       }}
+                      allowSmartPaste={false}
                     />
                   )}
                 </div>
@@ -1537,7 +1531,7 @@ export function App() {
                     <div>
                       <div className="my-cargo-route">{cargo.from_city} → {cargo.to_city}</div>
                       <div className="my-cargo-meta">
-                        {cargo.weight}т • {cargo.price.toLocaleString("ru")} ₽
+                        {cargo.weight}т{cargo.volume ? ` • ${cargo.volume}м³` : ""} • {cargo.price.toLocaleString("ru")} ₽
                       </div>
                     </div>
                     <span className="escrow-status verified">

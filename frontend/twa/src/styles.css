@@ -757,6 +757,23 @@ body {
   gap: 10px;
 }
 
+.cargo-mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.cargo-mode-toggle .action-btn {
+  flex: 1 1 0;
+}
+
+.cargo-form-note {
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 @media (max-width: 700px) {
   .truck-form-grid,
   .cargo-form-grid { grid-template-columns: 1fr; }
