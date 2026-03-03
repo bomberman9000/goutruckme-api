@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
 from src.core.audit import log_audit_event
-from src.core.ai import parse_cargo_nlp
+from src.core.ai import calculate_market_rate, parse_cargo_nlp
 from src.core.cache import clear_cached
 from src.core.database import async_session
 from src.core.models import Cargo, CargoPaymentStatus, CargoStatus, EscrowDeal, EscrowStatus, ParserIngestEvent, User
@@ -200,47 +200,64 @@ def _build_ai_score_preview(
     *,
     stated_price: int | None,
     estimated_price: int | None,
+    estimated_source: str | None,
     has_volume: bool,
     cargo_type: str,
     body_type: str,
 ) -> tuple[int, str, str, str]:
     score = 58
-    notes: list[str] = ["маршрут подтверждён"]
     price_source = "missing"
+    price_delta_pct: int | None = None
 
     if stated_price and estimated_price:
         price_source = "provided"
-        ratio = stated_price / max(1, estimated_price)
-        if 0.75 <= ratio <= 1.35:
-            score += 18
-            notes.append("цена близка к рынку")
-        elif 0.55 <= ratio <= 1.7:
-            score += 8
-            notes.append("цена в рабочем диапазоне")
+        price_delta_pct = round(((stated_price - estimated_price) / max(1, estimated_price)) * 100)
+        if price_delta_pct >= 10:
+            score += 22
+        elif price_delta_pct <= -15:
+            score -= 18
         else:
-            score -= 10
-            notes.append("цена выбивается из рынка")
+            score += 8
     elif stated_price:
         price_source = "provided"
         score += 8
-        notes.append("цена указана вручную")
     elif estimated_price:
         price_source = "estimated"
         score += 12
-        notes.append("цена рассчитана автоматически")
 
     if has_volume:
         score += 5
-        notes.append("есть кубатура")
     if cargo_type and cargo_type != "Груз":
         score += 6
-        notes.append(f"характер груза: {cargo_type.lower()}")
     if body_type and body_type != "тент":
         score += 3
-        notes.append(f"тип кузова: {body_type}")
 
     score = max(0, min(100, score))
-    if score >= 75:
+    if price_delta_pct is not None:
+        market_label = "рынка февраля 2026" if estimated_source and "benchmark" in estimated_source else "рынка"
+        if price_delta_pct >= 10:
+            verdict = "green"
+            comment = f"Ставка выше {market_label} примерно на {price_delta_pct}%. Выглядит выгодно."
+        elif price_delta_pct <= -45:
+            verdict = "red"
+            market_factor = round(max(1.0, estimated_price / max(1, stated_price)), 1)
+            score = min(score, 22)
+            comment = (
+                f"⚠️ КРИТИЧЕСКИЙ ДЕМПИНГ: ставка в {market_factor} раза ниже {market_label}. "
+                "Вероятен фрод или ошибка в тексте."
+            )
+        elif price_delta_pct <= -15:
+            verdict = "red"
+            comment = f"Ставка ниже {market_label} примерно на {abs(price_delta_pct)}%. Проверь маржинальность и риски."
+        else:
+            verdict = "yellow"
+            delta_label = "выше" if price_delta_pct > 0 else "ниже"
+            comment = (
+                f"Ставка близка к {market_label}: примерно на {abs(price_delta_pct)}% {delta_label} расчётной."
+                if price_delta_pct
+                else f"Ставка почти совпадает с {market_label}. Маршрут выглядит рабочим."
+            )
+    elif score >= 75:
         verdict = "green"
         comment = "Маршрут реалистичный, цена близка к рынку, риск низкий."
     elif score >= 45:
@@ -286,22 +303,28 @@ async def _build_smart_preview(raw_text: str) -> tuple[ManualCargoParsedPreview,
     stated_price = int(parsed["price"]) if parsed.get("price") else None
 
     estimated_price: int | None = None
+    estimated_source: str | None = None
     try:
         estimate = await _estimate_recommended_rate(
             route_geo.origin.name,
             route_geo.destination.name,
             weight,
             body_type,
+            cargo_type=cargo_type,
+            volume=volume,
         )
         raw_price = estimate.get("price")
         if isinstance(raw_price, int) and raw_price > 0:
             estimated_price = raw_price
+        estimated_source = str(estimate.get("source") or "") or None
     except Exception:
         estimated_price = None
+        estimated_source = None
 
     ai_score, ai_verdict, ai_comment, price_source = _build_ai_score_preview(
         stated_price=stated_price,
         estimated_price=estimated_price,
+        estimated_source=estimated_source,
         has_volume=volume is not None,
         cargo_type=cargo_type,
         body_type=body_type,
@@ -330,10 +353,20 @@ async def _estimate_recommended_rate(
     destination: str,
     weight: float,
     body_type: str,
+    *,
+    cargo_type: str | None = None,
+    volume: float | None = None,
 ) -> dict:
     from src.core.ai import estimate_price_smart
 
-    return await estimate_price_smart(origin, destination, weight, body_type)
+    return await estimate_price_smart(
+        origin,
+        destination,
+        weight,
+        cargo_type=cargo_type or body_type,
+        body_type=body_type,
+        volume_m3=volume,
+    )
 
 
 async def _find_manual_feed_event(session, owner_id: int, cargo_id: int) -> ParserIngestEvent | None:
@@ -498,7 +531,14 @@ async def create_manual_cargo(
     origin = route_geo.origin.name
     destination = route_geo.destination.name
     if price is None:
-        estimate = await _estimate_recommended_rate(origin, destination, weight, body_type)
+        estimate = await _estimate_recommended_rate(
+            origin,
+            destination,
+            weight,
+            body_type,
+            cargo_type=description,
+            volume=volume,
+        )
         estimated_price = estimate.get("price")
         if not isinstance(estimated_price, int) or estimated_price <= 0:
             raise HTTPException(status_code=422, detail="Не удалось определить ставку. Укажите цену вручную.")
@@ -629,6 +669,7 @@ async def get_recommended_rate(
         normalized_destination,
         float(weight),
         normalized_body_type,
+        cargo_type=normalized_body_type,
     )
 
     recommended_rate = estimate.get("price")
@@ -636,19 +677,29 @@ async def get_recommended_rate(
     details = str(estimate.get("details") or "").strip()
 
     if not isinstance(recommended_rate, int) or recommended_rate <= 0:
-        fallback_rate_per_km = int(max(30, min(50, 35 + min(float(weight), 20.0) * 0.5)))
-        recommended_rate = distance_km * fallback_rate_per_km
+        fallback = calculate_market_rate(
+            from_city=normalized_origin,
+            to_city=normalized_destination,
+            distance_km=distance_km,
+            weight=float(weight),
+            cargo_type=normalized_body_type,
+            body_type=normalized_body_type,
+        )
+        fallback_rate_per_km = int(fallback["rate_per_km"])
+        recommended_rate = int(fallback["price"])
         source = "geo_calculated"
+        factors = ", ".join(fallback.get("factors") or []) or "базовый маршрут"
         details = (
-            "📐 Расчёт по расстоянию\n"
+            "📐 Динамическая ставка\n"
             f"• Дистанция: ~{distance_km} км\n"
-            f"• Ставка: ~{fallback_rate_per_km} ₽/км"
+            f"• Ставка: ~{fallback_rate_per_km} ₽/км\n"
+            f"• Факторы: {factors}"
         )
 
     rate_per_km = max(1, round(recommended_rate / distance_km))
     if source == "calculated" or source == "geo_calculated":
-        min_rate = distance_km * 30
-        max_rate = distance_km * 50
+        min_rate = int(recommended_rate * 0.88)
+        max_rate = int(recommended_rate * 1.12)
     else:
         spread = max(5_000, int(recommended_rate * 0.12))
         min_rate = max(1, recommended_rate - spread)

@@ -195,7 +195,7 @@ def test_create_manual_cargo_from_raw_text_extracts_volume_and_estimates_price(m
             "load_date": "2026-03-04",
         }
 
-    async def _estimate(origin: str, destination: str, weight: float, body_type: str):
+    async def _estimate(origin: str, destination: str, weight: float, body_type: str, **_kwargs):
         assert origin == "Самара"
         assert destination == "Казань"
         assert weight == 20.0
@@ -250,7 +250,7 @@ def test_preview_manual_cargo_returns_ai_score(monkeypatch):
             "load_date": "2026-03-04",
         }
 
-    async def _estimate(origin: str, destination: str, weight: float, body_type: str):
+    async def _estimate(origin: str, destination: str, weight: float, body_type: str, **_kwargs):
         assert origin == "Самара"
         assert destination == "Казань"
         assert weight == 20.0
@@ -286,7 +286,7 @@ def test_recommended_rate_uses_geo_and_smart_estimate(monkeypatch):
 
     monkeypatch.setattr(cargos_api, "get_geo_service", lambda: _FakeGeoService())
 
-    async def _estimate(origin: str, destination: str, weight: float, body_type: str):
+    async def _estimate(origin: str, destination: str, weight: float, body_type: str, **_kwargs):
         assert origin == "Москва"
         assert destination == "Казань"
         assert weight == 20
@@ -317,6 +317,23 @@ def test_recommended_rate_uses_geo_and_smart_estimate(monkeypatch):
     assert body["source"] == "market"
     assert body["rate_per_km"] == 165
     assert body["min_rate_rub"] < body["recommended_rate_rub"] < body["max_rate_rub"]
+
+
+def test_ai_score_preview_flags_critical_dumping_against_benchmark():
+    score, verdict, comment, price_source = cargos_api._build_ai_score_preview(
+        stated_price=100000,
+        estimated_price=301682,
+        estimated_source="benchmark_feb_2026",
+        has_volume=False,
+        cargo_type="Груз",
+        body_type="тент",
+    )
+
+    assert price_source == "provided"
+    assert verdict == "red"
+    assert score <= 22
+    assert "КРИТИЧЕСКИЙ ДЕМПИНГ" in comment
+    assert "февраля 2026" in comment
 
 
 def test_get_my_cargos_returns_only_owner_items(monkeypatch):

@@ -543,6 +543,89 @@ CITY_COORDS: dict[str, tuple[float, float]] = {
     "набережные челны": (55.7436, 52.3958),
 }
 
+_FOREIGN_CITY_KEYS = {
+    "минск",
+    "брест",
+    "гомель",
+    "пинск",
+    "борисов",
+    "алматы",
+    "астана",
+    "нур султан",
+    "шымкент",
+    "чимкент",
+    "бишкек",
+    "ош",
+    "ташкент",
+    "андижан",
+    "наманган",
+    "фергана",
+    "самарканд",
+    "карши",
+    "бухара",
+    "навои",
+    "зарафшан",
+    "ургенч",
+    "нукус",
+    "джизак",
+    "коканд",
+    "мерсин",
+    "стамбул",
+    "истанбул",
+    "ankara",
+    "анкара",
+    "izmir",
+    "измир",
+    "antalya",
+    "анталья",
+}
+
+_OPEN_BODY_TOKENS = ("борт", "открыт")
+_REF_BODY_TOKENS = ("реф", "рефриж", "холод", "изотерм")
+_HAZARDOUS_TOKENS = ("adr", "опас", "хим", "chemical")
+MARKET_BENCHMARKS: dict[str, dict[str, object]] = {
+    "MOSCOW_KEMEROVO": {
+        "from": "Москва",
+        "to": "Кемерово",
+        "price": 301682,
+        "distance_km": 3560,
+        "body_type": "тент",
+        "weight_t": 20.0,
+    },
+    "MOSCOW_CHELYABINSK": {
+        "from": "Москва",
+        "to": "Челябинск",
+        "price": 146394,
+        "distance_km": 1780,
+        "body_type": "тент",
+        "weight_t": 20.0,
+    },
+    "SPB_EKATERINBURG": {
+        "from": "Санкт-Петербург",
+        "to": "Екатеринбург",
+        "price": 162025,
+        "distance_km": 2200,
+        "body_type": "тент",
+        "weight_t": 20.0,
+    },
+    "MOSCOW_NOVOSIBIRSK": {
+        "from": "Москва",
+        "to": "Новосибирск",
+        "price": 264303,
+        "distance_km": 3330,
+        "body_type": "тент",
+        "weight_t": 20.0,
+    },
+    "MOSCOW_KAZAN_REF": {
+        "from": "Москва",
+        "to": "Казань",
+        "price": 135855,
+        "distance_km": 800,
+        "body_type": "рефрижератор",
+        "weight_t": 20.0,
+    },
+}
+
 def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
     lat1, lon1 = a
     lat2, lon2 = b
@@ -554,38 +637,215 @@ def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
     h = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
     return 2 * r * math.asin(math.sqrt(h))
 
-def estimate_price_local(from_city: str, to_city: str, weight: float) -> dict | None:
+
+def _resolve_effective_body_type(cargo_type: str | None, body_type: str | None = None) -> str:
+    body_hint = (body_type or "").strip()
+    if body_hint:
+        return body_hint
+    _, inferred = _infer_cargo_profile((cargo_type or "").strip().lower())
+    return inferred or "тент"
+
+
+def _is_international_route(from_city: str | None, to_city: str | None) -> bool:
+    origin_key = _normalize_city_key(from_city or "")
+    destination_key = _normalize_city_key(to_city or "")
+    return bool(origin_key and origin_key in _FOREIGN_CITY_KEYS) or bool(
+        destination_key and destination_key in _FOREIGN_CITY_KEYS
+    )
+
+
+def _scale_reference_price(base_price: int, weight: float, base_weight: float = 20.0) -> int:
+    if weight >= base_weight:
+        extra_tons = max(0.0, min(float(weight) - float(base_weight), 10.0))
+        return int(round(base_price * (1.0 + extra_tons * 0.015)))
+    if weight >= 10:
+        return int(round(base_price * (0.6 + 0.02 * float(weight))))
+    if weight >= 5:
+        return int(round(base_price * (0.4 + 0.02 * float(weight))))
+    return int(round(base_price * 0.4))
+
+
+def _lookup_market_benchmark(
+    from_city: str | None,
+    to_city: str | None,
+    body_type: str | None = None,
+) -> dict[str, object] | None:
+    if not from_city or not to_city:
+        return None
+    origin_key = _normalize_city_key(from_city)
+    destination_key = _normalize_city_key(to_city)
+    body_key = _normalize_city_key(_resolve_effective_body_type(None, body_type))
+
+    for item in MARKET_BENCHMARKS.values():
+        benchmark_origin = _normalize_city_key(str(item["from"]))
+        benchmark_destination = _normalize_city_key(str(item["to"]))
+        benchmark_body = _normalize_city_key(str(item["body_type"]))
+        if origin_key == benchmark_origin and destination_key == benchmark_destination and body_key == benchmark_body:
+            return {
+                "price": int(item["price"]),
+                "distance_km": int(item["distance_km"]),
+                "body_type": str(item["body_type"]),
+                "weight_t": float(item.get("weight_t") or 20.0),
+                "source": "benchmark_feb_2026",
+            }
+    return None
+
+
+def calculate_market_rate(
+    *,
+    from_city: str | None,
+    to_city: str | None,
+    distance_km: int | float,
+    weight: float,
+    cargo_type: str | None = None,
+    body_type: str | None = None,
+    volume_m3: float | None = None,
+) -> dict:
+    distance = max(1, int(distance_km))
+    weight_t = max(0.5, float(weight or 0.0))
+    volume = float(volume_m3) if volume_m3 is not None else None
+    resolved_body_type = _resolve_effective_body_type(cargo_type, body_type)
+    factors: list[str] = []
+    benchmark = _lookup_market_benchmark(from_city, to_city, resolved_body_type)
+
+    if benchmark:
+        benchmark_price = _scale_reference_price(
+            int(benchmark["price"]),
+            weight_t,
+            float(benchmark["weight_t"]),
+        )
+        benchmark_distance = max(1, int(benchmark["distance_km"]))
+        benchmark_rate_per_km = benchmark_price / benchmark_distance
+        recommended_rate = int(round(distance * benchmark_rate_per_km))
+        min_price = int(round(recommended_rate * 0.90))
+        max_price = int(round(recommended_rate * 1.10))
+        return {
+            "price": recommended_rate,
+            "distance": distance,
+            "rate_per_km": int(round(benchmark_rate_per_km)),
+            "min_price": max(1, min_price),
+            "max_price": max(max_price, recommended_rate),
+            "body_type": resolved_body_type,
+            "is_international": _is_international_route(from_city, to_city),
+            "factors": ["рыночный benchmark февраль 2026"],
+            "source": str(benchmark["source"]),
+        }
+
+    body_key = (resolved_body_type or "").strip().lower()
+    if any(token in body_key for token in _REF_BODY_TOKENS):
+        rate_per_km = 110.0
+        factors.append("рефрижератор")
+    elif any(token in body_key for token in _OPEN_BODY_TOKENS):
+        rate_per_km = 88.0
+        factors.append("открытая погрузка")
+    else:
+        rate_per_km = 80.0
+
+    rate_per_km += min(weight_t, 20.0) * 0.35
+    if weight_t > 20.0:
+        rate_per_km += min(weight_t - 20.0, 10.0) * 0.15
+        factors.append("тяжёлый груз")
+    elif weight_t < 3.0:
+        rate_per_km *= 1.08
+        factors.append("лёгкий экспресс-груз")
+
+    if volume is not None and weight_t > 0 and (volume / weight_t) >= 8:
+        rate_per_km *= 1.05
+        factors.append("объёмный груз")
+
+    if distance < 500:
+        rate_per_km *= 1.40
+        factors.append("короткое плечо")
+
+    if _is_international_route(from_city, to_city):
+        rate_per_km *= 1.45
+        factors.append("международное направление")
+
+    cargo_key = (cargo_type or "").strip().lower()
+    if cargo_key and any(token in cargo_key for token in _HAZARDOUS_TOKENS):
+        rate_per_km *= 1.15
+        factors.append("сложный груз")
+
+    if distance > 2500:
+        rate_per_km *= 0.95
+        factors.append("длинное плечо")
+
+    rate_per_km = max(72.0, rate_per_km)
+    recommended_rate = int(round(distance * rate_per_km))
+    min_price = int(round(recommended_rate * 0.88))
+    max_price = int(round(recommended_rate * 1.12))
+
+    return {
+        "price": recommended_rate,
+        "distance": distance,
+        "rate_per_km": int(round(rate_per_km)),
+        "min_price": max(1, min_price),
+        "max_price": max(max_price, recommended_rate),
+        "body_type": resolved_body_type,
+        "is_international": _is_international_route(from_city, to_city),
+        "factors": factors,
+        "source": "calculated",
+    }
+
+
+def estimate_price_local(
+    from_city: str,
+    to_city: str,
+    weight: float,
+    *,
+    cargo_type: str | None = None,
+    body_type: str | None = None,
+    volume_m3: float | None = None,
+) -> dict | None:
     """Локальная оценка цены по расстоянию (если известны координаты городов)"""
-    a = CITY_COORDS.get(_normalize_city_key(from_city))
-    b = CITY_COORDS.get(_normalize_city_key(to_city))
+    from src.core.geo import city_coords
+
+    a = city_coords(from_city) or CITY_COORDS.get(_normalize_city_key(from_city))
+    b = city_coords(to_city) or CITY_COORDS.get(_normalize_city_key(to_city))
     if not a or not b:
         return None
 
     distance = _haversine_km(a, b)
-    distance_km = max(1, int(distance))
+    return calculate_market_rate(
+        from_city=from_city,
+        to_city=to_city,
+        distance_km=max(1, int(distance)),
+        weight=weight,
+        cargo_type=cargo_type,
+        body_type=body_type,
+        volume_m3=volume_m3,
+    )
 
-    rate_per_km = 35 + min(weight, 20) * 0.5
-    rate_per_km = max(30, min(50, rate_per_km))
 
-    min_price = int(distance_km * 30)
-    max_price = int(distance_km * 50)
-    price = int(distance_km * rate_per_km)
-
-    return {
-        "price": price,
-        "distance": distance_km,
-        "rate_per_km": int(rate_per_km),
-        "min_price": min_price,
-        "max_price": max_price,
-    }
-
-async def get_market_price(from_city: str, to_city: str, weight: float, cargo_type: str = "тент") -> dict | None:
+async def get_market_price(
+    from_city: str,
+    to_city: str,
+    weight: float,
+    cargo_type: str = "тент",
+    body_type: str | None = None,
+) -> dict | None:
     """Получить рыночную цену с учётом веса"""
     from src.core.database import async_session
     from src.core.models import MarketPrice
     from sqlalchemy import select
 
-    cargo_type_key = (cargo_type or "тент").strip()
+    cargo_type_key = _resolve_effective_body_type(cargo_type, body_type).strip()
+    benchmark = _lookup_market_benchmark(from_city, to_city, cargo_type_key)
+    if benchmark:
+        base_price = int(benchmark["price"])
+        base_weight = float(benchmark["weight_t"])
+        adjusted_price = _scale_reference_price(base_price, float(weight), base_weight)
+        benchmark_distance = max(1, int(benchmark["distance_km"]))
+        return {
+            "market_price": base_price,
+            "adjusted_price": adjusted_price,
+            "base_weight": base_weight,
+            "your_weight": weight,
+            "source": str(benchmark["source"]),
+            "updated": "02.2026",
+            "cargo_type": str(benchmark["body_type"]),
+            "rate_per_km": int(round(base_price / benchmark_distance)),
+        }
 
     async with async_session() as session:
         price_data = await session.scalar(
@@ -628,35 +888,60 @@ async def get_market_price(from_city: str, to_city: str, weight: float, cargo_ty
             "source": price_data.source,
             "updated": price_data.updated_at.strftime("%d.%m.%Y"),
             "cargo_type": price_data.cargo_type,
+            "rate_per_km": None,
         }
 
-async def estimate_price_smart(from_city: str, to_city: str, weight: float, cargo_type: str = "тент") -> dict:
+
+async def estimate_price_smart(
+    from_city: str,
+    to_city: str,
+    weight: float,
+    cargo_type: str = "тент",
+    body_type: str | None = None,
+    volume_m3: float | None = None,
+) -> dict:
     """Умная оценка цены: сначала рынок, потом расчёт"""
-    market = await get_market_price(from_city, to_city, weight, cargo_type)
+    market = await get_market_price(from_city, to_city, weight, cargo_type, body_type=body_type)
     if market:
+        rate_line = (
+            f"\\n• Индекс: ~{int(market['rate_per_km'])} ₽/км"
+            if market.get("rate_per_km")
+            else ""
+        )
         return {
             "price": market["adjusted_price"],
-            "source": "market",
+            "source": str(market.get("source") or "market"),
             "market_price_20t": market["market_price"],
             "details": (
                 f"📊 Рыночная цена ({market['source']})\\n"
                 f"• За 20т: {market['market_price']:,} ₽\\n"
                 f"• За {weight}т: {market['adjusted_price']:,} ₽\\n"
                 f"• Данные от {market['updated']}"
+                f"{rate_line}"
             ),
         }
 
-    local = estimate_price_local(from_city, to_city, weight)
+    effective_body_type = _resolve_effective_body_type(cargo_type, body_type)
+    local = estimate_price_local(
+        from_city,
+        to_city,
+        weight,
+        cargo_type=cargo_type,
+        body_type=effective_body_type,
+        volume_m3=volume_m3,
+    )
     if local:
+        factors = ", ".join(local["factors"]) if local.get("factors") else "базовый маршрут"
         return {
             "price": local["price"],
-            "source": "calculated",
+            "source": str(local.get("source") or "calculated"),
             "distance": local["distance"],
             "details": (
-                "📐 Расчётная цена\\n"
+                "📐 Динамическая ставка\\n"
                 f"• Расстояние: ~{local['distance']} км\\n"
                 f"• Ставка: ~{local['rate_per_km']} ₽/км\\n"
-                f"• Диапазон: {local['min_price']:,} — {local['max_price']:,} ₽"
+                f"• Диапазон: {local['min_price']:,} — {local['max_price']:,} ₽\\n"
+                f"• Факторы: {factors}"
             ),
         }
 

@@ -18,6 +18,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutErr
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+from src.core.ai import calculate_market_rate
 from src.core.config import settings
 from src.core.database import async_session
 from src.core.models import ParserIngestEvent
@@ -372,13 +373,21 @@ def _fill_rate_by_distance(parsed: ParsedCargo) -> bool:
             return False
 
         weight = parsed.weight_t if parsed.weight_t and parsed.weight_t > 0 else 20.0
-        avg_rate_per_km = 35 + min(weight, 20.0) * 0.5
-        parsed.rate_rub = int(distance_km * avg_rate_per_km)
+        rate_model = calculate_market_rate(
+            from_city=parsed.from_city,
+            to_city=parsed.to_city,
+            distance_km=distance_km,
+            weight=weight,
+            cargo_type=parsed.cargo_description,
+            body_type=parsed.body_type,
+        )
+        parsed.rate_rub = int(rate_model["price"])
         logger.info(
-            "rate estimated by distance route=%s->%s rate=%s",
+            "rate estimated by distance route=%s->%s rate=%s rate_per_km=%s",
             parsed.from_city,
             parsed.to_city,
             parsed.rate_rub,
+            rate_model["rate_per_km"],
         )
         return True
     except Exception:
