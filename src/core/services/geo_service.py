@@ -43,7 +43,7 @@ class GeoService:
 
     @staticmethod
     def _is_city_like_candidate(row: dict[str, Any]) -> bool:
-        kind = str(row.get("type") or row.get("addresstype") or "").strip().lower()
+        kind = str(row.get("addresstype") or row.get("type") or "").strip().lower()
         category = str(row.get("class") or "").strip().lower()
         allowed_kinds = {
             "city",

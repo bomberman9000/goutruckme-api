@@ -98,6 +98,23 @@ def test_geo_service_rejects_non_city_nominatim_rows():
     assert service._pick_city_candidate(payload) is None
 
 
+def test_geo_service_accepts_boundary_rows_when_addresstype_is_city_like():
+    service = GeoService()
+
+    payload = [
+        {
+            "display_name": "Tarsus, Mersin, Turkiye",
+            "class": "boundary",
+            "type": "administrative",
+            "addresstype": "town",
+        }
+    ]
+
+    picked = service._pick_city_candidate(payload)
+    assert picked is not None
+    assert picked["display_name"].startswith("Tarsus")
+
+
 def test_city_coords_contains_common_cis_cities():
     assert city_coords("Ташкент") is not None
     assert city_coords("Гомель") is not None
