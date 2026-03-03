@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from dataclasses import dataclass
 import hashlib
 import logging
@@ -339,9 +340,11 @@ async def _run_once() -> None:
             total_enqueued = await _enqueue_candidates(stream, candidates=deduped)
     finally:
         if context is not None:
-            await context.close()
+            with suppress(PlaywrightError):
+                await context.close()
         if browser is not None:
-            await browser.close()
+            with suppress(PlaywrightError):
+                await browser.close()
         await redis_client.aclose()
 
     logger.info("cycle complete enqueued=%s", total_enqueued)
