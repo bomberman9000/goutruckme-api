@@ -205,7 +205,7 @@ export function App() {
   const [issueNote, setIssueNote] = useState("");
   const [issueSubmitting, setIssueSubmitting] = useState(false);
   const [actionGuide, setActionGuide] = useState<ActionGuide>(null);
-  const [initData] = useState<string | null>(() => {
+  const [initData, setInitData] = useState<string | null>(() => {
     const value = (window as any)?.Telegram?.WebApp?.initData || "";
     return typeof value === "string" && value.trim() ? value.trim() : null;
   });
@@ -343,7 +343,8 @@ export function App() {
     }
 
     const liveInitData = typeof tg?.initData === "string" ? tg.initData.trim() : "";
-    if (liveInitData) {
+    if (liveInitData && liveInitData !== initData) {
+      setInitData(liveInitData);
       void loadProfileSummary();
       return;
     }
