@@ -106,7 +106,12 @@ async def lifespan(app: FastAPI):
 
     async def _run_polling():
         try:
-            await dp.start_polling(bot)
+            await bot.delete_webhook(drop_pending_updates=True)
+            logger.info("Webhook deleted, starting polling...")
+            await dp.start_polling(
+                bot,
+                allowed_updates=["message", "callback_query", "inline_query", "pre_checkout_query"],
+            )
         except Exception as e:
             logger.error("Polling crashed: %s", e, exc_info=True)
 
