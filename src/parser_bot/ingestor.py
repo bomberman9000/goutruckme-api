@@ -146,6 +146,24 @@ async def _build_source_name(event: events.NewMessage.Event) -> str:
     return _build_source_name_from_chat(event.chat_id, chat)
 
 
+def _event_peer_id(event: events.NewMessage.Event) -> int | None:
+    candidates = [
+        getattr(event, "chat_id", None),
+        getattr(event, "peer_id", None),
+        getattr(getattr(event, "message", None), "peer_id", None),
+    ]
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        try:
+            if isinstance(candidate, int):
+                return int(candidate)
+            return int(utils.get_peer_id(candidate))
+        except Exception:
+            continue
+    return None
+
+
 async def _enqueue_message(
     stream: RedisLogisticsStream,
     *,
@@ -242,10 +260,12 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
 
     @client.on(events.NewMessage())
     async def on_new_message(event: events.NewMessage.Event) -> None:
-        if event.chat_id not in watched_chat_ids:
+        peer_id = _event_peer_id(event)
+        if peer_id not in watched_chat_ids:
             return
 
-        text = (event.raw_text or "").strip()
+        raw_message = getattr(getattr(event, "message", None), "message", None)
+        text = (raw_message or event.raw_text or "").strip()
         if not text:
             return
 
@@ -253,7 +273,7 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
             await _enqueue_message(
                 stream,
                 raw_text=text,
-                chat_id=event.chat_id or "unknown",
+                chat_id=peer_id or event.chat_id or "unknown",
                 message_id=int(event.id),
                 source=await _build_source_name(event),
             )
