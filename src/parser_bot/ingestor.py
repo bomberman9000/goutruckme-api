@@ -41,6 +41,14 @@ async def _self_health_check(redis_client: redis.Redis, *, started_monotonic: fl
     grace_sec = max(60, int(settings.parser_self_kill_grace_sec))
     stale_after_sec = max(grace_sec, int(settings.parser_self_kill_after_sec))
 
+    logger.info(
+        "[HealthMonitor] Started key=%s grace=%ss stale_after=%ss ttl=%ss",
+        _heartbeat_key(),
+        grace_sec,
+        stale_after_sec,
+        max(60, int(settings.parser_heartbeat_ttl_sec)),
+    )
+
     while True:
         await asyncio.sleep(60)
 

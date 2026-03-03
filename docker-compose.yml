@@ -48,7 +48,7 @@ services:
       - parser_sessions:/app/.parser
     networks:
       - backend-network
-    restart: on-failure
+    restart: unless-stopped
 
   parser-worker:
     build: .
