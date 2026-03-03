@@ -348,12 +348,16 @@ async def _run_once() -> None:
 
 
 async def run_forever() -> None:
-    if not settings.avito_enabled:
-        logger.info("Avito producer disabled (AVITO_ENABLED=false). Exit.")
-        return
-
     base_interval_sec = max(1, int(settings.avito_poll_interval_min)) * 60
     while True:
+        if not settings.avito_enabled:
+            logger.info(
+                "Avito producer disabled (AVITO_ENABLED=false). Sleep %.1fs before re-check.",
+                float(base_interval_sec),
+            )
+            await asyncio.sleep(float(base_interval_sec))
+            continue
+
         try:
             await _run_once()
         except Exception as exc:
