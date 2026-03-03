@@ -2,7 +2,12 @@ import src.core.geo as geo
 from src.core.config import settings
 
 from src.parser_bot.extractor import ParsedCargo
-from src.parser_bot.worker import _has_min_signal, _is_unrealistic_rate, _rate_review_reason
+from src.parser_bot.worker import (
+    _has_min_signal,
+    _is_unrealistic_rate,
+    _rate_review_reason,
+    _should_drop_ambiguous_million_rate,
+)
 
 
 def make_parsed(from_city: str, to_city: str, rate_rub: int) -> ParsedCargo:
@@ -116,3 +121,14 @@ def test_has_min_signal_accepts_customs_or_ferry_intent_without_numeric_fields()
 
     assert _has_min_signal(customs) is True
     assert _has_min_signal(ferry) is True
+
+
+def test_should_drop_ambiguous_million_rate_for_central_asia_route():
+    parsed = make_parsed("Липецк", "Ташкент", 40_000_000)
+    assert _should_drop_ambiguous_million_rate("Липецк - Ташкент Ставка 40 млн", parsed) is True
+
+
+def test_should_not_drop_million_rate_with_explicit_rubles_or_usd():
+    parsed = make_parsed("Липецк", "Ташкент", 40_000_000)
+    assert _should_drop_ambiguous_million_rate("Липецк - Ташкент Ставка 40 млн руб", parsed) is False
+    assert _should_drop_ambiguous_million_rate("Мерсин - Астана Аванс 35000 $", make_parsed("Мерсин", "Астана", 3_500_000)) is False

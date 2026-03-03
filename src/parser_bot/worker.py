@@ -48,6 +48,24 @@ _CARGO_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_AMBIGUOUS_MILLION_CITY_KEYS = {
+    "ташкент",
+    "самарканд",
+    "бухара",
+    "навоий",
+    "навои",
+    "ургенч",
+    "фергана",
+    "андижан",
+    "карши",
+    "наманган",
+    "джизак",
+    "коканд",
+    "хорезм",
+    "кашкадарья",
+    "сурхандарья",
+}
+
 
 def _join_url(base_url: str, path: str) -> str:
     base = (base_url or "").rstrip("/")
@@ -79,6 +97,33 @@ def _parse_keywords(raw: str) -> list[str]:
 
 def _stream_socket_timeout(block_ms: int) -> float:
     return max(5.0, (max(100, int(block_ms)) / 1000.0) + 2.0)
+
+
+def _city_key(value: str | None) -> str:
+    key = (value or "").strip().lower()
+    key = key.replace("ё", "е").replace("-", " ")
+    key = re.sub(r"[^0-9a-zа-яқғўҳүұ\s'’ʻ`]", " ", key)
+    key = key.replace("ʻ", "'").replace("’", "'").replace("`", "'")
+    return re.sub(r"\s+", " ", key).strip()
+
+
+def _should_drop_ambiguous_million_rate(text: str, parsed: ParsedCargo) -> bool:
+    rate = parsed.rate_rub
+    if not isinstance(rate, int) or rate < 1_000_000:
+        return False
+
+    text_lc = (text or "").lower()
+    if "млн" not in text_lc and "мил" not in text_lc:
+        return False
+
+    if re.search(r"(?:₽|руб(?:лей)?|рос(?:сийских)?\s*руб)", text_lc):
+        return False
+
+    if re.search(r"(?:\$|usd\b|дол(?:лар(?:ов|а)?)?\b)", text_lc):
+        return False
+
+    route_keys = {_city_key(parsed.from_city), _city_key(parsed.to_city)}
+    return any(key in _AMBIGUOUS_MILLION_CITY_KEYS for key in route_keys)
 
 
 def _build_redis_client(*, block_ms: int) -> redis.Redis:
@@ -739,6 +784,16 @@ async def _process_message(
                 parse_method=parse_method,
             )
             return
+
+        if _should_drop_ambiguous_million_rate(text, parsed):
+            logger.info(
+                "dropping ambiguous million rate id=%s route=%s->%s rate=%s",
+                message.entry_id,
+                parsed.from_city,
+                parsed.to_city,
+                parsed.rate_rub,
+            )
+            parsed.rate_rub = None
 
         if not parsed.rate_rub:
             await _fill_rate_from_reference(parsed)
