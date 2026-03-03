@@ -68,15 +68,19 @@ async def lifespan(app: FastAPI):
 
     setup_scheduler()
 
+    import logging as _logging
+    _logging.getLogger("aiogram").setLevel(_logging.DEBUG)
+
     async def debug_updates(handler, event, data):
         kind = type(event).__name__
         uid = getattr(event, "message_id", None) or getattr(event, "id", None)
+        print(f"[DEBUG] RAW UPDATE: {kind} (id={uid})", flush=True)
         logger.info("RAW UPDATE: %s (id=%s)", kind, uid)
         return await handler(event, data)
 
-    dp.message.middleware(debug_updates)
-    dp.callback_query.middleware(debug_updates)
-    dp.inline_query.middleware(debug_updates)
+    dp.message.outer_middleware(debug_updates)
+    dp.callback_query.outer_middleware(debug_updates)
+    dp.inline_query.outer_middleware(debug_updates)
 
     dp.message.middleware(WatchdogMiddleware())
     dp.callback_query.middleware(WatchdogMiddleware())
