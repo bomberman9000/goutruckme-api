@@ -294,8 +294,8 @@ CITY_ALIASES = {
     "ташкенд": "Ташкент",
     "тошкент": "Ташкент",
     "toshkent": "Ташкент",
-    "шимкент": "Шымкент",
-    "чимкент": "Шымкент",
+    "шимкент": "Чимкент",
+    "чимкент": "Чимкент",
     "сырдаря": "Сырдарья",
     "сирдарё": "Сырдарья",
     "бухоро": "Бухара",
@@ -303,8 +303,8 @@ CITY_ALIASES = {
     "самарқанд": "Самарканд",
     "самарканд": "Самарканд",
     "samarqand": "Самарканд",
-    "навоий": "Навои",
-    "navoiy": "Навои",
+    "навоий": "Навоий",
+    "navoiy": "Навоий",
     "жиззах": "Джизак",
     "карши": "Карши",
     "нукус": "Нукус",
@@ -649,6 +649,9 @@ def _parse_route(text: str) -> tuple[str, str] | tuple[None, None]:
             candidates.append((compact.start(), from_city, to_city))
 
     for suffix_route in ROUTE_UZ_FROM_SUFFIX_RE.finditer(route_text):
+        raw_to = (suffix_route.group("to") or "").strip().lower()
+        if raw_to.endswith(("ga", "qa", "ka", "га", "қа", "ка")):
+            continue
         from_city = _normalize_city(suffix_route.group("from"))
         to_city = _normalize_city(suffix_route.group("to"))
         if from_city and to_city and not _is_invalid_city_name(from_city) and not _is_invalid_city_name(to_city):
