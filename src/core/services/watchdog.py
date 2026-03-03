@@ -222,12 +222,19 @@ class BotWatchdog:
             pending = parser_metrics.get("pending")
             queue_depth = parser_metrics.get("queue_depth")
             if lag is not None and pending is not None and queue_depth is not None:
-                if lag > 0 or pending > 0:
+                pending_warn_threshold = max(20, int(settings.parser_stream_batch))
+                if lag > 0:
+                    results["checks"]["parser_queue"] = (
+                        f"⚠️ depth={queue_depth} pending={pending} lag={lag}"
+                    )
+                elif pending > pending_warn_threshold:
                     results["checks"]["parser_queue"] = (
                         f"⚠️ depth={queue_depth} pending={pending} lag={lag}"
                     )
                 else:
-                    results["checks"]["parser_queue"] = f"✅ OK (depth={queue_depth})"
+                    results["checks"]["parser_queue"] = (
+                        f"✅ OK (depth={queue_depth}, pending={pending}, lag={lag})"
+                    )
 
             if settings.parser_enabled:
                 heartbeat_age_sec = parser_metrics.get("heartbeat_age_sec")
