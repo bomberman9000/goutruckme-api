@@ -61,6 +61,18 @@ def _internal_headers() -> dict[str, str]:
     return {"X-Internal-Token": token} if token else {}
 
 
+def _sync_targets() -> list[str]:
+    targets: list[str] = []
+    for base_url in (
+        settings.tg_bot_internal_url,
+        settings.gruzpotok_api_internal_url,
+    ):
+        url = _join_url(base_url, settings.gruzpotok_sync_path)
+        if url not in targets:
+            targets.append(url)
+    return targets
+
+
 def _parse_keywords(raw: str) -> list[str]:
     return [item.strip().lower() for item in (raw or "").split(",") if item.strip()]
 
@@ -557,6 +569,19 @@ async def _push_to_api(
     return data if isinstance(data, dict) else {}
 
 
+async def _push_to_targets(
+    http_client: httpx.AsyncClient,
+    sync_urls: list[str],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    primary_result: dict[str, Any] = {}
+    for index, sync_url in enumerate(sync_urls):
+        result = await _push_to_api(http_client, sync_url, payload)
+        if index == 0:
+            primary_result = result
+    return primary_result
+
+
 def _extract_cargo_id(sync_result: dict[str, Any]) -> int | None:
     try:
         value = sync_result.get("cargo_id")
@@ -576,7 +601,7 @@ async def _process_message(
     *,
     stream: RedisLogisticsStream,
     http_client: httpx.AsyncClient,
-    sync_url: str,
+    sync_urls: list[str],
     keywords: list[str],
     group_name: str,
     dedupe_ttl: int,
@@ -878,7 +903,7 @@ async def _process_message(
         sync_payload = _build_sync_payload(parsed, message, trust=trust)
 
         try:
-            sync_result = await _push_to_api(http_client, sync_url, sync_payload)
+            sync_result = await _push_to_targets(http_client, sync_urls, sync_payload)
             cargo_id = _extract_cargo_id(sync_result)
             await _save_ingest_event(
                 message=message,
@@ -964,17 +989,18 @@ async def run() -> None:
     max_retries = max(0, int(settings.parser_worker_max_retries))
 
     redis_client, stream = await _connect_stream(block_ms=block_ms, group_name=group_name)
-    sync_url = _join_url(settings.gruzpotok_api_internal_url, settings.gruzpotok_sync_path)
+    sync_urls = _sync_targets()
     http_client = httpx.AsyncClient(timeout=max(3, int(settings.parser_http_timeout)))
 
     logger.info(
-        "worker started stream=%s group=%s worker=%s batch=%s block_ms=%s claim_idle_ms=%s",
+        "worker started stream=%s group=%s worker=%s batch=%s block_ms=%s claim_idle_ms=%s sync_targets=%s",
         settings.parser_stream_name,
         group_name,
         worker_name,
         batch,
         block_ms,
         claim_idle_ms,
+        ",".join(sync_urls),
     )
 
     try:
@@ -1002,7 +1028,7 @@ async def run() -> None:
                     await _process_message(
                         stream=stream,
                         http_client=http_client,
-                        sync_url=sync_url,
+                        sync_urls=sync_urls,
                         keywords=keywords,
                         group_name=group_name,
                         dedupe_ttl=dedupe_ttl,
