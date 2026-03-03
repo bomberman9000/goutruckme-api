@@ -919,19 +919,28 @@ def _nlp_confirm_kb() -> InlineKeyboardMarkup:
 @router.message(StateFilter(None), F.text.regexp(r"(?i)\d+\s*(кг|т\b|тн\b|тонн)"))
 async def nlp_cargo_detect(message: Message, state: FSMContext):
     """Detect free-text cargo descriptions and offer quick creation."""
-    parsed = await parse_cargo_nlp(message.text)
+    logger.info("NLP handler called: user=%s text=%r", message.from_user.id, message.text)
+    try:
+        parsed = await parse_cargo_nlp(message.text)
+    except Exception as e:
+        logger.error("parse_cargo_nlp error: %s", e, exc_info=True)
+        return
+    logger.info("NLP parsed: %s", parsed)
     if not parsed:
         return  # let other handlers deal with it
 
     # If price not given, fetch estimate
     if not parsed.get("price"):
-        from src.core.ai import estimate_price_smart
-        est = await estimate_price_smart(
-            parsed["from_city"], parsed["to_city"], parsed["weight"], parsed.get("cargo_type", "тент")
-        )
-        if est.get("price"):
-            parsed["price"] = est["price"]
-            parsed["price_estimated"] = True
+        try:
+            from src.core.ai import estimate_price_smart
+            est = await estimate_price_smart(
+                parsed["from_city"], parsed["to_city"], parsed["weight"], parsed.get("cargo_type", "тент")
+            )
+            if est.get("price"):
+                parsed["price"] = est["price"]
+                parsed["price_estimated"] = True
+        except Exception as e:
+            logger.warning("estimate_price_smart error: %s", e)
 
     # Build preview
     weight_display = parsed["weight"]
@@ -963,7 +972,11 @@ async def nlp_cargo_detect(message: Message, state: FSMContext):
 
     await state.set_state(CargoNLPConfirm.wait_confirm)
     await state.update_data(nlp_parsed=parsed)
-    await message.answer(text, reply_markup=_nlp_confirm_kb())
+    try:
+        await message.answer(text, parse_mode="HTML", reply_markup=_nlp_confirm_kb())
+        logger.info("NLP reply sent to user=%s", message.from_user.id)
+    except Exception as e:
+        logger.error("NLP reply failed: %s", e, exc_info=True)
 
 
 @router.callback_query(CargoNLPConfirm.wait_confirm, F.data == "nlp_cargo_confirm")
