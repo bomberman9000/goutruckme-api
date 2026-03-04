@@ -302,9 +302,88 @@ async def _startup_backfill(
         logger.info("startup backfill complete queued_total=%s", total)
 
 
+async def _snapshot_last_message_ids(
+    client: TelegramClient,
+    watched_chat_ids: set[int],
+) -> dict[int, int]:
+    last_seen_by_chat: dict[int, int] = {}
+    for peer_id in watched_chat_ids:
+        try:
+            entity = await client.get_entity(peer_id)
+            messages = await client.get_messages(entity, limit=1)
+            top = messages[0] if messages else None
+            top_id = int(getattr(top, "id", 0) or 0)
+            if top_id > 0:
+                last_seen_by_chat[peer_id] = top_id
+        except Exception as exc:
+            logger.warning(
+                "snapshot latest message failed chat=%s error=%s",
+                peer_id,
+                str(exc)[:200],
+            )
+    return last_seen_by_chat
+
+
+async def _live_poll_catchup(
+    client: TelegramClient,
+    stream: RedisLogisticsStream,
+    watched_chat_ids: set[int],
+    last_seen_by_chat: dict[int, int],
+) -> None:
+    while True:
+        await asyncio.sleep(20)
+
+        for peer_id in watched_chat_ids:
+            last_seen = max(0, int(last_seen_by_chat.get(peer_id, 0)))
+            try:
+                entity = await client.get_entity(peer_id)
+                source = _build_source_name_from_chat(peer_id, entity)
+                pending_messages = []
+                async for message in client.iter_messages(entity, min_id=last_seen, limit=10):
+                    if not message or not getattr(message, "id", None):
+                        continue
+                    if int(message.id) <= last_seen:
+                        continue
+                    pending_messages.append(message)
+            except Exception as exc:
+                logger.warning(
+                    "live poll failed chat=%s error=%s",
+                    peer_id,
+                    str(exc)[:200],
+                )
+                continue
+
+            if not pending_messages:
+                continue
+
+            queued = 0
+            for message in reversed(pending_messages):
+                message_id = int(message.id)
+                last_seen_by_chat[peer_id] = max(last_seen_by_chat.get(peer_id, 0), message_id)
+                text = (getattr(message, "message", None) or "").strip()
+                if not text:
+                    continue
+                queued += await _enqueue_message(
+                    stream,
+                    raw_text=text,
+                    chat_id=peer_id,
+                    message_id=message_id,
+                    source=source,
+                )
+
+            if queued:
+                logger.info(
+                    "live poll catch-up chat=%s queued=%s last_seen=%s",
+                    peer_id,
+                    queued,
+                    last_seen_by_chat.get(peer_id, 0),
+                )
+
+
 async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> None:
     client = TelegramClient(_build_session(), settings.parser_tg_api_id, settings.parser_tg_api_hash)
     health_task: asyncio.Task[None] | None = None
+    poll_task: asyncio.Task[None] | None = None
     await client.start()
     resolved_chat_ids = await _resolve_chat_filters(client, chat_ids)
     if not resolved_chat_ids:
@@ -317,6 +396,10 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
         _self_health_check(stream.redis, started_monotonic=time.monotonic())
     )
     await _startup_backfill(client, stream, watched_chat_ids)
+    last_seen_by_chat = await _snapshot_last_message_ids(client, watched_chat_ids)
+    poll_task = asyncio.create_task(
+        _live_poll_catchup(client, stream, watched_chat_ids, last_seen_by_chat)
+    )
 
     @client.on(events.NewMessage())
     async def on_new_message(event: events.NewMessage.Event) -> None:
@@ -337,6 +420,8 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
                 message_id=int(event.id),
                 source=await _build_source_name(event),
             )
+            if peer_id is not None:
+                last_seen_by_chat[peer_id] = max(last_seen_by_chat.get(peer_id, 0), int(event.id))
         except Exception as exc:
             logger.warning(
                 "stream enqueue failed chat=%s message=%s error=%s",
@@ -354,6 +439,10 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
     try:
         await client.run_until_disconnected()
     finally:
+        if poll_task is not None:
+            poll_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await poll_task
         if health_task is not None:
             health_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
