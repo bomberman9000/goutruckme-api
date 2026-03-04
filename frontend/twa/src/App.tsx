@@ -63,6 +63,68 @@ type ActionGuide = {
 const BODY_TYPES = ["тент", "рефрижератор", "трал", "борт", "контейнер", "изотерм"];
 const BOT_HOME_LINK = "https://t.me/gotruck_ai_bot";
 
+function buildLocalProfileFallback(): WebappProfileResponse | null {
+  const user = (window as any)?.Telegram?.WebApp?.initDataUnsafe?.user;
+  const userId = typeof user?.id === "number" ? user.id : null;
+  if (!userId) {
+    return null;
+  }
+
+  const firstName = typeof user?.first_name === "string" ? user.first_name.trim() : "";
+  const lastName = typeof user?.last_name === "string" ? user.last_name.trim() : "";
+  const username = typeof user?.username === "string" ? user.username.trim() : "";
+  const name = [firstName, lastName].filter(Boolean).join(" ").trim()
+    || username
+    || `Пользователь ${userId}`;
+
+  return {
+    user: {
+      id: userId,
+      name,
+      username: username || null,
+      phone: null,
+      is_carrier: true,
+      is_verified: false,
+      is_premium: false,
+      premium_until: null,
+    },
+    company: null,
+    wallet: {
+      balance_rub: 0,
+      frozen_balance_rub: 0,
+    },
+    stats: {
+      cargo_count: 0,
+      verified_payment_count: 0,
+      released_payment_count: 0,
+      secured_amount_rub: 0,
+      released_amount_rub: 0,
+    },
+    referral: {
+      link: null,
+      invited_count: 0,
+      activated_count: 0,
+      rewards_count: 0,
+      reward_days_total: 0,
+      invited_bonus_days: 0,
+      ambassador_target: 10,
+      is_ambassador: false,
+    },
+    engagement: {
+      window_days: 30,
+      created_cargos: 0,
+      opened_cargo_matches: 0,
+      created_vehicles: 0,
+      activated_vehicles: 0,
+      opened_vehicle_matches: 0,
+      created_subscriptions: 0,
+      enabled_honest_route: 0,
+    },
+    cargos: [],
+    refund_journal: [],
+  };
+}
+
 function trustStars(score: number | null): string {
   if (score == null) return "☆☆☆";
   if (score >= 80) return "★★★★★";
@@ -324,6 +386,12 @@ export function App() {
         || /Missing Authorization/i.test(message)
         || /Invalid Telegram initData/i.test(message)
       ) {
+        const fallback = buildLocalProfileFallback();
+        if (fallback) {
+          setProfileSummary(fallback);
+          setProfileError(null);
+          return;
+        }
         setProfileError("Не удалось подтвердить Telegram-сессию. Обновите доступ или откройте Mini App заново из бота.");
       } else {
         setProfileError(message);
