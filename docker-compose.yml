@@ -2,7 +2,7 @@ services:
   bot:
     build: .
     ports:
-      - "8001:8001"
+      - "8000:8000"
     env_file:
       - .env
     environment:
@@ -14,7 +14,7 @@ services:
       - redis
       - postgres
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -48,7 +48,7 @@ services:
       - parser_sessions:/app/.parser
     networks:
       - backend-network
-    restart: unless-stopped
+    restart: on-failure
 
   parser-worker:
     build: .
@@ -82,6 +82,7 @@ services:
       DADATA_API_TOKEN: ${DADATA_API_TOKEN:-}
     depends_on:
       - redis
+      - postgres
     networks:
       - backend-network
     restart: on-failure
@@ -90,14 +91,42 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.avito
-    command: ["python", "-m", "src.parser_bot.avito_producer"]
+    command: ["python", "-m", "src.services.avito_service"]
     profiles: ["parser", "parser-v2"]
     env_file:
       - .env
     environment:
       AVITO_ENABLED: ${AVITO_ENABLED:-false}
-      AVITO_POLL_INTERVAL_MIN: ${AVITO_POLL_INTERVAL_MIN:-15}
-      AVITO_MAX_PAGES_PER_RUN: ${AVITO_MAX_PAGES_PER_RUN:-3}
+      AVITO_SEARCH_URL: ${AVITO_SEARCH_URL:-}
+      AVITO_TRUCKS_URL: ${AVITO_TRUCKS_URL:-}
+      AVITO_INTERVAL_SEC: ${AVITO_INTERVAL_SEC:-300}
+      AVITO_MAX_ADS: ${AVITO_MAX_ADS:-50}
+      AVITO_STATE_FILE: /app/.avito/avito_state.json
+      PARSER_STREAM_NAME: ${PARSER_STREAM_NAME:-logistics_stream}
+      PARSER_STREAM_MAXLEN: ${PARSER_STREAM_MAXLEN:-200000}
+    depends_on:
+      - redis
+    volumes:
+      - ./avito_state.json:/app/.avito/avito_state.json
+    networks:
+      - backend-network
+    restart: on-failure
+
+  vk-parser:
+    build: .
+    command: ["python", "-m", "src.parser_bot.vk_ingestor"]
+    profiles: ["parser", "parser-v2"]
+    env_file:
+      - .env
+    environment:
+      VK_ENABLED: ${VK_ENABLED:-false}
+      VK_ACCESS_TOKEN: ${VK_ACCESS_TOKEN:-}
+      VK_GROUP_IDS: ${VK_GROUP_IDS:-}
+      VK_POLL_INTERVAL_SEC: ${VK_POLL_INTERVAL_SEC:-60}
+      VK_FETCH_COUNT: ${VK_FETCH_COUNT:-5}
+      VK_DEDUPE_TTL_SEC: ${VK_DEDUPE_TTL_SEC:-86400}
+      VK_API_VERSION: ${VK_API_VERSION:-5.199}
+      VK_SOURCE_NAME: ${VK_SOURCE_NAME:-vk-parser-bot}
       PARSER_KEYWORDS: ${PARSER_KEYWORDS:-груз,погрузка,выгрузка,тент,реф,ндс,ставка,догруз,фрахт}
       PARSER_STREAM_NAME: ${PARSER_STREAM_NAME:-logistics_stream}
       PARSER_STREAM_MAXLEN: ${PARSER_STREAM_MAXLEN:-200000}
@@ -124,7 +153,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - backend-network
+      backend-network:
+        aliases:
+          - postgres
+          - gtm-postgres
     restart: unless-stopped
 
 volumes:

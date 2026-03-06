@@ -31,47 +31,41 @@ def _heartbeat_key() -> str:
     return (settings.parser_heartbeat_key or "").strip() or "parser:heartbeat"
 
 
-async def _touch_heartbeat(redis_client: redis.Redis) -> None:
+async def _update_heartbeat(redis_client: redis.Redis) -> None:
     ttl = max(60, int(settings.parser_heartbeat_ttl_sec))
-    now_ts = int(time.time())
-    await redis_client.set(_heartbeat_key(), str(now_ts), ex=ttl)
+    await redis_client.set(_heartbeat_key(), int(time.time()), ex=ttl)
 
 
-async def _self_health_check(redis_client: redis.Redis, *, started_monotonic: float) -> None:
+async def _health_monitor(redis_client: redis.Redis, *, started_monotonic: float) -> None:
     grace_sec = max(60, int(settings.parser_self_kill_grace_sec))
     stale_after_sec = max(grace_sec, int(settings.parser_self_kill_after_sec))
 
-    logger.info(
-        "[HealthMonitor] Started key=%s grace=%ss stale_after=%ss ttl=%ss",
-        _heartbeat_key(),
-        grace_sec,
-        stale_after_sec,
-        max(60, int(settings.parser_heartbeat_ttl_sec)),
-    )
+    await asyncio.sleep(grace_sec)
 
     while True:
         await asyncio.sleep(60)
 
+        # Avoid false positives right after restart.
         if (time.monotonic() - started_monotonic) < grace_sec:
             continue
 
-        raw = await redis_client.get(_heartbeat_key())
-        if raw is None:
-            logger.error(
-                "parser heartbeat missing after grace=%ss. Exiting for clean restart.",
+        last_beat = await redis_client.get(_heartbeat_key())
+        if not last_beat:
+            logger.critical(
+                "parser heartbeat missing after %ss grace. Exiting for clean restart.",
                 grace_sec,
             )
             os._exit(1)
 
         try:
-            age_sec = max(0.0, time.time() - float(raw))
+            age_sec = time.time() - int(last_beat)
         except (TypeError, ValueError):
-            logger.error("parser heartbeat is invalid (%r). Exiting for clean restart.", raw)
+            logger.critical("parser heartbeat is invalid (%r). Exiting for clean restart.", last_beat)
             os._exit(1)
 
         if age_sec > stale_after_sec:
-            logger.error(
-                "parser heartbeat stale age=%.1fs threshold=%ss. Exiting for clean restart.",
+            logger.critical(
+                "parser heartbeat stale for %.1fs (threshold=%ss). Exiting for clean restart.",
                 age_sec,
                 stale_after_sec,
             )
@@ -198,24 +192,6 @@ async def _build_source_name(event: events.NewMessage.Event) -> str:
     return _build_source_name_from_chat(event.chat_id, chat)
 
 
-def _event_peer_id(event: events.NewMessage.Event) -> int | None:
-    candidates = [
-        getattr(event, "chat_id", None),
-        getattr(event, "peer_id", None),
-        getattr(getattr(event, "message", None), "peer_id", None),
-    ]
-    for candidate in candidates:
-        if candidate is None:
-            continue
-        try:
-            if isinstance(candidate, int):
-                return int(candidate)
-            return int(utils.get_peer_id(candidate))
-        except Exception:
-            continue
-    return None
-
-
 async def _enqueue_message(
     stream: RedisLogisticsStream,
     *,
@@ -246,7 +222,7 @@ async def _enqueue_message(
         )
 
     if total:
-        await _touch_heartbeat(stream.redis)
+        await _update_heartbeat(stream.redis)
 
     return total
 
@@ -302,88 +278,9 @@ async def _startup_backfill(
         logger.info("startup backfill complete queued_total=%s", total)
 
 
-async def _snapshot_last_message_ids(
-    client: TelegramClient,
-    watched_chat_ids: set[int],
-) -> dict[int, int]:
-    last_seen_by_chat: dict[int, int] = {}
-    for peer_id in watched_chat_ids:
-        try:
-            entity = await client.get_entity(peer_id)
-            messages = await client.get_messages(entity, limit=1)
-            top = messages[0] if messages else None
-            top_id = int(getattr(top, "id", 0) or 0)
-            if top_id > 0:
-                last_seen_by_chat[peer_id] = top_id
-        except Exception as exc:
-            logger.warning(
-                "snapshot latest message failed chat=%s error=%s",
-                peer_id,
-                str(exc)[:200],
-            )
-    return last_seen_by_chat
-
-
-async def _live_poll_catchup(
-    client: TelegramClient,
-    stream: RedisLogisticsStream,
-    watched_chat_ids: set[int],
-    last_seen_by_chat: dict[int, int],
-) -> None:
-    while True:
-        await asyncio.sleep(20)
-
-        for peer_id in watched_chat_ids:
-            last_seen = max(0, int(last_seen_by_chat.get(peer_id, 0)))
-            try:
-                entity = await client.get_entity(peer_id)
-                source = _build_source_name_from_chat(peer_id, entity)
-                pending_messages = []
-                async for message in client.iter_messages(entity, min_id=last_seen, limit=10):
-                    if not message or not getattr(message, "id", None):
-                        continue
-                    if int(message.id) <= last_seen:
-                        continue
-                    pending_messages.append(message)
-            except Exception as exc:
-                logger.warning(
-                    "live poll failed chat=%s error=%s",
-                    peer_id,
-                    str(exc)[:200],
-                )
-                continue
-
-            if not pending_messages:
-                continue
-
-            queued = 0
-            for message in reversed(pending_messages):
-                message_id = int(message.id)
-                last_seen_by_chat[peer_id] = max(last_seen_by_chat.get(peer_id, 0), message_id)
-                text = (getattr(message, "message", None) or "").strip()
-                if not text:
-                    continue
-                queued += await _enqueue_message(
-                    stream,
-                    raw_text=text,
-                    chat_id=peer_id,
-                    message_id=message_id,
-                    source=source,
-                )
-
-            if queued:
-                logger.info(
-                    "live poll catch-up chat=%s queued=%s last_seen=%s",
-                    peer_id,
-                    queued,
-                    last_seen_by_chat.get(peer_id, 0),
-                )
-
-
 async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> None:
     client = TelegramClient(_build_session(), settings.parser_tg_api_id, settings.parser_tg_api_hash)
     health_task: asyncio.Task[None] | None = None
-    poll_task: asyncio.Task[None] | None = None
     await client.start()
     resolved_chat_ids = await _resolve_chat_filters(client, chat_ids)
     if not resolved_chat_ids:
@@ -391,24 +288,18 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
         await client.disconnect()
         return
     watched_chat_ids = set(resolved_chat_ids)
-    await _touch_heartbeat(stream.redis)
+    await _update_heartbeat(stream.redis)
     health_task = asyncio.create_task(
-        _self_health_check(stream.redis, started_monotonic=time.monotonic())
+        _health_monitor(stream.redis, started_monotonic=time.monotonic())
     )
     await _startup_backfill(client, stream, watched_chat_ids)
-    last_seen_by_chat = await _snapshot_last_message_ids(client, watched_chat_ids)
-    poll_task = asyncio.create_task(
-        _live_poll_catchup(client, stream, watched_chat_ids, last_seen_by_chat)
-    )
 
     @client.on(events.NewMessage())
     async def on_new_message(event: events.NewMessage.Event) -> None:
-        peer_id = _event_peer_id(event)
-        if peer_id not in watched_chat_ids:
+        if event.chat_id not in watched_chat_ids:
             return
 
-        raw_message = getattr(getattr(event, "message", None), "message", None)
-        text = (raw_message or event.raw_text or "").strip()
+        text = (event.raw_text or "").strip()
         if not text:
             return
 
@@ -416,12 +307,10 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
             await _enqueue_message(
                 stream,
                 raw_text=text,
-                chat_id=peer_id or event.chat_id or "unknown",
+                chat_id=event.chat_id or "unknown",
                 message_id=int(event.id),
                 source=await _build_source_name(event),
             )
-            if peer_id is not None:
-                last_seen_by_chat[peer_id] = max(last_seen_by_chat.get(peer_id, 0), int(event.id))
         except Exception as exc:
             logger.warning(
                 "stream enqueue failed chat=%s message=%s error=%s",
@@ -439,10 +328,6 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
     try:
         await client.run_until_disconnected()
     finally:
-        if poll_task is not None:
-            poll_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await poll_task
         if health_task is not None:
             health_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

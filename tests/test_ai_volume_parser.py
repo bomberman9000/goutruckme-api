@@ -5,16 +5,31 @@ import asyncio
 from src.core import ai
 
 
-def test_parse_cargo_nlp_extracts_volume_m3(monkeypatch):
+def test_parse_cargo_nlp_extracts_volume_and_cargo_profile(monkeypatch):
     monkeypatch.setattr(ai, "client", None)
 
-    parsed = asyncio.run(ai.parse_cargo_nlp("самар казан 20т 86м3 тент завтра"))
+    parsed = asyncio.run(ai.parse_cargo_nlp("самар казан 20т 82м3 досок 145к завтра"))
 
     assert parsed is not None
     assert parsed["from_city"] == "Самара"
     assert parsed["to_city"] == "Казань"
     assert parsed["weight"] == 20.0
-    assert parsed["volume_m3"] == 86.0
+    assert parsed["volume_m3"] == 82.0
+    assert parsed["cargo_type"] == "Пиломатериалы"
+    assert parsed["body_type"] == "борт"
+    assert parsed["price"] == 145000
+
+
+def test_parse_cargo_nlp_handles_partial_volume_fragment(monkeypatch):
+    monkeypatch.setattr(ai, "client", None)
+
+    parsed = asyncio.run(ai.parse_cargo_nlp("82м3 досок"))
+
+    assert parsed is not None
+    assert parsed["volume_m3"] == 82.0
+    assert parsed["cargo_type"] == "Пиломатериалы"
+    assert parsed["body_type"] == "борт"
+    assert "weight" not in parsed
 
 
 def test_calculate_market_rate_uses_benchmark_for_exact_route():

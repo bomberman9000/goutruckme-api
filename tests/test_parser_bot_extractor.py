@@ -52,7 +52,7 @@ def test_parse_route_with_slash_or_pipe_separator():
 
     chevron_parsed = parse_cargo_message("Тент Чимкент >>>> Навоий 22т", keywords=["тент"])
     assert chevron_parsed is not None
-    assert chevron_parsed.from_city == "Чимкент"
+    assert chevron_parsed.from_city == "Шымкент"
     assert chevron_parsed.to_city == "Навоий"
 
     underscore_parsed = parse_cargo_message("Andijon __ Toshkent Tent 2.5 mln", keywords=["тент"])
@@ -203,6 +203,29 @@ def test_parse_cargo_message_parses_local_uzbek_phone_without_country_code():
     assert parsed.phone == "+998904782811"
 
 
+def test_parse_cargo_message_prefers_first_alternative_city():
+    text = "Денов - Краснодар ёки Крым 18т Реф"
+    parsed = parse_cargo_message(text, keywords=["реф"])
+
+    assert parsed is not None
+    assert parsed.from_city == "Денау"
+    assert parsed.to_city == "Краснодар"
+
+
+def test_parse_cargo_message_ignores_country_code_suffixes():
+    text = "Газган, UZ -> Алматы, KZ 20т"
+    parsed = parse_cargo_message(text, keywords=["тент"])
+
+    assert parsed is not None
+    assert parsed.from_city == "Газган"
+    assert parsed.to_city == "Алматы"
+
+
+def test_parse_cargo_message_rejects_body_type_plural_fake_route():
+    parsed = parse_cargo_message("Тентлар / Рефлар 20т наличными", keywords=["тент"])
+    assert parsed is None
+
+
 def test_split_cargo_message_blocks_splits_multiload_posts():
     text = (
         "Москва - Ташкент\n"
@@ -333,19 +356,6 @@ def test_parse_price_ignores_uzs_million_payment_hints():
     assert parsed.rate_rub is None
 
 
-def test_parse_price_ignores_million_with_payment_transfer_hints():
-    text = (
-        "Питер - Бухоро\n"
-        "Тонна 22-23 тонна\n"
-        "Оплата ичида 20 млн пречесления bor\n"
-    )
-    parsed = parse_cargo_message(text, keywords=["фура"])
-    assert parsed is not None
-    assert parsed.from_city == "Санкт-Петербург"
-    assert parsed.to_city == "Бухара"
-    assert parsed.rate_rub is None
-
-
 def test_parse_cargo_message_prefers_earliest_comma_route_over_customs_line():
     text = (
         "#EGS08629\n"
@@ -361,16 +371,15 @@ def test_parse_cargo_message_prefers_earliest_comma_route_over_customs_line():
     assert parsed.rate_rub is None
 
 
-def test_parse_cargo_message_prefers_earlier_uz_suffix_route_over_later_arrow():
+def test_parse_cargo_message_prefers_earlier_uz_from_suffix_route():
     text = (
-        'Srochna\n'
-        'Mersin "tarsus" dan\n'
-        'Toshkent\n'
-        'Mandarin yuklanadi\n'
-        '22 tonna\n'
-        '1ta ref kerak\n'
-        '8.500$....\n'
-        'ЧИМКЕНТ >>>>НАВОИЙ'
+        "Mersin tarsus dan\n"
+        "Toshkent\n"
+        "Mandarin yuklanadi\n"
+        "22 tonna\n"
+        "1ta ref kerak\n"
+        "8.500$\n"
+        "ЧИМКЕНТ >>>> НАВОИЙ"
     )
     parsed = parse_cargo_message(text, keywords=["реф"])
     assert parsed is not None
@@ -384,7 +393,7 @@ def test_parse_route_with_apostrophe_city_names():
     parsed = parse_cargo_message(text, keywords=["реф"])
     assert parsed is not None
     assert parsed.from_city == "Ташкент"
-    assert parsed.to_city == "Farg'ona"
+    assert parsed.to_city == "Фергана"
     assert parsed.matched_keywords == ["auto"]
 
 

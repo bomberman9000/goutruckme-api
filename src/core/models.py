@@ -743,6 +743,28 @@ class PremiumPayment(Base):
     )
 
 
+class TruckContactUnlock(Base):
+    __tablename__ = "truck_contact_unlocks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    truck_id: Mapped[int] = mapped_column(Integer, ForeignKey("available_trucks.id"))
+    amount_stars: Mapped[int] = mapped_column(Integer, default=0)
+    currency: Mapped[str] = mapped_column(String(10), default="XTR")
+    status: Mapped[str] = mapped_column(String(20), default="success")
+    invoice_payload: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    telegram_payment_charge_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    provider_payment_charge_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "truck_id", name="uq_truck_contact_unlock_user_truck"),
+        Index("ix_truck_contact_unlocks_user", "user_id"),
+        Index("ix_truck_contact_unlocks_truck", "truck_id"),
+        Index("ix_truck_contact_unlocks_created", "created_at"),
+    )
+
+
 class ReferralInvite(Base):
     __tablename__ = "referral_invites"
 
@@ -778,4 +800,35 @@ class ReferralReward(Base):
         Index("ix_referral_rewards_inviter", "inviter_user_id"),
         Index("ix_referral_rewards_invited", "invited_user_id"),
         Index("ix_referral_rewards_created", "created_at"),
+    )
+
+
+class AvailableTruck(Base):
+    __tablename__ = "available_trucks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(64))
+    external_id: Mapped[str] = mapped_column(String(128))
+    truck_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    capacity_tons: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume_m3: Mapped[float | None] = mapped_column(Float, nullable=True)
+    base_city: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    base_region: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    routes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    contact_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    price_rub: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    raw_text: Mapped[str] = mapped_column(Text)
+    avito_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    __table_args__ = (
+        UniqueConstraint("source", "external_id", name="uq_available_trucks_source_ext"),
+        Index("ix_available_trucks_truck_type", "truck_type"),
+        Index("ix_available_trucks_capacity", "capacity_tons"),
+        Index("ix_available_trucks_base_city", "base_city"),
+        Index("ix_available_trucks_last_seen", "last_seen_at"),
+        Index("ix_available_trucks_active", "is_active"),
     )

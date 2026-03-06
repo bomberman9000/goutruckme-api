@@ -7,7 +7,6 @@ from datetime import datetime
 
 import httpx
 
-from src.core.ai_diag import explain_health
 from src.core.config import settings
 from src.core.logger import logger
 
@@ -52,7 +51,7 @@ class BotWatchdog:
             "synced_24h": None,
             "ignored_24h": None,
             "last_event_age_min": None,
-            "heartbeat_key": (settings.parser_heartbeat_key or "").strip() or "parser:heartbeat",
+            "heartbeat_key": settings.parser_heartbeat_key,
             "heartbeat_age_sec": None,
         }
 
@@ -61,16 +60,16 @@ class BotWatchdog:
 
             redis = await get_redis()
             metrics["queue_depth"] = await redis.xlen(settings.parser_stream_name)
-            heartbeat_raw = await redis.get(metrics["heartbeat_key"])
+            heartbeat_raw = await redis.get(settings.parser_heartbeat_key)
             if heartbeat_raw:
                 try:
                     heartbeat_ts = int(float(heartbeat_raw))
                     metrics["heartbeat_age_sec"] = max(
                         0,
-                        int(datetime.utcnow().timestamp() - heartbeat_ts),
+                        round(datetime.utcnow().timestamp() - heartbeat_ts),
                     )
-                except (TypeError, ValueError):
-                    pass
+                except Exception:
+                    metrics["heartbeat_age_sec"] = None
             try:
                 groups = await redis.xinfo_groups(settings.parser_stream_name)
                 group = next(
@@ -163,24 +162,12 @@ class BotWatchdog:
 
         # Telegram API
         try:
-            idle_seconds = (
-                datetime.utcnow() - self.last_activity
-            ).total_seconds()
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(
                     f"https://api.telegram.org/bot{settings.bot_token}/getMe"
                 )
                 if resp.status_code == 200:
                     results["checks"]["telegram"] = "✅ OK"
-                elif resp.status_code == 401:
-                    if idle_seconds <= 900 and self.is_healthy:
-                        results["checks"]["telegram"] = (
-                            "ℹ️ Bot API probe returned 401, but polling activity is healthy"
-                        )
-                    else:
-                        results["checks"]["telegram"] = (
-                            "ℹ️ Bot API probe returned 401"
-                        )
                 else:
                     results["checks"]["telegram"] = (
                         f"⚠️ Status {resp.status_code}"
@@ -234,12 +221,8 @@ class BotWatchdog:
             pending = parser_metrics.get("pending")
             queue_depth = parser_metrics.get("queue_depth")
             if lag is not None and pending is not None and queue_depth is not None:
-                pending_warn_threshold = max(20, int(settings.parser_stream_batch))
-                if lag > 0:
-                    results["checks"]["parser_queue"] = (
-                        f"⚠️ depth={queue_depth} pending={pending} lag={lag}"
-                    )
-                elif pending > pending_warn_threshold:
+                pending_warn = pending > max(10, int(settings.parser_stream_batch))
+                if lag > 0 or pending_warn:
                     results["checks"]["parser_queue"] = (
                         f"⚠️ depth={queue_depth} pending={pending} lag={lag}"
                     )
@@ -248,24 +231,119 @@ class BotWatchdog:
                         f"✅ OK (depth={queue_depth}, pending={pending}, lag={lag})"
                     )
 
-            if settings.parser_enabled:
-                heartbeat_age_sec = parser_metrics.get("heartbeat_age_sec")
-                if heartbeat_age_sec is None:
-                    results["checks"]["parser_heartbeat"] = "⚠️ No heartbeat"
-                elif heartbeat_age_sec > max(60, int(settings.parser_self_kill_after_sec)):
-                    results["checks"]["parser_heartbeat"] = (
-                        f"❌ Stale {heartbeat_age_sec}s"
-                    )
-                else:
-                    results["checks"]["parser_heartbeat"] = (
-                        f"✅ {heartbeat_age_sec}s ago"
-                    )
+            heartbeat_age_sec = parser_metrics.get("heartbeat_age_sec")
+            ttl_sec = max(60, int(settings.parser_heartbeat_ttl_sec))
+            stale_after_sec = max(60, int(settings.parser_self_kill_after_sec))
+            if heartbeat_age_sec is None:
+                results["checks"]["parser_heartbeat"] = "⚠️ No heartbeat"
+            elif heartbeat_age_sec > ttl_sec:
+                results["checks"]["parser_heartbeat"] = (
+                    f"❌ Stale {heartbeat_age_sec}s"
+                )
+            elif heartbeat_age_sec > stale_after_sec:
+                results["checks"]["parser_heartbeat"] = (
+                    f"⚠️ Aging {heartbeat_age_sec}s"
+                )
             else:
-                results["checks"]["parser_heartbeat"] = "ℹ️ Parser disabled"
+                results["checks"]["parser_heartbeat"] = (
+                    f"✅ {heartbeat_age_sec}s ago"
+                )
         except Exception:
             results["checks"]["parser"] = "⚠️ Unable to check"
 
         return results
+
+    def build_operator_view(self, health: dict) -> dict:
+        """Human-readable chain summary for operators."""
+        checks = health.get("checks", {})
+        metrics = health.get("metrics", {})
+        parser_metrics = metrics.get("parser", {}) or {}
+
+        issues: list[str] = []
+        actions: list[str] = []
+        severity = "healthy"
+
+        def escalate(level: str) -> None:
+            nonlocal severity
+            order = {"healthy": 0, "warning": 1, "critical": 2}
+            if order[level] > order[severity]:
+                severity = level
+
+        for name in ("redis", "postgres", "telegram"):
+            status = str(checks.get(name, ""))
+            if "❌" in status:
+                escalate("critical")
+                issues.append(f"{name} недоступен")
+                if name == "redis":
+                    actions.append("Проверь Redis: без него встанут FSM и parser-queue.")
+                elif name == "postgres":
+                    actions.append("Проверь PostgreSQL: новые грузы и sync не сохраняются.")
+                elif name == "telegram":
+                    actions.append("Проверь BOT_TOKEN и доступ к Telegram API.")
+
+        parser_status = str(checks.get("parser", ""))
+        heartbeat_status = str(checks.get("parser_heartbeat", ""))
+        queue_status = str(checks.get("parser_queue", ""))
+
+        if "❌" in heartbeat_status:
+            escalate("critical")
+            issues.append("parser-ingestor не обновляет heartbeat")
+            actions.append("Проверь parser-bot: live-ingest мог зависнуть или контейнер не перезапустился.")
+        elif "⚠️" in heartbeat_status:
+            escalate("warning")
+            issues.append("heartbeat парсера стареет")
+            actions.append("Следи за parser-bot: если состояние не нормализуется, будет автоперезапуск.")
+
+        if "No new events for" in parser_status:
+            escalate("warning")
+            issues.append("новые события из парсера давно не приходили")
+            if "✅" in heartbeat_status:
+                actions.append("Heartbeat живой: проверь фильтры чатов, source и parser-worker.")
+            else:
+                actions.append("Heartbeat не подтвержден: сначала проверь parser-bot.")
+        elif "⚠️" in parser_status and "No events yet" not in parser_status:
+            escalate("warning")
+            issues.append("parser свежесть вызывает вопросы")
+            actions.append("Проверь parser-bot и parser-worker по времени последнего события.")
+
+        if "⚠️" in queue_status:
+            escalate("warning")
+            issues.append("очередь парсера отстает")
+            actions.append("Проверь parser-worker, Redis stream lag и скорость sync в API.")
+
+        manual_review = parser_metrics.get("manual_review")
+        if isinstance(manual_review, int) and manual_review > 0:
+            escalate("warning")
+            issues.append(f"в manual_review лежит {manual_review}")
+            actions.append("Открой /admin/manual-review и разберите спорные карточки.")
+
+        if not issues:
+            summary = "Система работает штатно: ingestion, очередь, база и bot API выглядят живыми."
+            actions.append("Ручное вмешательство не требуется.")
+        else:
+            summary = "; ".join(issues).capitalize() + "."
+
+        chain = {
+            "ingest": checks.get("parser_heartbeat", "n/a"),
+            "parser": checks.get("parser", "n/a"),
+            "queue": checks.get("parser_queue", "n/a"),
+            "bot": checks.get("activity", "n/a"),
+            "storage": {
+                "redis": checks.get("redis", "n/a"),
+                "postgres": checks.get("postgres", "n/a"),
+            },
+        }
+
+        return {
+            "status": severity,
+            "summary": summary,
+            "issues": issues,
+            "actions": actions,
+            "chain": chain,
+            "checks": checks,
+            "metrics": metrics,
+            "timestamp": health.get("timestamp"),
+        }
 
     def format_status(self, health: dict) -> str:
         """Форматирует статус для отправки"""
@@ -281,6 +359,40 @@ class BotWatchdog:
         text += "<b>Компоненты:</b>\n"
         for name, status_val in health["checks"].items():
             text += f"• {name}: {status_val}\n"
+        return text
+
+    def format_operator_view(self, overview: dict) -> str:
+        icon = {
+            "healthy": "🟢",
+            "warning": "🟡",
+            "critical": "🔴",
+        }.get(str(overview.get("status")), "⚪️")
+
+        text = f"{icon} <b>Сводка системы</b>\n\n"
+        text += f"{overview.get('summary', 'Нет данных')}\n\n"
+
+        chain = overview.get("chain", {}) or {}
+        storage = chain.get("storage", {}) or {}
+        text += "<b>Цепь:</b>\n"
+        text += f"• ingest: {chain.get('ingest', 'n/a')}\n"
+        text += f"• parser: {chain.get('parser', 'n/a')}\n"
+        text += f"• queue: {chain.get('queue', 'n/a')}\n"
+        text += f"• bot: {chain.get('bot', 'n/a')}\n"
+        text += f"• redis: {storage.get('redis', 'n/a')}\n"
+        text += f"• postgres: {storage.get('postgres', 'n/a')}\n"
+
+        issues = overview.get("issues", []) or []
+        if issues:
+            text += "\n<b>Проблемы:</b>\n"
+            for item in issues[:5]:
+                text += f"• {item}\n"
+
+        actions = overview.get("actions", []) or []
+        if actions:
+            text += "\n<b>Что делать:</b>\n"
+            for item in actions[:5]:
+                text += f"• {item}\n"
+
         return text
 
 
@@ -329,7 +441,7 @@ async def watchdog_loop():
             for name, status in health["checks"].items():
                 if "❌" in str(status):
                     await notify_admin(
-                        f"Компонент {name} недоступен:\n{status}\n\n{explain_health(health)}",
+                        f"Компонент {name} недоступен:\n{status}",
                         alert_key=f"check_{name}",
                     )
 
@@ -337,16 +449,11 @@ async def watchdog_loop():
             if "No new events for" in parser_status:
                 await notify_admin(
                     f"⚠️ Парсер простаивает!\n\n{parser_status}\n\n"
-                    f"{explain_health(health)}",
+                    "Возможные причины:\n"
+                    "• Telegram заблокировал сессию\n"
+                    "• parser-bot / parser-worker упал\n"
+                    "• Нет активности в отслеживаемых чатах",
                     alert_key="parser_stale",
-                )
-
-            parser_heartbeat = str(health["checks"].get("parser_heartbeat", ""))
-            if "No heartbeat" in parser_heartbeat or "Stale" in parser_heartbeat:
-                await notify_admin(
-                    f"⚠️ Heartbeat парсера проблемный:\n{parser_heartbeat}\n\n"
-                    f"{explain_health(health)}",
-                    alert_key="parser_heartbeat",
                 )
 
             parser_metrics = health.get("metrics", {}).get("parser", {})
@@ -361,7 +468,7 @@ async def watchdog_loop():
                     "⚠️ Очередь ручной проверки переполнена!\n\n"
                     f"Сейчас: {manual_review_count}\n"
                     f"Порог: {threshold}\n\n"
-                    f"{explain_health(health)}",
+                    "Проверь /admin/manual-review и /admin/parser",
                     alert_key="manual_review_backlog",
                 )
 

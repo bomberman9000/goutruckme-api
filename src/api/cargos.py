@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import date, datetime
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -63,6 +64,7 @@ class ManualCargoResponse(BaseModel):
     ok: bool = True
     cargo_id: int
     feed_id: int
+    parsed: ManualCargoParsedPreview | None = None
 
 
 class RecommendedRateResponse(BaseModel):
@@ -131,9 +133,6 @@ def _normalize_text(value: str | None) -> str | None:
     return clean or None
 
 
-MANUAL_FEED_SOURCES = ("manual_client", "manual_web")
-
-
 def _ensure_user_full_name(raw_user: dict, user_id: int) -> tuple[str | None, str]:
     username = raw_user.get("username")
     first_name = (raw_user.get("first_name") or "").strip()
@@ -193,7 +192,7 @@ def _build_manual_raw_text(
 def _format_volume_dimensions(volume: float | None) -> str | None:
     if volume is None:
         return None
-    return f"{volume:g} м³"
+    return f"{float(volume):g} м³"
 
 
 def _build_ai_score_preview(
@@ -270,7 +269,7 @@ def _build_ai_score_preview(
     return score, verdict, comment, price_source
 
 
-async def _build_smart_preview(raw_text: str) -> tuple[ManualCargoParsedPreview, object, int | None]:
+async def _build_smart_preview(raw_text: str) -> tuple[ManualCargoParsedPreview, Any, int | None]:
     parsed = await parse_cargo_nlp(raw_text)
     if not parsed:
         raise HTTPException(
@@ -278,26 +277,19 @@ async def _build_smart_preview(raw_text: str) -> tuple[ManualCargoParsedPreview,
             detail="Не удалось распознать данные груза. Добавьте маршрут, вес или кубатуру в текст.",
         )
 
-    origin = str(parsed.get("from_city") or "").strip()
-    destination = str(parsed.get("to_city") or "").strip()
-    if not origin or not destination:
+    if not parsed.get("from_city") or not parsed.get("to_city"):
         raise HTTPException(status_code=422, detail="Не удалось распознать маршрут. Укажи откуда и куда в тексте.")
-
     if parsed.get("weight") is None:
         raise HTTPException(status_code=422, detail="Не удалось распознать вес. Укажи тоннаж или килограммы.")
 
+    origin = str(parsed["from_city"]).strip()
+    destination = str(parsed["to_city"]).strip()
     route_geo = await get_geo_service().resolve_route(origin, destination)
     if not route_geo:
         raise HTTPException(status_code=422, detail="Invalid cities detected")
 
-    parsed_body_type = str(parsed.get("body_type") or "").strip()
-    parsed_cargo_type = str(parsed.get("cargo_type") or "").strip()
-    if not parsed_body_type and parsed_cargo_type in {"тент", "рефрижератор", "трал", "борт", "контейнер", "изотерм"}:
-        parsed_body_type = parsed_cargo_type
-        parsed_cargo_type = "Груз"
-
-    body_type = parsed_body_type or "тент"
-    cargo_type = parsed_cargo_type or "Груз"
+    body_type = str(parsed.get("body_type") or "тент").strip()
+    cargo_type = str(parsed.get("cargo_type") or "Груз").strip()
     weight = float(parsed["weight"])
     volume = float(parsed["volume_m3"]) if parsed.get("volume_m3") is not None else None
     stated_price = int(parsed["price"]) if parsed.get("price") else None
@@ -374,7 +366,7 @@ async def _find_manual_feed_event(session, owner_id: int, cargo_id: int) -> Pars
         await session.execute(
             select(ParserIngestEvent)
             .where(
-                ParserIngestEvent.source.in_(MANUAL_FEED_SOURCES),
+                ParserIngestEvent.source == "manual_client",
                 ParserIngestEvent.chat_id == f"user:{owner_id}",
             )
             .order_by(ParserIngestEvent.id.desc())
@@ -429,73 +421,62 @@ def _serialize_my_cargo(cargo: Cargo, event: ParserIngestEvent | None, escrow: E
     )
 
 
-async def _resolve_manual_create_payload(body: ManualCargoCreate) -> dict:
-    raw_text = _normalize_text(body.raw_text)
-    description = _normalize_text(body.description)
-    payment_terms = _normalize_text(body.payment_terms)
-
-    if raw_text:
-        parsed = await parse_cargo_nlp(raw_text)
-        if not parsed:
-            raise HTTPException(
-                status_code=422,
-                detail="Не удалось распознать маршрут и тоннаж. Добавьте города и вес в текст.",
-            )
-
-        origin = str(parsed["from_city"]).strip()
-        destination = str(parsed["to_city"]).strip()
-        body_type = str(parsed.get("cargo_type") or "тент").strip()
-        weight = float(parsed["weight"])
-        volume = body.volume if body.volume is not None else parsed.get("volume_m3")
-        price = body.price
-        parsed_load_date = parsed.get("load_date")
-        load_date = body.load_date
-        if load_date is None and parsed_load_date:
-            load_date = date.fromisoformat(str(parsed_load_date))
-        load_date = load_date or date.today()
-        load_time = _normalize_text(body.load_time) or _normalize_text(parsed.get("load_time"))
-        return {
-            "origin": origin,
-            "destination": destination,
-            "body_type": body_type,
-            "weight": weight,
-            "volume": float(volume) if volume is not None else None,
-            "price": int(price) if price is not None else None,
-            "load_date": load_date,
-            "load_time": load_time,
-            "description": description or raw_text,
-            "payment_terms": payment_terms,
-            "raw_text": raw_text,
-        }
-
-    required_fields = {
-        "origin": body.origin,
-        "destination": body.destination,
-        "body_type": body.body_type,
-        "weight": body.weight,
-        "price": body.price,
-        "load_date": body.load_date,
-    }
-    missing = [name for name, value in required_fields.items() if value is None]
-    if missing:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Missing required fields: {', '.join(missing)}",
+async def _build_form_preview(
+    *,
+    origin: str,
+    destination: str,
+    body_type: str,
+    weight: float,
+    volume: float | None,
+    price: int,
+    load_date: date,
+    load_time: str | None,
+    description: str | None,
+) -> ManualCargoParsedPreview:
+    cargo_type = description.strip() if description and len(description.strip()) <= 80 else "Груз"
+    estimated_price: int | None = None
+    estimated_source: str | None = None
+    try:
+        estimate = await _estimate_recommended_rate(
+            origin,
+            destination,
+            weight,
+            body_type,
+            cargo_type=cargo_type,
+            volume=volume,
         )
+        raw_price = estimate.get("price")
+        if isinstance(raw_price, int) and raw_price > 0:
+            estimated_price = raw_price
+        estimated_source = str(estimate.get("source") or "") or None
+    except Exception:
+        estimated_price = None
+        estimated_source = None
 
-    return {
-        "origin": body.origin.strip(),
-        "destination": body.destination.strip(),
-        "body_type": body.body_type.strip(),
-        "weight": float(body.weight),
-        "volume": float(body.volume) if body.volume is not None else None,
-        "price": int(body.price),
-        "load_date": body.load_date,
-        "load_time": _normalize_text(body.load_time),
-        "description": description,
-        "payment_terms": payment_terms,
-        "raw_text": None,
-    }
+    ai_score, ai_verdict, ai_comment, price_source = _build_ai_score_preview(
+        stated_price=price,
+        estimated_price=estimated_price,
+        estimated_source=estimated_source,
+        has_volume=volume is not None,
+        cargo_type=cargo_type,
+        body_type=body_type,
+    )
+
+    return ManualCargoParsedPreview(
+        from_city=origin,
+        to_city=destination,
+        body_type=body_type,
+        cargo_type=cargo_type,
+        weight=weight,
+        volume_m3=volume,
+        price=price,
+        load_date=load_date.isoformat(),
+        load_time=load_time,
+        price_source=price_source,
+        ai_score=ai_score,
+        ai_verdict=ai_verdict,
+        ai_comment=ai_comment,
+    )
 
 
 @router.post("/api/v1/cargos/manual/preview", response_model=ManualCargoPreviewResponse)
@@ -514,35 +495,78 @@ async def create_manual_cargo(
     background_tasks: BackgroundTasks,
     tma_user: TelegramTMAUser = Depends(get_required_tma_user),
 ) -> ManualCargoResponse:
-    payload = await _resolve_manual_create_payload(body)
-    origin = payload["origin"]
-    destination = payload["destination"]
-    body_type = payload["body_type"]
-    weight = float(payload["weight"])
-    volume = payload["volume"]
-    price = payload["price"]
-    description = payload["description"]
-    payment_terms = payload["payment_terms"]
-    username, full_name = _ensure_user_full_name(tma_user.raw, tma_user.user_id)
-    route_geo = await get_geo_service().resolve_route(origin, destination)
-    if not route_geo:
-        raise HTTPException(status_code=422, detail="Invalid cities detected")
+    description = _normalize_text(body.description)
+    payment_terms = _normalize_text(body.payment_terms)
+    preview: ManualCargoParsedPreview | None = None
+    source_note = "twa_manual_form"
 
-    origin = route_geo.origin.name
-    destination = route_geo.destination.name
-    if price is None:
-        estimate = await _estimate_recommended_rate(
-            origin,
-            destination,
-            weight,
-            body_type,
-            cargo_type=description,
+    if body.raw_text:
+        preview, route_geo, _estimated = await _build_smart_preview(body.raw_text)
+        origin = preview.from_city
+        destination = preview.to_city
+        body_type = preview.body_type
+        weight = float(preview.weight)
+        volume = float(preview.volume_m3) if preview.volume_m3 is not None else None
+        price = int(preview.price or 0)
+        if price <= 0:
+            raise HTTPException(status_code=422, detail="Не удалось определить ставку. Укажи цену вручную.")
+        load_date_value = date.fromisoformat(preview.load_date) if preview.load_date else (body.load_date or date.today())
+        load_time_value = _normalize_text(body.load_time) or preview.load_time
+        if not description:
+            description = preview.cargo_type
+        source_note = "twa_smart_paste"
+        raw_text = body.raw_text.strip()
+    else:
+        missing = [
+            name
+            for name, value in {
+                "origin": body.origin,
+                "destination": body.destination,
+                "body_type": body.body_type,
+                "weight": body.weight,
+                "price": body.price,
+                "load_date": body.load_date,
+            }.items()
+            if value is None
+        ]
+        if missing:
+            raise HTTPException(status_code=422, detail=f"Missing required fields: {', '.join(missing)}")
+
+        origin = body.origin.strip()
+        destination = body.destination.strip()
+        body_type = body.body_type.strip()
+        weight = float(body.weight)
+        volume = float(body.volume) if body.volume is not None else None
+        price = int(body.price)
+        load_date_value = body.load_date
+        load_time_value = _normalize_text(body.load_time)
+        route_geo = await get_geo_service().resolve_route(origin, destination)
+        if not route_geo:
+            raise HTTPException(status_code=422, detail="Invalid cities detected")
+        origin = route_geo.origin.name
+        destination = route_geo.destination.name
+        preview = await _build_form_preview(
+            origin=origin,
+            destination=destination,
+            body_type=body_type,
+            weight=weight,
             volume=volume,
+            price=price,
+            load_date=load_date_value,
+            load_time=load_time_value,
+            description=description,
         )
-        estimated_price = estimate.get("price")
-        if not isinstance(estimated_price, int) or estimated_price <= 0:
-            raise HTTPException(status_code=422, detail="Не удалось определить ставку. Укажите цену вручную.")
-        price = int(estimated_price)
+        raw_text = _build_manual_raw_text(
+            origin=origin,
+            destination=destination,
+            body_type=body_type,
+            weight=weight,
+            volume=volume,
+            price=price,
+            description=description or preview.cargo_type,
+        )
+
+    username, full_name = _ensure_user_full_name(tma_user.raw, tma_user.user_id)
 
     async with async_session() as session:
         user = await session.get(User, tma_user.user_id)
@@ -567,8 +591,8 @@ async def create_manual_cargo(
             weight=weight,
             volume=volume,
             price=price,
-            load_date=datetime.combine(payload["load_date"], datetime.min.time()),
-            load_time=payload["load_time"],
+            load_date=datetime.combine(load_date_value, datetime.min.time()),
+            load_time=load_time_value,
             comment=description,
             source_platform="manual_web",
             status=CargoStatus.NEW,
@@ -582,7 +606,7 @@ async def create_manual_cargo(
             stream_entry_id=f"manual-{uuid.uuid4().hex}",
             chat_id=f"user:{tma_user.user_id}",
             message_id=0,
-            source="manual_web",
+            source="manual_client",
             from_city=origin,
             to_city=destination,
             body_type=body_type,
@@ -590,9 +614,9 @@ async def create_manual_cargo(
             inn=None,
             rate_rub=price,
             weight_t=weight,
-            load_date=payload["load_date"].isoformat(),
-            load_time=payload["load_time"],
-            cargo_description=description,
+            load_date=load_date_value.isoformat(),
+            load_time=load_time_value,
+            cargo_description=description or (preview.cargo_type if preview else None),
             payment_terms=payment_terms,
             is_direct_customer=True,
             dimensions=_format_volume_dimensions(volume),
@@ -609,22 +633,17 @@ async def create_manual_cargo(
             provider="manual",
             is_spam=False,
             status="synced",
-            raw_text=payload["raw_text"] or _build_manual_raw_text(
-                origin=origin,
-                destination=destination,
-                body_type=body_type,
-                weight=weight,
-                volume=volume,
-                price=price,
-                description=description,
-            ),
+            raw_text=raw_text,
             details_json=json.dumps(
                 {
-                    "created_via": "twa_manual_form" if not payload["raw_text"] else "twa_smart_paste",
+                    "created_via": source_note,
                     "cargo_id": cargo.id,
                     "owner_id": tma_user.user_id,
                     "distance_km": route_geo.distance_km,
                     "volume_m3": volume,
+                    "cargo_type": preview.cargo_type if preview else None,
+                    "ai_score": preview.ai_score if preview else None,
+                    "ai_verdict": preview.ai_verdict if preview else None,
                 },
                 ensure_ascii=False,
             ),
@@ -645,7 +664,7 @@ async def create_manual_cargo(
 
     await clear_cached("feed")
     background_tasks.add_task(notify_matching_carriers, cargo.id)
-    return ManualCargoResponse(cargo_id=cargo.id, feed_id=feed_event.id)
+    return ManualCargoResponse(cargo_id=cargo.id, feed_id=feed_event.id, parsed=preview)
 
 
 @router.get("/api/v1/cargos/recommended-rate", response_model=RecommendedRateResponse)
@@ -738,7 +757,7 @@ async def get_my_cargos(
             await session.execute(
                 select(ParserIngestEvent)
                 .where(
-                    ParserIngestEvent.source.in_(MANUAL_FEED_SOURCES),
+                    ParserIngestEvent.source == "manual_client",
                     ParserIngestEvent.chat_id == f"user:{tma_user.user_id}",
                 )
                 .order_by(ParserIngestEvent.id.desc())
@@ -896,4 +915,33 @@ async def archive_my_cargo(
         cargo_id=cargo_id,
         feed_id=event.id if event else None,
         status="archived",
+    )
+
+
+@router.post("/api/v1/cargos/{cargo_id}/restore", response_model=CargoMutationResponse)
+async def restore_my_cargo(
+    cargo_id: int,
+    tma_user: TelegramTMAUser = Depends(get_required_tma_user),
+) -> CargoMutationResponse:
+    async with async_session() as session:
+        cargo = await session.get(Cargo, cargo_id)
+        if not cargo or int(cargo.owner_id) != tma_user.user_id:
+            raise HTTPException(status_code=404, detail="Cargo not found")
+        if cargo.status != CargoStatus.ARCHIVED:
+            raise HTTPException(status_code=409, detail="Only archived cargo can be restored")
+
+        cargo.status = CargoStatus.ACTIVE
+        event = await _find_manual_feed_event(session, tma_user.user_id, cargo.id)
+        if event and not event.is_spam:
+            event.status = "synced"
+            if event.error == "archived_by_owner":
+                event.error = None
+
+        await session.commit()
+
+    await clear_cached("feed")
+    return CargoMutationResponse(
+        cargo_id=cargo_id,
+        feed_id=event.id if event else None,
+        status="restored",
     )

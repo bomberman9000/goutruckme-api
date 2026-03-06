@@ -8,6 +8,7 @@ dependencies = [
     "aiogram>=3.4.0",
     "playwright>=1.52.0",
     "telethon>=1.36.0",
+    "vk-api>=11.9.9",
     "fastapi>=0.110.0",
     "uvicorn>=0.27.0",
     "redis>=5.0.0",

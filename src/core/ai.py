@@ -10,10 +10,27 @@ client = Groq(api_key=settings.groq_api_key) if settings.groq_api_key else None
 
 # Паттерн времени ЧЧ:ММ или ЧЧ.ММ
 _TIME_RE = re.compile(r"(?:в\s+)?(\d{1,2})[.:](\d{2})\s*$", re.I)
-_WEIGHT_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(кг|т\b|тн\b|тонн)", re.I)
+_WEIGHT_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(кг|kg|т\b|t\b|тн\b|тонн(?:а|ы)?)", re.I)
 _VOLUME_RE = re.compile(
-    r"(\d+(?:[.,]\d+)?)\s*(?:м3|м³|m3|куб(?:\.|а|ов)?(?:ик)?|cube?s?|volume)\b",
+    r"(\d+(?:[.,]\d+)?)\s*(?:м3|м³|m3|куб(?:\.|а|ов)?(?:ик)?|кубовик|volume)\b",
     re.I,
+)
+_PRICE_SHORT_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*к(?:\s|$|руб|р|₽)", re.I)
+_PRICE_FULL_RE = re.compile(r"(\d{5,})\s*(?:руб|р|₽)", re.I)
+_BODY_TYPE_HINTS: dict[str, tuple[str, ...]] = {
+    "рефрижератор": ("реф", "рефриж", "замороз", "мороз", "охлажд", "темпер", "морож"),
+    "борт": ("борт", "металл", "арматур", "труба", "лист", "швеллер", "пиломат", "доск", "досок", "брус"),
+    "контейнер": ("контейнер", "container"),
+    "трал": ("трал", "негабарит", "низкорам", "спецтех"),
+    "изотерм": ("изотерм",),
+    "тент": ("тент", "фура", "тнп", "паллет", "короб"),
+}
+_CARGO_TYPE_HINTS: tuple[tuple[str, tuple[str, ...], str], ...] = (
+    ("Продукты", ("замороз", "мороз", "охлажд", "реф", "продукт", "молоч", "фрукты", "овощ", "рыба"), "рефрижератор"),
+    ("Металл", ("металл", "арматур", "труба", "швеллер", "лист"), "борт"),
+    ("Пиломатериалы", ("пиломат", "доски", "досок", "брус", "фанер"), "борт"),
+    ("ТНП", ("тнп", "паллет", "паллеты", "короб", "бытхим", "товар"), "тент"),
+    ("Стройматериалы", ("строймат", "кирпич", "цемент", "плитка"), "тент"),
 )
 
 CITY_ALIASES = {
@@ -191,68 +208,103 @@ def _parse_load_datetime_ai(text: str):
         logger.error(f"AI cargo parse error: {e}")
     return None
 
+
+def _extract_cities_fallback(text_lower: str) -> tuple[str | None, str | None]:
+    hits: list[tuple[int, str]] = []
+    for alias, city in CITY_ALIASES.items():
+        idx = text_lower.find(alias)
+        if idx != -1:
+            hits.append((idx, city))
+    hits.sort(key=lambda item: item[0])
+    ordered: list[str] = []
+    for _, city in hits:
+        if city not in ordered:
+            ordered.append(city)
+    if len(ordered) >= 2:
+        return ordered[0], ordered[1]
+    if ordered:
+        return ordered[0], None
+    return None, None
+
+
+def _infer_body_type(text_lower: str, fallback: str | None = None) -> str:
+    for body_type, hints in _BODY_TYPE_HINTS.items():
+        if any(hint in text_lower for hint in hints):
+            return body_type
+    return fallback or "тент"
+
+
+def _infer_cargo_profile(text_lower: str) -> tuple[str, str]:
+    for cargo_type, hints, body_type in _CARGO_TYPE_HINTS:
+        if any(hint in text_lower for hint in hints):
+            return cargo_type, _infer_body_type(text_lower, body_type)
+    return "Груз", _infer_body_type(text_lower, "тент")
+
+
 async def parse_cargo_nlp(text: str) -> dict | None:
     """
-    Parse a one-line free-text cargo creation message.
-    Example: "самар- казан 200 кг тнп на завтра на 9 часов срочно"
-    Returns dict with keys: from_city, to_city, weight, cargo_type,
-    load_date (YYYY-MM-DD), load_time (HH:MM), is_urgent, price (optional).
-    Returns None if the text doesn't look like a cargo description.
+    Parse a free-form cargo message into a structured draft.
+
+    Returns:
+      {
+        from_city, to_city, weight, volume_m3?, price?, cargo_type,
+        body_type, load_date?, load_time?, is_urgent
+      }
     """
-    text_lower = text.strip().lower()
-
-    # Must contain a weight marker to be considered a cargo description
-    weight_match = _WEIGHT_RE.search(text_lower)
-    if not weight_match:
+    raw_text = (text or "").strip()
+    if not raw_text:
         return None
+    text_lower = raw_text.lower()
 
-    raw_weight = float(weight_match.group(1).replace(",", "."))
-    unit = weight_match.group(2).strip()
-    weight = round(raw_weight / 1000, 3) if unit == "кг" else raw_weight
+    weight: float | None = None
+    weight_match = _WEIGHT_RE.search(text_lower)
+    if weight_match:
+        raw_weight = float(weight_match.group(1).replace(",", "."))
+        unit = weight_match.group(2).lower()
+        weight = round(raw_weight / 1000, 3) if unit in {"кг", "kg"} else round(raw_weight, 3)
+        if weight <= 0:
+            weight = None
 
     volume_m3: float | None = None
     volume_match = _VOLUME_RE.search(text_lower)
     if volume_match:
         volume_m3 = round(float(volume_match.group(1).replace(",", ".")), 3)
 
-    is_urgent = bool(re.search(r"\bсрочно?\b", text_lower))
-
-    # Optional price (e.g. "50к", "50000 руб", "50 тыс")
     price: int | None = None
-    pm = re.search(r"(\d+(?:[.,]\d+)?)\s*к(?:\s|$|руб|р|₽)", text_lower)
-    if pm:
-        price = int(float(pm.group(1).replace(",", ".")) * 1000)
+    short_price = _PRICE_SHORT_RE.search(text_lower)
+    if short_price:
+        price = int(float(short_price.group(1).replace(",", ".")) * 1000)
     else:
-        pm = re.search(r"(\d{5,})\s*(?:руб|р|₽)", text_lower)
-        if pm:
-            price = int(pm.group(1))
+        full_price = _PRICE_FULL_RE.search(text_lower)
+        if full_price:
+            price = int(full_price.group(1))
 
-    # Parse date/time (reuse existing parse_load_datetime)
     load_date: str | None = None
     load_time: str | None = None
-    date_m = re.search(
-        r"(?:на\s+)?(?:завтра|послезавтра|сегодня)(?:\s+(?:в|at)\s+\d{1,2}[:.]\d{2})?|"
-        r"\d{1,2}\.\d{2}(?:\.\d{4})?\s*(?:в\s*\d{1,2}[:.]\d{2})?",
+    date_match = re.search(
+        r"(?:на\s+)?(?:завтра|послезавтра|сегодня)(?:\s+(?:в\s+)?\d{1,2}(?::|\.)?\d{0,2})?|"
+        r"\d{1,2}\.\d{2}(?:\.\d{4})?(?:\s+(?:в\s+)?\d{1,2}(?::|\.)\d{2})?",
         text_lower,
     )
-    if date_m:
-        date_str = re.sub(r"^на\s+", "", date_m.group(0).strip())
-        parsed_dt = parse_load_datetime(date_str)
+    if date_match:
+        date_chunk = re.sub(r"^на\s+", "", date_match.group(0).strip())
+        parsed_dt = parse_load_datetime(date_chunk)
         if parsed_dt:
             load_date = parsed_dt[0].strftime("%Y-%m-%d")
             load_time = parsed_dt[1]
-    # Fallback: look for time like "в 9 часов", "на 9 часов", "в 9:00"
     if not load_time:
-        tm = re.search(r"(?:в|на)\s+(\d{1,2})(?:\s*(?:часов?|:00))?\s*(?:срочно?|$|\s)", text_lower)
-        if tm:
-            h = int(tm.group(1))
-            if 0 <= h <= 23:
-                load_time = f"{h:02d}:00"
+        fallback_time = re.search(r"(?:в|на)\s+(\d{1,2})(?:\s*(?:час(?:ов|а)?|:00))?\b", text_lower)
+        if fallback_time:
+            hh = int(fallback_time.group(1))
+            if 0 <= hh <= 23:
+                load_time = f"{hh:02d}:00"
 
-    # AI extracts cities and cargo_type
-    from_city: str | None = None
-    to_city: str | None = None
-    cargo_type = "груз"
+    from_city, to_city = _extract_cities_fallback(text_lower)
+
+    cargo_type, body_type = _infer_cargo_profile(text_lower)
+
+    if weight is None and volume_m3 is None:
+        return None
 
     if client:
         try:
@@ -262,68 +314,57 @@ async def parse_cargo_nlp(text: str) -> dict | None:
                     {
                         "role": "system",
                         "content": (
-                            "Ты парсер заявок на грузоперевозку. "
-                            'Извлеки из сообщения ТОЛЬКО JSON: {"from_city":"...","to_city":"...","cargo_type":"..."}. '
-                            "Города пиши полностью с большой буквы: самар→Самара, казан→Казань, мск→Москва, "
-                            "спб/питер→Санкт-Петербург, нн→Нижний Новгород, екб→Екатеринбург, рнд→Ростов-на-Дону. "
-                            "Тип груза: аббревиатуры оставляй как есть (тнп, пнг) или пиши кратко (сборный, паллеты). "
-                            "Если поле не найдено — null."
+                            "Ты парсер грузовых заявок. Верни только JSON вида "
+                            '{"from_city": "...", "to_city": "...", "cargo_type": "...", "body_type": "..."} . '
+                            "Города пиши полностью с большой буквы. "
+                            "cargo_type — характер груза (например: Металл, Продукты, ТНП, Пиломатериалы). "
+                            "body_type — тип кузова (тент, рефрижератор, борт, трал, контейнер, изотерм). "
+                            "Если поле неясно — верни null."
                         ),
                     },
-                    {"role": "user", "content": text},
+                    {"role": "user", "content": raw_text},
                 ],
-                max_tokens=100,
+                max_tokens=120,
                 temperature=0,
             )
-            raw = response.choices[0].message.content.strip()
-            if "{" in raw and "}" in raw:
-                j = json.loads(raw[raw.find("{") : raw.rfind("}") + 1])
-                from_city = j.get("from_city") or None
-                to_city = j.get("to_city") or None
-                cargo_type = (j.get("cargo_type") or "груз").strip()
-        except Exception as e:
-            logger.warning("parse_cargo_nlp AI error: %s", e)
-
-    # Alias-based fallback — runs when client is absent OR when AI call failed
-    if not from_city or not to_city:
-        # Collect (position, city) to preserve order of mention in text
-        hits: list[tuple[int, str]] = []
-        for alias, city in CITY_ALIASES.items():
-            idx = text_lower.find(alias)
-            if idx != -1:
-                hits.append((idx, city))
-        hits.sort(key=lambda x: x[0])
-        # Deduplicate preserving order
-        seen: list[str] = []
-        for _, city in hits:
-            if city not in seen:
-                seen.append(city)
-        if len(seen) >= 2:
-            from_city = from_city or seen[0]
-            to_city = to_city or seen[1]
-        elif seen:
-            from_city = from_city or seen[0]
-
-    if not from_city or not to_city:
-        return None
+            payload = response.choices[0].message.content.strip()
+            if "{" in payload and "}" in payload:
+                parsed = json.loads(payload[payload.find("{"):payload.rfind("}") + 1])
+                ai_from = (parsed.get("from_city") or "").strip()
+                ai_to = (parsed.get("to_city") or "").strip()
+                ai_cargo = (parsed.get("cargo_type") or "").strip()
+                ai_body = (parsed.get("body_type") or "").strip().lower()
+                if ai_from:
+                    from_city = ai_from
+                if ai_to:
+                    to_city = ai_to
+                if ai_cargo:
+                    cargo_type = ai_cargo
+                if ai_body:
+                    body_type = _infer_body_type(f"{text_lower} {ai_body}", ai_body)
+        except Exception as exc:
+            logger.warning("parse_cargo_nlp AI error: %s", exc)
 
     result: dict = {
-        "from_city": from_city,
-        "to_city": to_city,
-        "weight": weight,
         "cargo_type": cargo_type,
-        "is_urgent": is_urgent,
+        "body_type": body_type,
+        "is_urgent": bool(re.search(r"\bсрочно?\b", text_lower)),
     }
+    if from_city:
+        result["from_city"] = from_city
+    if to_city:
+        result["to_city"] = to_city
+    if weight is not None:
+        result["weight"] = weight
     if volume_m3:
         result["volume_m3"] = volume_m3
+    if price:
+        result["price"] = price
     if load_date:
         result["load_date"] = load_date
     if load_time:
         result["load_time"] = load_time
-    if price:
-        result["price"] = price
     return result
-
 
 async def parse_cargo_search(text: str) -> dict | None:
     """
@@ -450,23 +491,43 @@ def _parse_search_simple(text: str) -> dict | None:
             result["to_city"] = city
             break
 
-    weight_match = re.search(r"(\d+(?:[.,]\d+)?)\s*[-–]\s*(\d+(?:[.,]\d+)?)\s*(?:т|тонн)", text_lower)
-    if weight_match:
-        result["min_weight"] = float(weight_match.group(1).replace(",", "."))
-        result["max_weight"] = float(weight_match.group(2).replace(",", "."))
+    kg_range_match = re.search(r"(\d+(?:[.,]\d+)?)\s*[-–]\s*(\d+(?:[.,]\d+)?)\s*кг", text_lower)
+    if kg_range_match:
+        result["min_weight"] = float(kg_range_match.group(1).replace(",", ".")) / 1000.0
+        result["max_weight"] = float(kg_range_match.group(2).replace(",", ".")) / 1000.0
     else:
-        w_from = re.search(r"от\s*(\d+(?:[.,]\d+)?)\s*(?:т|тонн)", text_lower)
-        w_to = re.search(r"до\s*(\d+(?:[.,]\d+)?)\s*(?:т|тонн)", text_lower)
-        if w_from:
-            result["min_weight"] = float(w_from.group(1).replace(",", "."))
-        if w_to:
-            result["max_weight"] = float(w_to.group(1).replace(",", "."))
-        if not w_from and not w_to:
-            weight_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:т|тонн)", text_lower)
-            if weight_match:
-                w = float(weight_match.group(1).replace(",", "."))
+        kg_from = re.search(r"от\s*(\d+(?:[.,]\d+)?)\s*кг", text_lower)
+        kg_to = re.search(r"до\s*(\d+(?:[.,]\d+)?)\s*кг", text_lower)
+        if kg_from:
+            result["min_weight"] = float(kg_from.group(1).replace(",", ".")) / 1000.0
+        if kg_to:
+            result["max_weight"] = float(kg_to.group(1).replace(",", ".")) / 1000.0
+        if not kg_from and not kg_to:
+            kg_match = re.search(r"(\d+(?:[.,]\d+)?)\s*кг", text_lower)
+            if kg_match:
+                w = float(kg_match.group(1).replace(",", ".")) / 1000.0
                 result["min_weight"] = w
                 result["max_weight"] = w
+
+    has_weight_filter = "min_weight" in result or "max_weight" in result
+    if not has_weight_filter:
+        weight_match = re.search(r"(\d+(?:[.,]\d+)?)\s*[-–]\s*(\d+(?:[.,]\d+)?)\s*(?:т|тонн)", text_lower)
+        if weight_match:
+            result["min_weight"] = float(weight_match.group(1).replace(",", "."))
+            result["max_weight"] = float(weight_match.group(2).replace(",", "."))
+        else:
+            w_from = re.search(r"от\s*(\d+(?:[.,]\d+)?)\s*(?:т|тонн)", text_lower)
+            w_to = re.search(r"до\s*(\d+(?:[.,]\d+)?)\s*(?:т|тонн)", text_lower)
+            if w_from:
+                result["min_weight"] = float(w_from.group(1).replace(",", "."))
+            if w_to:
+                result["max_weight"] = float(w_to.group(1).replace(",", "."))
+            if not w_from and not w_to:
+                weight_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:т|тонн)", text_lower)
+                if weight_match:
+                    w = float(weight_match.group(1).replace(",", "."))
+                    result["min_weight"] = w
+                    result["max_weight"] = w
 
     price_match = re.search(r"до\s*(\d+(?:[.,]\d+)?)\s*к", text_lower)
     if price_match:
@@ -636,7 +697,6 @@ def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
     lat2 = math.radians(lat2)
     h = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
     return 2 * r * math.asin(math.sqrt(h))
-
 
 def _resolve_effective_body_type(cargo_type: str | None, body_type: str | None = None) -> str:
     body_hint = (body_type or "").strip()
@@ -816,7 +876,6 @@ def estimate_price_local(
         volume_m3=volume_m3,
     )
 
-
 async def get_market_price(
     from_city: str,
     to_city: str,
@@ -888,9 +947,7 @@ async def get_market_price(
             "source": price_data.source,
             "updated": price_data.updated_at.strftime("%d.%m.%Y"),
             "cargo_type": price_data.cargo_type,
-            "rate_per_km": None,
         }
-
 
 async def estimate_price_smart(
     from_city: str,

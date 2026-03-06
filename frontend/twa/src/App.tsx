@@ -9,12 +9,15 @@ import {
   deleteSubscription,
   fetchFavorites,
   fetchMyCargos,
+  fetchRecentTrucks,
   fetchSubscriptions,
   fetchWebappProfile,
   markEscrowDelivered,
   disputeEscrow,
   requestEscrowRefund,
+  restoreManualCargo,
   releaseEscrow,
+  searchTrucks,
   fetchFeed,
   fetchSimilar,
   fetchVehicles,
@@ -33,6 +36,8 @@ import {
   type MyCargoItem,
   type SimilarItem,
   type SubscriptionItem,
+  type TruckSearchResponse,
+  type TruckRecentResponse,
   type VehicleItem,
   type VehicleMapItem,
   type VehicleMatchResponse,
@@ -61,69 +66,6 @@ type ActionGuide = {
 } | null;
 
 const BODY_TYPES = ["тент", "рефрижератор", "трал", "борт", "контейнер", "изотерм"];
-const BOT_HOME_LINK = "https://t.me/gotruck_ai_bot";
-
-function buildLocalProfileFallback(): WebappProfileResponse | null {
-  const user = (window as any)?.Telegram?.WebApp?.initDataUnsafe?.user;
-  const userId = typeof user?.id === "number" ? user.id : null;
-  if (!userId) {
-    return null;
-  }
-
-  const firstName = typeof user?.first_name === "string" ? user.first_name.trim() : "";
-  const lastName = typeof user?.last_name === "string" ? user.last_name.trim() : "";
-  const username = typeof user?.username === "string" ? user.username.trim() : "";
-  const name = [firstName, lastName].filter(Boolean).join(" ").trim()
-    || username
-    || `Пользователь ${userId}`;
-
-  return {
-    user: {
-      id: userId,
-      name,
-      username: username || null,
-      phone: null,
-      is_carrier: true,
-      is_verified: false,
-      is_premium: false,
-      premium_until: null,
-    },
-    company: null,
-    wallet: {
-      balance_rub: 0,
-      frozen_balance_rub: 0,
-    },
-    stats: {
-      cargo_count: 0,
-      verified_payment_count: 0,
-      released_payment_count: 0,
-      secured_amount_rub: 0,
-      released_amount_rub: 0,
-    },
-    referral: {
-      link: null,
-      invited_count: 0,
-      activated_count: 0,
-      rewards_count: 0,
-      reward_days_total: 0,
-      invited_bonus_days: 0,
-      ambassador_target: 10,
-      is_ambassador: false,
-    },
-    engagement: {
-      window_days: 30,
-      created_cargos: 0,
-      opened_cargo_matches: 0,
-      created_vehicles: 0,
-      activated_vehicles: 0,
-      opened_vehicle_matches: 0,
-      created_subscriptions: 0,
-      enabled_honest_route: 0,
-    },
-    cargos: [],
-    refund_journal: [],
-  };
-}
 
 function trustStars(score: number | null): string {
   if (score == null) return "☆☆☆";
@@ -228,6 +170,13 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
   const [vehicles, setVehicles] = useState<VehicleItem[]>([]);
+  const [truckSearchText, setTruckSearchText] = useState("");
+  const [truckSearchLoading, setTruckSearchLoading] = useState(false);
+  const [truckSearchError, setTruckSearchError] = useState<string | null>(null);
+  const [truckSearchResult, setTruckSearchResult] = useState<TruckSearchResponse | null>(null);
+  const [recentTrucksLoading, setRecentTrucksLoading] = useState(false);
+  const [recentTrucksError, setRecentTrucksError] = useState<string | null>(null);
+  const [recentTrucksResult, setRecentTrucksResult] = useState<TruckRecentResponse | null>(null);
   const [matchResult, setMatchResult] = useState<any>(null);
   const [vehicleMatchMap, setVehicleMatchMap] = useState<Record<number, VehicleMatchResponse>>({});
   const [cargoMatchMap, setCargoMatchMap] = useState<Record<number, CargoMatchResponse>>({});
@@ -267,7 +216,7 @@ export function App() {
   const [issueNote, setIssueNote] = useState("");
   const [issueSubmitting, setIssueSubmitting] = useState(false);
   const [actionGuide, setActionGuide] = useState<ActionGuide>(null);
-  const [initData, setInitData] = useState<string | null>(() => {
+  const [initData] = useState<string | null>(() => {
     const value = (window as any)?.Telegram?.WebApp?.initData || "";
     return typeof value === "string" && value.trim() ? value.trim() : null;
   });
@@ -282,6 +231,16 @@ export function App() {
       return;
     }
     window.open(PREMIUM_BOT_LINK, "_blank");
+  }
+
+  function openBotLink(link: string, note?: string) {
+    const tg = (window as any)?.Telegram?.WebApp;
+    if (note && tg?.showAlert) tg.showAlert(note);
+    if (tg?.openTelegramLink) {
+      tg.openTelegramLink(link);
+      return;
+    }
+    window.open(link, "_blank");
   }
 
   function showActionGuide(title: string, steps: string[], tone: ActionGuideTone = "info") {
@@ -386,12 +345,6 @@ export function App() {
         || /Missing Authorization/i.test(message)
         || /Invalid Telegram initData/i.test(message)
       ) {
-        const fallback = buildLocalProfileFallback();
-        if (fallback) {
-          setProfileSummary(fallback);
-          setProfileError(null);
-          return;
-        }
         setProfileError("Не удалось подтвердить Telegram-сессию. Обновите доступ или откройте Mini App заново из бота.");
       } else {
         setProfileError(message);
@@ -401,39 +354,25 @@ export function App() {
     }
   }, []);
 
-  const handleRefreshAccess = useCallback(() => {
-    const tg = (window as any)?.Telegram?.WebApp;
-    try {
-      tg?.ready?.();
-      tg?.expand?.();
-    } catch {
-      // ignore bridge quirks
-    }
-
-    const liveInitData = typeof tg?.initData === "string" ? tg.initData.trim() : "";
-    if (liveInitData && liveInitData !== initData) {
-      setInitData(liveInitData);
-      void loadProfileSummary();
-      return;
-    }
-
-    if (tg?.close) {
-      tg.close();
-      return;
-    }
-    if (tg?.openTelegramLink) {
-      tg.openTelegramLink(BOT_HOME_LINK);
-      return;
-    }
-    window.open(BOT_HOME_LINK, "_blank");
-  }, [loadProfileSummary]);
-
   const loadMatchSummary = useCallback(async () => {
     setMatchSummaryError(null);
     try {
       setMatchSummary(await fetchMatchSummary());
     } catch (err) {
       setMatchSummaryError(err instanceof Error ? err.message : "Не удалось загрузить совпадения");
+    }
+  }, []);
+
+  const loadRecentTrucks = useCallback(async () => {
+    setRecentTrucksLoading(true);
+    setRecentTrucksError(null);
+    try {
+      setRecentTrucksResult(await fetchRecentTrucks(12));
+    } catch (err) {
+      setRecentTrucksResult(null);
+      setRecentTrucksError(err instanceof Error ? err.message : "Не удалось загрузить машины");
+    } finally {
+      setRecentTrucksLoading(false);
     }
   }, []);
 
@@ -446,6 +385,7 @@ export function App() {
     if (tab === "fleet") {
       void fetchVehicles().then(setVehicles).catch(() => setVehicles([]));
       void loadMatchSummary();
+      void loadRecentTrucks();
     }
     if (tab === "cargos") {
       void loadMyCargos();
@@ -612,6 +552,100 @@ export function App() {
     }
   }
 
+  function renderTruckCard(
+    truck: TruckSearchResponse["items"][number],
+    unlockPriceStars: number,
+  ) {
+    return (
+      <div className="vehicle-card" key={truck.id}>
+        <div className="vehicle-info">
+          <strong>
+            🚛 #{truck.id} {truck.truck_type || "машина"}
+            {truck.capacity_tons ? ` • ${truck.capacity_tons}т` : ""}
+          </strong>
+          <span className="muted">📍 {truck.base_city || truck.base_region || "Локация не указана"}</span>
+          {truck.routes && <span className="muted">🗺 {truck.routes}</span>}
+          {!truck.can_view_contact && (
+            <span className="muted">
+              🔒 Контакты владельца и прямая связь доступны по подписке или разовому доступу.
+            </span>
+          )}
+          {truck.can_view_contact && truck.phone && (
+            <span className="verified">📞 {truck.phone}</span>
+          )}
+        </div>
+        <div className="vehicle-status">
+          {truck.can_view_contact ? (
+            <>
+              {truck.phone && (
+                <button
+                  className="action-btn primary"
+                  onClick={() => {
+                    window.location.href = `tel:${truck.phone}`;
+                  }}
+                >
+                  📞 Позвонить
+                </button>
+              )}
+              {truck.source_url && (
+                <button
+                  className="action-btn"
+                  onClick={() => window.open(truck.source_url || "#", "_blank")}
+                >
+                  🔗 Источник
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <button
+                className="action-btn primary"
+                onClick={() => handleTruckUnlock(truck.unlock_bot_link)}
+              >
+                🔓 Открыть контакт ({unlockPriceStars} XTR)
+              </button>
+              <button
+                className="action-btn"
+                onClick={() => handleBuyPremium("Premium открывает все контакты без разовых оплат.")}
+              >
+                👑 Premium
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  async function handleTruckSearchSubmit(event?: FormEvent) {
+    event?.preventDefault();
+    const text = truckSearchText.trim();
+    if (!text) {
+      setTruckSearchError("Опишите машину свободным текстом, например: ищу машину из Москвы в Самару 4 тонны");
+      setTruckSearchResult(null);
+      return;
+    }
+    setTruckSearchLoading(true);
+    setTruckSearchError(null);
+    try {
+      const result = await searchTrucks({ raw_text: text, top_n: 3 });
+      setTruckSearchResult(result);
+    } catch (err) {
+      setTruckSearchResult(null);
+      setTruckSearchError(err instanceof Error ? err.message : "Не удалось подобрать машины");
+    } finally {
+      setTruckSearchLoading(false);
+    }
+  }
+
+  function handleTruckUnlock(link: string | null) {
+    if (!link) {
+      handleBuyPremium("Открытие контакта доступно через бота. Откроем Premium.");
+      return;
+    }
+    openBotLink(link, "Продолжайте оплату в боте. После оплаты контакт откроется.");
+  }
+
   async function handleAddCargo(payload: AddCargoFormPayload) {
     if (!canUseTelegramOnlyActions) {
       setCargoError("Публикация груза доступна только из Telegram Mini App");
@@ -625,20 +659,20 @@ export function App() {
       const created = await createManualCargo(
         payload.mode === "text"
           ? {
-            raw_text: payload.rawText,
-          }
+              raw_text: payload.rawText,
+            }
           : {
-            origin: payload.origin,
-            destination: payload.destination,
-            body_type: payload.bodyType,
-            weight: payload.weight,
-            volume: payload.volume ?? null,
-            price: payload.price,
-            load_date: payload.loadDate,
-            load_time: payload.loadTime ?? null,
-            description: payload.description ?? null,
-            payment_terms: payload.paymentTerms ?? null,
-          },
+              origin: payload.origin,
+              destination: payload.destination,
+              body_type: payload.bodyType,
+              weight: payload.weight,
+              volume: payload.volume ?? null,
+              price: payload.price,
+              load_date: payload.loadDate,
+              load_time: payload.loadTime ?? null,
+              description: payload.description ?? null,
+              payment_terms: payload.paymentTerms ?? null,
+            },
       );
 
       setShowAddCargo(false);
@@ -652,6 +686,7 @@ export function App() {
           returnToCargos
             ? "Проверь блок “🎯 Совпадения” у нового груза — подбор уже открыт."
             : "Мы уже открыли “📦 Мои грузы” и загрузили подходящие машины.",
+          created.parsed?.ai_comment ?? "Груз обработан и добавлен в общую ленту.",
           "При необходимости включи “🛡️ Честный рейс”, чтобы защитить оплату.",
           "Дальше жди отклики или открой “🎯 Совпадения” для подходящей техники.",
         ],
@@ -669,7 +704,7 @@ export function App() {
     payload: AddCargoFormPayload,
   ) {
     if (payload.mode !== "form") {
-      setMyCargosError("Быстрое распознавание доступно только при создании нового груза");
+      setMyCargosError("Smart-режим доступен только для нового груза");
       return;
     }
     setAddingCargo(true);
@@ -708,6 +743,17 @@ export function App() {
       await Promise.all([loadMyCargos(), load(true)]);
     } catch (err) {
       setMyCargosError(err instanceof Error ? err.message : "Не удалось архивировать груз");
+    }
+  }
+
+  async function handleRestoreCargo(cargoId: number) {
+    setMyCargosError(null);
+    try {
+      await restoreManualCargo(cargoId);
+      setEditingCargoId((current) => (current === cargoId ? null : current));
+      await Promise.all([loadMyCargos(), load(true)]);
+    } catch (err) {
+      setMyCargosError(err instanceof Error ? err.message : "Не удалось восстановить груз");
     }
   }
 
@@ -1286,7 +1332,7 @@ export function App() {
               <>
                 <div className="cabinet-meta">{profileError || "Кабинет недоступен"}</div>
                 {profileError && (
-                  <button className="action-btn" onClick={handleRefreshAccess}>
+                  <button className="action-btn" onClick={() => void loadProfileSummary()}>
                     Обновить доступ
                   </button>
                 )}
@@ -1315,7 +1361,7 @@ export function App() {
               <>
                 <div className="cabinet-meta">{profileLoading ? "Загружаем…" : "Нет данных"}</div>
                 {profileError && !profileLoading && (
-                  <button className="action-btn" onClick={handleRefreshAccess}>
+                  <button className="action-btn" onClick={() => void loadProfileSummary()}>
                     Обновить доступ
                   </button>
                 )}
@@ -1400,15 +1446,19 @@ export function App() {
         </div>
 
         {showAddCargo && (
-          <AddCargoForm
-            onSubmit={handleAddCargo}
-            onCancel={() => {
-              setCargoError(null);
-              setShowAddCargo(false);
-            }}
-            busy={addingCargo}
-            error={cargoError}
-          />
+          <div className="cargo-modal-backdrop">
+            <div className="cargo-modal-panel">
+              <AddCargoForm
+                onSubmit={handleAddCargo}
+                onCancel={() => {
+                  setCargoError(null);
+                  setShowAddCargo(false);
+                }}
+                busy={addingCargo}
+                error={cargoError}
+              />
+            </div>
+          </div>
         )}
 
         {myCargosError && <div className="error">{myCargosError}</div>}
@@ -1501,19 +1551,27 @@ export function App() {
                     <button
                       className="action-btn"
                       onClick={() => {
+                        if (cargo.status === "archived") {
+                          void handleRestoreCargo(cargo.id);
+                          return;
+                        }
                         setShowAddCargo(false);
                         setMyCargosError(null);
                         setEditingCargoId((current) => (current === cargo.id ? null : cargo.id));
                       }}
                     >
-                      {editing ? "Скрыть" : "✏️ Редактировать"}
+                      {cargo.status === "archived"
+                        ? "↩️ Восстановить"
+                        : (editing ? "Скрыть" : "✏️ Редактировать")}
                     </button>
-                    <button
-                      className="action-btn report"
-                      onClick={() => void handleArchiveCargo(cargo.id)}
-                    >
-                      🗄️ Архив
-                    </button>
+                    {cargo.status !== "archived" && (
+                      <button
+                        className="action-btn report"
+                        onClick={() => void handleArchiveCargo(cargo.id)}
+                      >
+                        🗄️ Архив
+                      </button>
+                    )}
                     <button
                       className="action-btn"
                       onClick={() => void showCargoMatches(cargo.id)}
@@ -1524,7 +1582,7 @@ export function App() {
 
                   {renderCargoMatchCards(cargo.id)}
 
-                  {editing && (
+                  {editing && cargo.status !== "archived" && (
                     <AddCargoForm
                       onSubmit={(payload) => handleEditCargo(cargo.id, payload)}
                       onCancel={() => {
@@ -1570,7 +1628,7 @@ export function App() {
           <div className="error">
             {profileError}
             <div style={{ marginTop: "10px" }}>
-              <button className="action-btn" onClick={handleRefreshAccess}>
+              <button className="action-btn" onClick={() => void loadProfileSummary()}>
                 Обновить доступ
               </button>
             </div>
@@ -1636,7 +1694,7 @@ export function App() {
                     <div>
                       <div className="my-cargo-route">{cargo.from_city} → {cargo.to_city}</div>
                       <div className="my-cargo-meta">
-                        {cargo.weight}т{cargo.volume ? ` • ${cargo.volume}м³` : ""} • {cargo.price.toLocaleString("ru")} ₽
+                        {cargo.weight}т • {cargo.price.toLocaleString("ru")} ₽
                       </div>
                     </div>
                     <span className="escrow-status verified">
@@ -1889,15 +1947,19 @@ export function App() {
         </section>
       )}
       {showAddCargo && (tab === "feed" || tab === "map") && (
-        <AddCargoForm
-          onSubmit={handleAddCargo}
-          onCancel={() => {
-            setCargoError(null);
-            setShowAddCargo(false);
-          }}
-          busy={addingCargo}
-          error={cargoError}
-        />
+        <div className="cargo-modal-backdrop">
+          <div className="cargo-modal-panel">
+            <AddCargoForm
+              onSubmit={handleAddCargo}
+              onCancel={() => {
+                setCargoError(null);
+                setShowAddCargo(false);
+              }}
+              busy={addingCargo}
+              error={cargoError}
+            />
+          </div>
+        </div>
       )}
       {cargoError && !showAddCargo && (tab === "feed" || tab === "map") && (
         <div className="error">{cargoError}</div>
@@ -2031,6 +2093,95 @@ export function App() {
 
       {tab === "fleet" && (
         <div className="fleet-section">
+          <section className="truck-search-panel">
+            <div className="fleet-header">
+              <h2>🔎 Найти машину</h2>
+            </div>
+            <form className="truck-form" onSubmit={(e) => void handleTruckSearchSubmit(e)}>
+              <label className="truck-field cargo-description">
+                <span>Запрос</span>
+                <textarea
+                  value={truckSearchText}
+                  onChange={(e) => setTruckSearchText(e.target.value)}
+                  placeholder="ищу машину из Москвы в Самару 4 тонны завтра"
+                />
+              </label>
+              <div className="truck-form-actions">
+                <button className="action-btn primary" type="submit" disabled={truckSearchLoading}>
+                  {truckSearchLoading ? "Ищем…" : "🎯 Подобрать"}
+                </button>
+                <button
+                  className="action-btn"
+                  type="button"
+                  onClick={() => {
+                    setTruckSearchText("");
+                    setTruckSearchError(null);
+                    setTruckSearchResult(null);
+                  }}
+                >
+                  Очистить
+                </button>
+              </div>
+            </form>
+
+            {truckSearchError && <div className="error truck-form-error">{truckSearchError}</div>}
+
+            {truckSearchResult && (
+              <div className="truck-search-results">
+                <div className="truck-search-summary">
+                  <div className="truck-search-summary-title">
+                    🎯 Подобрано машин: {truckSearchResult.total}
+                  </div>
+                  <div className="truck-search-summary-meta">
+                    {(truckSearchResult.query.from_city || "Любой город")}
+                    {truckSearchResult.query.to_city ? ` → ${truckSearchResult.query.to_city}` : ""}
+                    {truckSearchResult.query.weight ? ` • ${truckSearchResult.query.weight}т` : ""}
+                    {truckSearchResult.query.truck_type ? ` • ${truckSearchResult.query.truck_type}` : ""}
+                  </div>
+                </div>
+
+                {truckSearchResult.items.length === 0 ? (
+                  <div className="muted" style={{ textAlign: "center", padding: "12px 0" }}>
+                    По этому запросу машины не найдены. Попробуйте смягчить маршрут или убрать тип кузова.
+                  </div>
+                ) : (
+                  <div className="vehicle-list">
+                    {truckSearchResult.items.map((truck) => renderTruckCard(truck, truckSearchResult.unlock_price_stars))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="truck-search-results">
+              <div className="truck-search-summary">
+                <div className="truck-search-summary-title">🆕 Свежие машины</div>
+                <div className="truck-search-summary-meta">
+                  Последние активные предложения из общей базы перевозчиков
+                </div>
+              </div>
+
+              {recentTrucksLoading && (
+                <div className="muted" style={{ textAlign: "center", padding: "12px 0" }}>
+                  Загружаем свежие машины…
+                </div>
+              )}
+
+              {recentTrucksError && <div className="error truck-form-error">{recentTrucksError}</div>}
+
+              {!recentTrucksLoading && !recentTrucksError && recentTrucksResult && (
+                recentTrucksResult.items.length === 0 ? (
+                  <div className="muted" style={{ textAlign: "center", padding: "12px 0" }}>
+                    Пока нет свежих машин.
+                  </div>
+                ) : (
+                  <div className="vehicle-list">
+                    {recentTrucksResult.items.map((truck) => renderTruckCard(truck, recentTrucksResult.unlock_price_stars))}
+                  </div>
+                )
+              )}
+            </div>
+          </section>
+
           <div className="fleet-header">
             <h2>🚛 Мой флот</h2>
             <button

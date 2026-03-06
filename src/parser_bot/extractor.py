@@ -56,7 +56,7 @@ NON_RUB_MILLION_HINT_RE = re.compile(
     r"(?:"
     r"сум|сўм|сумм|sum\b|som\b|so'm\b"
     r"|перечис(?:ление|л)?|пречесл|ичида|пули|берилади"
-    r"|тулов|тўлов|tolov|tolov"
+    r"|тулов|тўлов|tolov"
     r"|накд|нақд|naqd"
     r"|\+998"
     r")",
@@ -140,6 +140,19 @@ CITY_STOP_WORDS = {
     "resort",
     "hotel",
     "hostel",
+    "ёки",
+    "еки",
+    "yoki",
+    "или",
+    "or",
+    "ru",
+    "by",
+    "uz",
+    "kz",
+    "kg",
+    "cn",
+    "тентлар",
+    "рефлар",
 }
 
 CITY_INVALID_EXACT = {
@@ -178,6 +191,14 @@ CITY_INVALID_EXACT = {
     "накд",
     "нақд",
     "naqd",
+    "тентлар",
+    "рефлар",
+    "cn",
+    "ru",
+    "uz",
+    "kz",
+    "kg",
+    "by",
 }
 
 CITY_INVALID_PREFIX_WORDS = {
@@ -294,8 +315,6 @@ CITY_ALIASES = {
     "ташкенд": "Ташкент",
     "тошкент": "Ташкент",
     "toshkent": "Ташкент",
-    "шимкент": "Чимкент",
-    "чимкент": "Чимкент",
     "сырдаря": "Сырдарья",
     "сирдарё": "Сырдарья",
     "бухоро": "Бухара",
@@ -303,8 +322,6 @@ CITY_ALIASES = {
     "самарқанд": "Самарканд",
     "самарканд": "Самарканд",
     "samarqand": "Самарканд",
-    "навоий": "Навоий",
-    "navoiy": "Навоий",
     "жиззах": "Джизак",
     "карши": "Карши",
     "нукус": "Нукус",
@@ -319,10 +336,49 @@ CITY_ALIASES = {
     "qashqadaryo": "Кашкадарья",
     "qoqon": "Коканд",
     "xorazm": "Хорезм",
-    "fargona": "Farg'ona",
-    "farg'ona": "Farg'ona",
-    "fargʻona": "Farg'ona",
-    "farg’ona": "Farg'ona",
+    "fargona": "Фергана",
+    "farg'ona": "Фергана",
+    "fargʻona": "Фергана",
+    "farg’ona": "Фергана",
+    "андижон": "Андижан",
+    "сурхандарё": "Сурхандарья",
+    "сурхандарья": "Сурхандарья",
+    "surxondaryo": "Сурхандарья",
+    "кашкадарё": "Кашкадарья",
+    "маргилон": "Маргилан",
+    "олмалиқ": "Алмалык",
+    "денов": "Денау",
+    "хонобод": "Ханабад",
+    "кувасой": "Кувасай",
+    "бобруйск": "Бобруйск",
+    "барановичи": "Барановичи",
+    "могилёв": "Могилев",
+    "актобе": "Актобе",
+    "актюбинск": "Актобе",
+    "уральск": "Уральск",
+    "тараз": "Тараз",
+    "джамбул": "Тараз",
+    "семей": "Семей",
+    "семипалатинск": "Семей",
+    "шимкент": "Шымкент",
+    "чимкент": "Шымкент",
+    "нур-султан": "Астана",
+    "нурсултан": "Астана",
+    "душанбе": "Душанбе",
+    "худжанд": "Худжанд",
+    "ходжент": "Худжанд",
+    "куляб": "Куляб",
+    "бишкек": "Бишкек",
+    "баку": "Баку",
+    "тбилиси": "Тбилиси",
+    "ереван": "Ереван",
+    "стамбул": "Стамбул",
+    "istanbul": "Стамбул",
+    "табольск": "Тобольск",
+    "газган": "Газган",
+    "алашань": "Алашань",
+    "алашанькоу": "Алашанькоу",
+    "хоргос": "Хоргос",
 }
 
 CITY_ALIAS_INDEX: dict[str, set[str]] = {}
@@ -422,6 +478,8 @@ _WEEKDAY_NAMES_RU = [
 ]
 
 _ROUTE_NOISE_RE = re.compile(r"[⛳⚖📄💵📦📞🔺❇‼🟡🟢🔴⛽🛢🚛✅🧑💻🔜]+|[\uFE0F]", re.UNICODE)
+_COUNTRY_CODE_SUFFIX_RE = re.compile(r",\s*(?:RU|BY|UZ|KZ|KG|CN)\b", re.IGNORECASE)
+_CITY_OPTION_MARKERS = {"ёки", "еки", "yoki", "или", "or"}
 
 
 @dataclass(slots=True)
@@ -455,6 +513,10 @@ def _normalize_city(value: str) -> str:
     head = (value or "").split(",", 1)[0]
     words = [w.strip(".,:;()[]{}") for w in head.replace("ё", "е").replace("Ё", "Е").split()]
     words = [w for w in words if w]
+    for idx, word in enumerate(words[1:], start=1):
+        if word.lower() in _CITY_OPTION_MARKERS:
+            words = words[:idx]
+            break
     while words and words[0].lower() in CITY_STOP_WORDS:
         words.pop(0)
     while words and words[-1].lower() in CITY_STOP_WORDS:
@@ -563,8 +625,7 @@ def _parse_price(text: str) -> int | None:
 
         compact = token.replace(" ", "")
         if multiplier == 1 and compact.isdigit() and len(compact) >= 8:
-            # Long bare numeric ids in chats are usually phone-like contact
-            # handles or shipment references, not a ruble rate.
+            # Long bare numeric ids in chats are usually references, not rates.
             return None
         if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", compact):
             digits = re.sub(r"\D", "", compact)
@@ -622,6 +683,7 @@ def _parse_body_type(text_lc: str) -> str | None:
 def _parse_route(text: str) -> tuple[str, str] | tuple[None, None]:
     route_text = re.sub(r"[\U0001F1E6-\U0001F1FF]", "", text or "")
     route_text = _ROUTE_NOISE_RE.sub(" ", route_text)
+    route_text = _COUNTRY_CODE_SUFFIX_RE.sub("", route_text)
     route_text = route_text.replace('"', " ")
     route_text = re.sub(r"[ \t]+", " ", route_text).strip()
 

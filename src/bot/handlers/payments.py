@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
+from sqlalchemy import select
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import (
@@ -17,7 +18,7 @@ from aiogram.types import (
 from src.bot.keyboards import main_menu
 from src.core.config import settings
 from src.core.database import async_session
-from src.core.models import PremiumPayment, User
+from src.core.models import AvailableTruck, PremiumPayment, TruckContactUnlock, User
 from src.core.services.referral import extend_premium_until, grant_referral_reward_if_applicable
 
 
@@ -50,6 +51,88 @@ def _plan_config(days: int) -> tuple[int, int, str] | None:
     if days == 30:
         return 30, settings.premium_stars_30d, "Премиум-доступ на 30 дней"
     return None
+
+
+def _truck_unlock_config() -> tuple[int, str]:
+    return settings.truck_contact_unlock_stars, "Разовый доступ к контакту перевозчика"
+
+
+def _render_truck_unlock_text(truck: AvailableTruck) -> str:
+    parts = ["🔓 <b>Контакт открыт</b>"]
+    summary: list[str] = []
+    if truck.truck_type:
+        summary.append(truck.truck_type.title())
+    if truck.capacity_tons:
+        summary.append(f"{truck.capacity_tons}т")
+    if summary:
+        parts.append("🚛 " + " • ".join(summary))
+    if truck.base_city:
+        parts.append(f"📍 {truck.base_city}")
+    if truck.routes:
+        parts.append(f"🗺 {truck.routes[:120]}")
+    if truck.phone:
+        parts.append(f"📞 {truck.phone}")
+    if truck.avito_url:
+        parts.append("🔗 Источник доступен кнопкой ниже")
+    return "\n".join(parts)
+
+
+def _truck_unlock_kb(truck: AvailableTruck) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    if truck.phone:
+        phone_clean = "".join(c for c in truck.phone if c.isdigit() or c == "+")
+        if phone_clean:
+            rows.append([InlineKeyboardButton(text="📞 Позвонить", url=f"tel:{phone_clean}")])
+    if truck.avito_url:
+        rows.append([InlineKeyboardButton(text="📍 Открыть источник", url=truck.avito_url)])
+    rows.append([InlineKeyboardButton(text="◀️ Меню", callback_data="menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def send_truck_unlock_entry(*, bot, chat_id: int, user_id: int, truck_id: int) -> tuple[bool, str]:
+    async with async_session() as session:
+        user = await session.get(User, user_id)
+        truck = await session.get(AvailableTruck, truck_id)
+        if not truck:
+            return False, "missing_truck"
+
+        is_premium = bool(
+            user
+            and user.is_premium
+            and (user.premium_until is None or user.premium_until >= datetime.now())
+        )
+        existing_unlock = (
+            await session.execute(
+                select(TruckContactUnlock).where(
+                    TruckContactUnlock.user_id == user_id,
+                    TruckContactUnlock.truck_id == truck_id,
+                    TruckContactUnlock.status == "success",
+                )
+            )
+        ).scalar_one_or_none()
+
+    if is_premium or existing_unlock:
+        await bot.send_message(
+            chat_id,
+            _render_truck_unlock_text(truck),
+            reply_markup=_truck_unlock_kb(truck),
+            disable_web_page_preview=True,
+        )
+        return True, "revealed"
+
+    stars_amount, title = _truck_unlock_config()
+    invoice_payload = f"truck_contact:{user_id}:{truck_id}:{stars_amount}:{uuid4().hex[:10]}"
+    await bot.send_invoice(
+        chat_id=chat_id,
+        title=title,
+        description="Открывает телефон и источник одной выбранной машины.",
+        payload=invoice_payload,
+        currency="XTR",
+        prices=[LabeledPrice(label=title, amount=stars_amount)],
+        provider_token=None,
+        start_parameter=f"truck_contact_{truck_id}",
+    )
+    return True, "invoice_sent"
 
 
 @router.message(Command("buy_premium"))
@@ -95,10 +178,35 @@ async def buy_premium_callback(cb: CallbackQuery):
     await cb.answer()
 
 
+@router.callback_query(F.data.startswith("unlock_truck:"))
+async def unlock_truck_callback(cb: CallbackQuery):
+    payload_raw = (cb.data or "").split(":", maxsplit=1)
+    if len(payload_raw) != 2:
+        await cb.answer("Не удалось определить машину", show_alert=True)
+        return
+
+    try:
+        truck_id = int(payload_raw[1])
+    except ValueError:
+        await cb.answer("Не удалось определить машину", show_alert=True)
+        return
+
+    ok, reason = await send_truck_unlock_entry(
+        bot=cb.bot,
+        chat_id=cb.from_user.id,
+        user_id=cb.from_user.id,
+        truck_id=truck_id,
+    )
+    if not ok and reason == "missing_truck":
+        await cb.answer("Машина уже недоступна", show_alert=True)
+        return
+    await cb.answer()
+
+
 @router.pre_checkout_query()
 async def pre_checkout_handler(pre_checkout_query: PreCheckoutQuery):
     payload = (pre_checkout_query.invoice_payload or "").strip()
-    if payload.startswith("premium:"):
+    if payload.startswith("premium:") or payload.startswith("truck_contact:"):
         await pre_checkout_query.answer(ok=True)
         return
     await pre_checkout_query.answer(ok=False, error_message="Неизвестный счёт")
@@ -115,6 +223,55 @@ async def successful_payment_handler(message: Message):
         return
 
     payload = (payment.invoice_payload or "").strip()
+    if payload.startswith("truck_contact:"):
+        parts = payload.split(":")
+        if len(parts) < 4:
+            await message.answer("⚠️ Платёж получен, но не удалось определить машину.")
+            return
+
+        try:
+            truck_id = int(parts[2])
+        except ValueError:
+            await message.answer("⚠️ Платёж получен, но машина не распознана.")
+            return
+
+        async with async_session() as session:
+            truck = await session.get(AvailableTruck, truck_id)
+            if not truck:
+                await message.answer("⚠️ Машина уже недоступна. Напишите в поддержку.")
+                return
+
+            existing = (
+                await session.execute(
+                    select(TruckContactUnlock).where(
+                        TruckContactUnlock.user_id == message.from_user.id,
+                        TruckContactUnlock.truck_id == truck_id,
+                    )
+                )
+            ).scalar_one_or_none()
+
+            if existing is None:
+                session.add(
+                    TruckContactUnlock(
+                        user_id=message.from_user.id,
+                        truck_id=truck_id,
+                        amount_stars=payment.total_amount,
+                        currency=payment.currency,
+                        status="success",
+                        invoice_payload=payload,
+                        telegram_payment_charge_id=payment.telegram_payment_charge_id,
+                        provider_payment_charge_id=payment.provider_payment_charge_id,
+                    )
+                )
+                await session.commit()
+
+        await message.answer(
+            _render_truck_unlock_text(truck),
+            reply_markup=_truck_unlock_kb(truck),
+            disable_web_page_preview=True,
+        )
+        return
+
     if not payload.startswith("premium:"):
         return
 

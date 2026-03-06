@@ -79,7 +79,7 @@ class MockTochkaBankClient:
     async def create_payment_link(self, *, cargo_id: int, escrow_id: int, amount_rub: int) -> PaymentLinkResult:
         provider_payment_id = f"mockpay_{uuid4().hex[:16]}"
         token = self._sign_token(escrow_id, provider_payment_id)
-        base = (settings.webapp_url or "http://localhost:8001").rstrip("/")
+        base = (settings.webapp_url or "http://localhost:8000").rstrip("/")
         query = urlencode(
             {
                 "escrow_id": escrow_id,

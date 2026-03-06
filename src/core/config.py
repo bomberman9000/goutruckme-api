@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # WebApp
     webapp_url: str | None = None  # e.g. https://yourdomain.com
-    telegram_tma_max_age_sec: int = 2592000
+    telegram_tma_max_age_sec: int = 86400
     geo_http_timeout_sec: int = 5
     geo_nominatim_url: str = "https://nominatim.openstreetmap.org/search"
     geo_osrm_url: str = "https://router.project-osrm.org/route/v1/driving"
@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     internal_token: str = ""
     internal_api_token: str = ""  # legacy alias
     internal_http_timeout: int = 10
-    tg_bot_internal_url: str = "http://tg-bot:8001"
+    tg_bot_internal_url: str = "http://tg-bot:8000"
     gruzpotok_api_internal_url: str = "http://gruzpotok-api:8000"
     gruzpotok_public_url: str = "http://144.31.64.130:8000"
     gruzpotok_sync_path: str = "/internal/sync"
@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     parser_startup_backfill_limit: int = 10
     parser_startup_backfill_minutes: int = 30
     parser_heartbeat_key: str = "parser:heartbeat"
-    parser_heartbeat_ttl_sec: int = 1800
+    parser_heartbeat_ttl_sec: int = 900
     parser_self_kill_after_sec: int = 600
     parser_self_kill_grace_sec: int = 300
     parser_worker_name: str = "worker-1"
@@ -100,6 +100,14 @@ class Settings(BaseSettings):
     avito_enabled: bool = False
     avito_poll_interval_min: int = 15
     avito_max_pages_per_run: int = 3
+    vk_enabled: bool = False
+    vk_access_token: str = ""
+    vk_group_ids: str = ""
+    vk_poll_interval_sec: int = 60
+    vk_fetch_count: int = 5
+    vk_dedupe_ttl_sec: int = 86400
+    vk_api_version: str = "5.199"
+    vk_source_name: str = "vk-parser-bot"
 
     # Parser LLM extractor
     parser_use_llm: bool = False
@@ -121,11 +129,19 @@ class Settings(BaseSettings):
     # Premium (Telegram Stars)
     premium_stars_7d: int = 700
     premium_stars_30d: int = 2400
+    truck_contact_unlock_stars: int = 190
     referral_reward_days: int = 7
     referral_invited_reward_days: int = 3
     referral_ambassador_threshold: int = 10
     manual_cargo_notify_dedupe_sec: int = 300
     admin_notification_mute_sec: int = 86400
+
+    # Avito ingestor (truck feed)
+    avito_search_url: str = ""
+    avito_trucks_url: str = ""
+    avito_interval_sec: int = 300
+    avito_max_ads: int = 50
+    avito_state_file: str = "avito_state.json"
 
     # Escrow prototype
     escrow_enabled: bool = True

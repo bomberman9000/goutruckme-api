@@ -15,13 +15,14 @@ from typing import Any
 import httpx
 import redis.asyncio as redis
 from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.core.ai import calculate_market_rate
 from src.core.config import settings
 from src.core.database import async_session
-from src.core.models import ParserIngestEvent
+from src.core.models import AvailableTruck, ParserIngestEvent
+from src.core.ai import calculate_market_rate
+from src.parser_bot.truck_extractor import parse_truck_llm, parse_truck_regex
 from src.parser_bot.extractor import (
     ParsedCargo,
     build_content_dedupe_key,
@@ -49,24 +50,6 @@ _CARGO_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 
-_AMBIGUOUS_MILLION_CITY_KEYS = {
-    "ташкент",
-    "самарканд",
-    "бухара",
-    "навоий",
-    "навои",
-    "ургенч",
-    "фергана",
-    "андижан",
-    "карши",
-    "наманган",
-    "джизак",
-    "коканд",
-    "хорезм",
-    "кашкадарья",
-    "сурхандарья",
-}
-
 
 def _join_url(base_url: str, path: str) -> str:
     base = (base_url or "").rstrip("/")
@@ -80,51 +63,12 @@ def _internal_headers() -> dict[str, str]:
     return {"X-Internal-Token": token} if token else {}
 
 
-def _sync_targets() -> list[str]:
-    targets: list[str] = []
-    for base_url in (
-        settings.tg_bot_internal_url,
-        settings.gruzpotok_api_internal_url,
-    ):
-        url = _join_url(base_url, settings.gruzpotok_sync_path)
-        if url not in targets:
-            targets.append(url)
-    return targets
-
-
 def _parse_keywords(raw: str) -> list[str]:
     return [item.strip().lower() for item in (raw or "").split(",") if item.strip()]
 
 
 def _stream_socket_timeout(block_ms: int) -> float:
     return max(5.0, (max(100, int(block_ms)) / 1000.0) + 2.0)
-
-
-def _city_key(value: str | None) -> str:
-    key = (value or "").strip().lower()
-    key = key.replace("ё", "е").replace("-", " ")
-    key = re.sub(r"[^0-9a-zа-яқғўҳүұ\s'’ʻ`]", " ", key)
-    key = key.replace("ʻ", "'").replace("’", "'").replace("`", "'")
-    return re.sub(r"\s+", " ", key).strip()
-
-
-def _should_drop_ambiguous_million_rate(text: str, parsed: ParsedCargo) -> bool:
-    rate = parsed.rate_rub
-    if not isinstance(rate, int) or rate < 1_000_000:
-        return False
-
-    text_lc = (text or "").lower()
-    if "млн" not in text_lc and "мил" not in text_lc:
-        return False
-
-    if re.search(r"(?:₽|руб(?:лей)?|рос(?:сийских)?\s*руб)", text_lc):
-        return False
-
-    if re.search(r"(?:\$|usd\b|дол(?:лар(?:ов|а)?)?\b)", text_lc):
-        return False
-
-    route_keys = {_city_key(parsed.from_city), _city_key(parsed.to_city)}
-    return any(key in _AMBIGUOUS_MILLION_CITY_KEYS for key in route_keys)
 
 
 def _build_redis_client(*, block_ms: int) -> redis.Redis:
@@ -623,19 +567,6 @@ async def _push_to_api(
     return data if isinstance(data, dict) else {}
 
 
-async def _push_to_targets(
-    http_client: httpx.AsyncClient,
-    sync_urls: list[str],
-    payload: dict[str, Any],
-) -> dict[str, Any]:
-    primary_result: dict[str, Any] = {}
-    for index, sync_url in enumerate(sync_urls):
-        result = await _push_to_api(http_client, sync_url, payload)
-        if index == 0:
-            primary_result = result
-    return primary_result
-
-
 def _extract_cargo_id(sync_result: dict[str, Any]) -> int | None:
     try:
         value = sync_result.get("cargo_id")
@@ -651,17 +582,123 @@ def _external_url_dedupe_key(url: str) -> str:
     return f"parser:url:{hashlib.sha1(url.encode('utf-8')).hexdigest()}"
 
 
+_TRUCK_SOURCES = {"avito:trucks", "avito:cargo", "vk:trucks"}
+
+
+def _is_truck_source(source: str) -> bool:
+    return source in _TRUCK_SOURCES
+
+
+async def _process_truck_message(
+    *,
+    stream: RedisLogisticsStream,
+    group_name: str,
+    message: StreamMessage,
+) -> None:
+    should_ack = True
+    try:
+        text = (message.raw_text or "").strip()
+        if not text:
+            return
+
+        truck = await parse_truck_llm(text)
+        if truck is None:
+            truck = parse_truck_regex(text)
+
+        avito_url = message.external_url
+        if not avito_url:
+            url_match = re.search(r"Ссылка:\s*(https?://\S+)", text)
+            if url_match:
+                avito_url = url_match.group(1)
+
+        external_id = str(message.message_id) if message.message_id else message.entry_id
+        now = datetime.utcnow()
+
+        try:
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+            async with async_session() as session:
+                insert_stmt = pg_insert(AvailableTruck).values(
+                    source=message.source or "avito",
+                    external_id=external_id,
+                    truck_type=truck.truck_type,
+                    capacity_tons=truck.capacity_tons,
+                    volume_m3=truck.volume_m3,
+                    base_city=truck.base_city,
+                    base_region=truck.base_region,
+                    routes=truck.routes,
+                    phone=truck.phone,
+                    contact_name=truck.contact_name,
+                    price_rub=truck.price_rub,
+                    raw_text=text[:4000],
+                    avito_url=avito_url,
+                    last_seen_at=now,
+                    created_at=now,
+                    is_active=True,
+                )
+                excluded = insert_stmt.excluded
+                stmt = insert_stmt.on_conflict_do_update(
+                    constraint="uq_available_trucks_source_ext",
+                    set_={
+                        "truck_type": func.coalesce(func.nullif(excluded.truck_type, ""), AvailableTruck.truck_type),
+                        "capacity_tons": func.coalesce(excluded.capacity_tons, AvailableTruck.capacity_tons),
+                        "volume_m3": func.coalesce(excluded.volume_m3, AvailableTruck.volume_m3),
+                        "base_city": func.coalesce(func.nullif(excluded.base_city, ""), AvailableTruck.base_city),
+                        "base_region": func.coalesce(func.nullif(excluded.base_region, ""), AvailableTruck.base_region),
+                        "routes": func.coalesce(func.nullif(excluded.routes, ""), AvailableTruck.routes),
+                        "phone": func.coalesce(func.nullif(excluded.phone, ""), AvailableTruck.phone),
+                        "contact_name": func.coalesce(func.nullif(excluded.contact_name, ""), AvailableTruck.contact_name),
+                        "price_rub": case(
+                            ((excluded.price_rub.isnot(None)) & (excluded.price_rub > 0), excluded.price_rub),
+                            else_=AvailableTruck.price_rub,
+                        ),
+                        "raw_text": excluded.raw_text,
+                        "avito_url": func.coalesce(func.nullif(excluded.avito_url, ""), AvailableTruck.avito_url),
+                        "last_seen_at": now,
+                        "is_active": True,
+                    },
+                )
+                await session.execute(stmt)
+                await session.commit()
+
+            logger.info(
+                "truck saved source=%s ext_id=%s type=%s cap=%s city=%s",
+                message.source,
+                external_id,
+                truck.truck_type or "?",
+                truck.capacity_tons or "?",
+                truck.base_city or "?",
+            )
+        except SQLAlchemyError as exc:
+            logger.warning("truck save failed id=%s error=%s", message.entry_id, str(exc)[:160])
+
+    except Exception as exc:
+        should_ack = False
+        logger.exception("truck worker crashed id=%s error=%s", message.entry_id, str(exc)[:200])
+    finally:
+        if should_ack:
+            await stream.ack(group_name=group_name, entry_id=message.entry_id)
+
+
 async def _process_message(
     *,
     stream: RedisLogisticsStream,
     http_client: httpx.AsyncClient,
-    sync_urls: list[str],
+    sync_url: str,
     keywords: list[str],
     group_name: str,
     dedupe_ttl: int,
     max_retries: int,
     message: StreamMessage,
 ) -> None:
+    if _is_truck_source(message.source or ""):
+        await _process_truck_message(
+            stream=stream,
+            group_name=group_name,
+            message=message,
+        )
+        return
+
     should_ack = True
     parsed: ParsedCargo | None = None
     parse_method: str | None = None
@@ -794,16 +831,6 @@ async def _process_message(
             )
             return
 
-        if _should_drop_ambiguous_million_rate(text, parsed):
-            logger.info(
-                "dropping ambiguous million rate id=%s route=%s->%s rate=%s",
-                message.entry_id,
-                parsed.from_city,
-                parsed.to_city,
-                parsed.rate_rub,
-            )
-            parsed.rate_rub = None
-
         if not parsed.rate_rub:
             await _fill_rate_from_reference(parsed)
             if not parsed.rate_rub:
@@ -935,15 +962,6 @@ async def _process_message(
                 trust.score,
                 trust.verdict,
             )
-        if trust is None:
-            trust = ScoreResult(
-                inn=None,
-                score=60,
-                verdict="yellow",
-                comment="no_inn",
-                provider="default",
-                details={},
-            )
 
         is_spam = _is_spam(trust)
         if is_spam:
@@ -967,7 +985,7 @@ async def _process_message(
         sync_payload = _build_sync_payload(parsed, message, trust=trust)
 
         try:
-            sync_result = await _push_to_targets(http_client, sync_urls, sync_payload)
+            sync_result = await _push_to_api(http_client, sync_url, sync_payload)
             cargo_id = _extract_cargo_id(sync_result)
             await _save_ingest_event(
                 message=message,
@@ -1053,18 +1071,17 @@ async def run() -> None:
     max_retries = max(0, int(settings.parser_worker_max_retries))
 
     redis_client, stream = await _connect_stream(block_ms=block_ms, group_name=group_name)
-    sync_urls = _sync_targets()
+    sync_url = _join_url(settings.gruzpotok_api_internal_url, settings.gruzpotok_sync_path)
     http_client = httpx.AsyncClient(timeout=max(3, int(settings.parser_http_timeout)))
 
     logger.info(
-        "worker started stream=%s group=%s worker=%s batch=%s block_ms=%s claim_idle_ms=%s sync_targets=%s",
+        "worker started stream=%s group=%s worker=%s batch=%s block_ms=%s claim_idle_ms=%s",
         settings.parser_stream_name,
         group_name,
         worker_name,
         batch,
         block_ms,
         claim_idle_ms,
-        ",".join(sync_urls),
     )
 
     try:
@@ -1092,7 +1109,7 @@ async def run() -> None:
                     await _process_message(
                         stream=stream,
                         http_client=http_client,
-                        sync_urls=sync_urls,
+                        sync_url=sync_url,
                         keywords=keywords,
                         group_name=group_name,
                         dedupe_ttl=dedupe_ttl,

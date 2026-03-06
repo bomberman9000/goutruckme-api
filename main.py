@@ -32,6 +32,8 @@ async def lifespan(app: FastAPI):
     from src.bot.handlers.inline import router as inline_router
     from src.bot.handlers.claims import router as claims_router
     from src.bot.handlers.legal import router as legal_router
+    from src.bot.handlers.nlp_shortcuts import router as nlp_shortcuts_router
+    from src.bot.handlers.trucks import router as trucks_router
     from src.bot.middlewares.logging import LoggingMiddleware
     from src.bot.middlewares.watchdog import WatchdogMiddleware
     from src.core.services.watchdog import watchdog_loop
@@ -68,19 +70,15 @@ async def lifespan(app: FastAPI):
 
     setup_scheduler()
 
-    import logging as _logging
-    _logging.getLogger("aiogram").setLevel(_logging.DEBUG)
-
     async def debug_updates(handler, event, data):
         kind = type(event).__name__
         uid = getattr(event, "message_id", None) or getattr(event, "id", None)
-        print(f"[DEBUG] RAW UPDATE: {kind} (id={uid})", flush=True)
         logger.info("RAW UPDATE: %s (id=%s)", kind, uid)
         return await handler(event, data)
 
-    dp.message.outer_middleware(debug_updates)
-    dp.callback_query.outer_middleware(debug_updates)
-    dp.inline_query.outer_middleware(debug_updates)
+    dp.message.middleware(debug_updates)
+    dp.callback_query.middleware(debug_updates)
+    dp.inline_query.middleware(debug_updates)
 
     dp.message.middleware(WatchdogMiddleware())
     dp.callback_query.middleware(WatchdogMiddleware())
@@ -90,6 +88,7 @@ async def lifespan(app: FastAPI):
     dp.include_router(admin_router)
     dp.include_router(start_router)
     dp.include_router(feed_commands_router)
+    dp.include_router(trucks_router)
     dp.include_router(cargo_router)
     dp.include_router(search_router)
     dp.include_router(inline_router)
@@ -107,17 +106,12 @@ async def lifespan(app: FastAPI):
     dp.include_router(reminder_router)
     dp.include_router(payments_router)
     dp.include_router(referral_router)
+    dp.include_router(nlp_shortcuts_router)
 
     async def _run_polling():
         try:
-            await bot.delete_webhook(drop_pending_updates=True)
-            logger.info("Webhook deleted, starting polling...")
-            await dp.start_polling(
-                bot,
-                allowed_updates=["message", "callback_query", "inline_query", "pre_checkout_query"],
-                handle_signals=False,
-            )
-        except BaseException as e:
+            await dp.start_polling(bot)
+        except Exception as e:
             logger.error("Polling crashed: %s", e, exc_info=True)
 
     polling_task = asyncio.create_task(_run_polling())
@@ -162,10 +156,10 @@ from src.api.finance import router as finance_router
 from src.api.teams import router as teams_router
 from src.api.currency import router as currency_router
 from src.api.subscriptions import router as subscriptions_router
+from src.api.trucks import router as trucks_api_router
 from src.api.escrow import router as escrow_router
 from src.api.geo import router as geo_router
 from src.api.match import router as match_router
-from src.core.ai_diag import explain_health
 from src.core.services.watchdog import watchdog
 
 app.include_router(admin_panel_router)
@@ -186,6 +180,7 @@ app.include_router(finance_router)
 app.include_router(teams_router)
 app.include_router(currency_router)
 app.include_router(subscriptions_router)
+app.include_router(trucks_api_router)
 app.include_router(escrow_router)
 app.include_router(geo_router)
 app.include_router(match_router)
@@ -215,17 +210,12 @@ async def health_detailed():
     return await watchdog.check_health()
 
 
-@app.get("/health/ai")
+@app.get("/health/overview")
 @app.get("/health_ai")
-async def health_ai():
-    """Health check with human-readable diagnosis."""
+async def health_overview():
+    """Человеческая сводка по всей цепи без чтения логов."""
     health = await watchdog.check_health()
-    return {
-        "status": "ok",
-        "timestamp": health["timestamp"],
-        "diagnosis": explain_health(health),
-        "health": health,
-    }
+    return watchdog.build_operator_view(health)
 
 
 @app.get("/api/health")

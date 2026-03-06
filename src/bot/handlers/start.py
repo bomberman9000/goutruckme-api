@@ -211,6 +211,25 @@ async def cmd_start(message: Message, state: FSMContext):
                 reply_markup=_build_buy_kb(),
             )
             return
+        if start_payload and start_payload.startswith("unlock_truck_"):
+            from src.bot.handlers.payments import send_truck_unlock_entry
+
+            truck_raw = start_payload[len("unlock_truck_"):].strip()
+            try:
+                truck_id = int(truck_raw)
+            except ValueError:
+                await message.answer("❌ Не удалось определить машину.")
+                return
+
+            ok, reason = await send_truck_unlock_entry(
+                bot=message.bot,
+                chat_id=message.from_user.id,
+                user_id=message.from_user.id,
+                truck_id=truck_id,
+            )
+            if not ok and reason == "missing_truck":
+                await message.answer("❌ Машина уже недоступна.")
+            return
         if len(parts) == 2 and parts[1].startswith("link_"):
             code = parts[1][len("link_"):].strip()
             if not code:

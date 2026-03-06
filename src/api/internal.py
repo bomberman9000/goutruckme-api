@@ -11,7 +11,7 @@ from src.bot.bot import bot
 from src.core.config import settings
 from src.core.database import async_session
 from src.core.logger import logger
-from src.core.models import Cargo, CargoPaymentStatus, CargoStatus, RouteSubscription
+from src.core.models import Cargo, CargoPaymentStatus, CargoStatus, RouteSubscription, UserVehicle
 from src.core.schemas.sync import BotInternalEvent, InternalNotifyUserRequest, SharedSyncEvent
 
 
@@ -421,6 +421,47 @@ async def internal_sync_data(
             body.event_id,
             str(exc)[:200],
         )
+    vehicle_sync: dict[str, Any] = {"updated": False}
+    if body.source == "gruzpotok-api" and body.vehicle:
+        vehicle_payload = body.vehicle
+        vehicle_id_raw = str(vehicle_payload.id or "").strip()
+        vehicle_id = _extract_user_id(vehicle_id_raw)
+        if vehicle_id:
+            async with async_session() as session:
+                vehicle = await session.scalar(select(UserVehicle).where(UserVehicle.id == vehicle_id))
+                if vehicle:
+                    if vehicle_payload.location_city:
+                        vehicle.location_city = str(vehicle_payload.location_city).strip() or vehicle.location_city
+                    elif vehicle_payload.from_city:
+                        vehicle.location_city = str(vehicle_payload.from_city).strip() or vehicle.location_city
+
+                    if vehicle_payload.body_type:
+                        vehicle.body_type = str(vehicle_payload.body_type).strip() or vehicle.body_type
+                    if vehicle_payload.capacity_tons is not None:
+                        vehicle.capacity_tons = float(vehicle_payload.capacity_tons)
+                    elif vehicle_payload.capacity_t is not None:
+                        vehicle.capacity_tons = float(vehicle_payload.capacity_t)
+                    if vehicle_payload.plate_number:
+                        vehicle.plate_number = str(vehicle_payload.plate_number).strip() or vehicle.plate_number
+
+                    site_status = str((vehicle_payload.meta or {}).get("site_status") or "").strip().lower()
+                    if vehicle_payload.is_available is not None:
+                        vehicle.is_available = bool(vehicle_payload.is_available)
+                    elif site_status in {"inactive", "archived"}:
+                        vehicle.is_available = False
+                    elif site_status == "active":
+                        available_today = (vehicle_payload.meta or {}).get("site_available_today")
+                        if isinstance(available_today, bool):
+                            vehicle.is_available = available_today
+
+                    await session.commit()
+                    await session.refresh(vehicle)
+                    vehicle_sync = {
+                        "updated": True,
+                        "vehicle_id": int(vehicle.id),
+                        "is_available": bool(vehicle.is_available),
+                        "location_city": vehicle.location_city,
+                    }
 
     user_id = _event_user_id(body)
     notified = False
@@ -445,18 +486,20 @@ async def internal_sync_data(
             )
 
     logger.info(
-        "internal.sync_data accepted event_type=%s event_id=%s cargo_id=%s notified=%s",
+        "internal.sync_data accepted event_type=%s event_id=%s cargo_id=%s search_id=%s notified=%s",
         body.event_type,
         body.event_id,
         cargo_id,
+        body.search_id,
         notified,
     )
     return {
         "ok": True,
         "event_id": body.event_id,
         "event_type": body.event_type,
-        "search_id": body.search_id,
         "cargo_id": cargo_id,
+        "search_id": body.search_id,
+        "vehicle_sync": vehicle_sync,
         "notified": notified,
         "message_id": message_id,
     }

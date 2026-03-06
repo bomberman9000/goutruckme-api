@@ -24,6 +24,6 @@ ENV PATH="/app/.venv/bin:$PATH"
 COPY . .
 COPY --from=twa-build /twa/dist ./frontend/twa/dist
 
-EXPOSE 8001
+EXPOSE 8000
 
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

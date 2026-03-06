@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 from dataclasses import dataclass
 import hashlib
 import logging
@@ -13,6 +12,7 @@ import redis.asyncio as redis
 from playwright.async_api import Browser, BrowserContext, Error as PlaywrightError, Page, async_playwright
 
 from src.core.config import settings
+from src.parser_bot.extractor import parse_cargo_message
 from src.parser_bot.stream import RedisLogisticsStream
 
 
@@ -144,8 +144,10 @@ def _looks_like_customer_request(text: str, *, seed: AvitoSeed, keywords: list[s
     if not any(marker in lowered for marker in (*COMMON_POSITIVE_MARKERS, *seed.positive_markers)):
         return False
 
-    # Producer should only do coarse intent filtering. Route extraction happens in parser-worker.
-    return True
+    parsed = parse_cargo_message(text, keywords=keywords)
+    if not parsed:
+        return False
+    return bool(parsed.from_city and parsed.to_city)
 
 
 async def _page_pause() -> None:
@@ -337,27 +339,21 @@ async def _run_once() -> None:
             total_enqueued = await _enqueue_candidates(stream, candidates=deduped)
     finally:
         if context is not None:
-            with suppress(PlaywrightError):
-                await context.close()
+            await context.close()
         if browser is not None:
-            with suppress(PlaywrightError):
-                await browser.close()
+            await browser.close()
         await redis_client.aclose()
 
     logger.info("cycle complete enqueued=%s", total_enqueued)
 
 
 async def run_forever() -> None:
+    if not settings.avito_enabled:
+        logger.info("Avito producer disabled (AVITO_ENABLED=false). Exit.")
+        return
+
     base_interval_sec = max(1, int(settings.avito_poll_interval_min)) * 60
     while True:
-        if not settings.avito_enabled:
-            logger.info(
-                "Avito producer disabled (AVITO_ENABLED=false). Sleep %.1fs before re-check.",
-                float(base_interval_sec),
-            )
-            await asyncio.sleep(float(base_interval_sec))
-            continue
-
         try:
             await _run_once()
         except Exception as exc:

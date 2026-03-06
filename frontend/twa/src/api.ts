@@ -319,6 +319,42 @@ export type MatchSummary = {
   best_cargo_match_score: number;
 };
 
+export type TruckSearchItem = {
+  id: number;
+  truck_type: string | null;
+  capacity_tons: number | null;
+  base_city: string | null;
+  base_region: string | null;
+  routes: string | null;
+  can_view_contact: boolean;
+  is_unlocked: boolean;
+  phone: string | null;
+  source_url: string | null;
+  unlock_bot_link: string | null;
+};
+
+export type TruckSearchResponse = {
+  ok: boolean;
+  query: {
+    from_city: string | null;
+    to_city: string | null;
+    weight: number | null;
+    truck_type: string | null;
+  };
+  total: number;
+  unlock_price_stars: number;
+  premium_stars_30d: number;
+  items: TruckSearchItem[];
+};
+
+export type TruckRecentResponse = {
+  ok: boolean;
+  total: number;
+  unlock_price_stars: number;
+  premium_stars_30d: number;
+  items: TruckSearchItem[];
+};
+
 export type ManualCargoPayload = {
   raw_text?: string | null;
   origin?: string;
@@ -353,6 +389,7 @@ export type ManualCargoResponse = {
   ok: boolean;
   cargo_id: number;
   feed_id: number;
+  parsed?: ManualCargoParsedPreview | null;
 };
 
 export type ManualCargoPreviewResponse = {
@@ -621,6 +658,39 @@ export async function fetchMatchSummary(): Promise<MatchSummary> {
   return response.json();
 }
 
+export async function searchTrucks(payload: {
+  raw_text?: string | null;
+  from_city?: string | null;
+  to_city?: string | null;
+  weight?: number | null;
+  truck_type?: string | null;
+  top_n?: number;
+}): Promise<TruckSearchResponse> {
+  const headers = { "Content-Type": "application/json", ...(await buildRequiredTmaHeaders("Поиск машины")) };
+  const response = await fetch("/api/v1/trucks/search", {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, "Truck search failed");
+  }
+  return response.json();
+}
+
+export async function fetchRecentTrucks(limit = 12): Promise<TruckRecentResponse> {
+  const headers = await buildRequiredTmaHeaders("Витрина машин");
+  const response = await fetch(`/api/v1/trucks/recent?limit=${limit}`, {
+    credentials: "include",
+    headers,
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, "Recent trucks failed");
+  }
+  return response.json();
+}
+
 export async function trackClick(feedId: number): Promise<void> {
   const headers = { "Content-Type": "application/json", ...(await buildRequiredTmaHeaders("Клик по контакту")) };
 
@@ -738,7 +808,21 @@ export async function archiveManualCargo(cargoId: number): Promise<void> {
   });
 
   if (!response.ok) {
-    throw new Error(`Archive cargo failed: ${response.status}`);
+    throw await buildApiError(response, "Archive cargo failed");
+  }
+}
+
+export async function restoreManualCargo(cargoId: number): Promise<void> {
+  const headers = await buildRequiredTmaHeaders("Восстановление груза");
+
+  const response = await fetch(`/api/v1/cargos/${cargoId}/restore`, {
+    method: "POST",
+    credentials: "include",
+    headers,
+  });
+
+  if (!response.ok) {
+    throw await buildApiError(response, "Restore cargo failed");
   }
 }
 

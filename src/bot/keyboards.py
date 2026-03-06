@@ -24,6 +24,7 @@ def _webapp_url(path: str = "") -> str:
 def main_menu():
     b = InlineKeyboardBuilder()
     b.row(InlineKeyboardButton(text="🚛 Найти груз", callback_data="search_cargo"))
+    b.row(InlineKeyboardButton(text="🔍 Найти машину", callback_data="find_truck"))
     b.row(InlineKeyboardButton(text="📦 Разместить груз", callback_data="add_cargo"))
     b.row(InlineKeyboardButton(text="🧾 Мои грузы", callback_data="my_cargos"))
     b.row(InlineKeyboardButton(text="🤝 Мои отклики", callback_data="my_responses"))

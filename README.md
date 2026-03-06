@@ -43,9 +43,9 @@ cp .env.example .env
 docker compose up -d
 ```
 
-- Бот: порт 8001 (внутри контейнера 8000)
-- Health: http://localhost:8001/health
-- Админка: http://localhost:8001/admin
+- Бот: порт 8000
+- Health: http://localhost:8000/health
+- Админка: http://localhost:8000/admin
 
 ### Parser-bot v2 (Redis Streams: producer + worker)
 

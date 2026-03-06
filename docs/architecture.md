@@ -71,7 +71,7 @@ These same runtime metrics are surfaced on the admin dashboard.
 
 - The React TWA is built inside the normal Docker image build.
 - The public Mini App URL should point to the bot service domain and open `/webapp`.
-- Nginx only needs to reverse-proxy to `:8001`; no separate manual static hosting is required.
+- Nginx only needs to reverse-proxy to `:8000`; no separate manual static hosting is required.
 
 ## Current Boundaries
 
