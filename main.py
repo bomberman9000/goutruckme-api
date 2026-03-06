@@ -32,7 +32,6 @@ async def lifespan(app: FastAPI):
     from src.bot.handlers.inline import router as inline_router
     from src.bot.handlers.claims import router as claims_router
     from src.bot.handlers.legal import router as legal_router
-    from src.bot.handlers.nlp_shortcuts import router as nlp_shortcuts_router
     from src.bot.handlers.trucks import router as trucks_router
     from src.bot.middlewares.logging import LoggingMiddleware
     from src.bot.middlewares.watchdog import WatchdogMiddleware
@@ -106,7 +105,6 @@ async def lifespan(app: FastAPI):
     dp.include_router(reminder_router)
     dp.include_router(payments_router)
     dp.include_router(referral_router)
-    dp.include_router(nlp_shortcuts_router)
 
     async def _run_polling():
         try:
