@@ -3,13 +3,21 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.antifraud.lists import add_to_list
 from src.antifraud.rates import get_route_rate_profile
 from src.antifraud.service import run_deal_review_and_save
+from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
+from src.core.config import settings
 from src.core.database import async_session
+
+
+async def _require_admin(user: TelegramTMAUser = Depends(get_required_tma_user)) -> TelegramTMAUser:
+    if settings.admin_id and user.user_id != settings.admin_id:
+        raise HTTPException(status_code=403, detail="Admin only")
+    return user
 
 
 router = APIRouter(tags=["antifraud"])
@@ -57,7 +65,7 @@ class CounterpartyListResponse(BaseModel):
 
 
 @router.post("/antifraud/deal/review", response_model=DealReviewResponse)
-async def antifraud_deal_review(body: DealReviewRequest) -> DealReviewResponse:
+async def antifraud_deal_review(body: DealReviewRequest, _: TelegramTMAUser = Depends(_require_admin)) -> DealReviewResponse:
     async with async_session() as session:
         try:
             result = await run_deal_review_and_save(session, body.deal)
@@ -69,7 +77,7 @@ async def antifraud_deal_review(body: DealReviewRequest) -> DealReviewResponse:
 
 
 @router.post("/antifraud/counterparty/whitelist", response_model=CounterpartyListResponse)
-async def add_counterparty_whitelist(body: CounterpartyListRequest) -> CounterpartyListResponse:
+async def add_counterparty_whitelist(body: CounterpartyListRequest, _: TelegramTMAUser = Depends(_require_admin)) -> CounterpartyListResponse:
     async with async_session() as session:
         try:
             row = await add_to_list(
@@ -94,7 +102,7 @@ async def add_counterparty_whitelist(body: CounterpartyListRequest) -> Counterpa
 
 
 @router.post("/antifraud/counterparty/blacklist", response_model=CounterpartyListResponse)
-async def add_counterparty_blacklist(body: CounterpartyListRequest) -> CounterpartyListResponse:
+async def add_counterparty_blacklist(body: CounterpartyListRequest, _: TelegramTMAUser = Depends(_require_admin)) -> CounterpartyListResponse:
     async with async_session() as session:
         try:
             row = await add_to_list(
