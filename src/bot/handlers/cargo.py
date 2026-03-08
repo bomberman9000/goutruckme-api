@@ -1,16 +1,16 @@
 from aiogram import Router, F
-from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, BufferedInputFile
+from aiogram.filters import Command, StateFilter
+from aiogram.types import Message, CallbackQuery, BufferedInputFile, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest
 from sqlalchemy import select, or_, func
 from datetime import datetime, timedelta
 import re
-from src.bot.states import CargoForm, EditCargo
+from src.bot.states import CargoForm, EditCargo, CargoNLPConfirm
 from src.bot.keyboards import main_menu, confirm_kb, cargo_actions, cargos_menu, cargo_open_list_kb, skip_kb, response_actions, deal_actions, city_kb, delete_confirm_kb, my_cargos_kb, cargo_edit_kb, price_suggest_kb
 from src.bot.utils import cargo_deeplink
 from src.bot.utils.cities import city_suggest
-from src.core.ai import parse_city, parse_load_datetime
+from src.core.ai import parse_city, parse_load_datetime, parse_cargo_nlp
 from src.core.database import async_session
 from src.core.models import (
     Cargo,
@@ -249,7 +249,7 @@ async def all_cargos(cb: CallbackQuery):
             select(Cargo).where(Cargo.status == CargoStatus.NEW).limit(10)
         )
         cargos = result.scalars().all()
-    
+
     if not cargos:
         try:
             await cb.message.edit_text("📭 Нет активных грузов", reply_markup=cargos_menu())
@@ -257,7 +257,7 @@ async def all_cargos(cb: CallbackQuery):
             pass
         await cb.answer()
         return
-    
+
     text = "📋 <b>Активные грузы:</b>\n\n"
     for c in cargos:
         text += f"🔹 #{c.id}: {c.from_city} → {c.to_city}\n"
@@ -583,7 +583,7 @@ async def my_responses(cb: CallbackQuery):
             select(CargoResponse).where(CargoResponse.carrier_id == cb.from_user.id).limit(10)
         )
         responses = result.scalars().all()
-    
+
     if not responses:
         try:
             await cb.message.edit_text("📭 Нет откликов", reply_markup=cargos_menu())
@@ -591,13 +591,13 @@ async def my_responses(cb: CallbackQuery):
             pass
         await cb.answer()
         return
-    
+
     text = "🚛 <b>Мои отклики:</b>\n\n"
     for r in responses:
         status = "⏳" if r.is_accepted is None else ("✅" if r.is_accepted else "❌")
         link = cargo_deeplink(r.cargo_id)
         text += f"{status} Груз #{r.cargo_id} — {r.price_offer or 'без цены'}₽ {link}\n"
-    
+
     try:
         await cb.message.edit_text(text, reply_markup=cargos_menu())
     except TelegramBadRequest:
@@ -844,18 +844,35 @@ def _load_date_from_state(data: dict):
 async def show_confirm(message: Message, state: FSMContext):
     data = await state.get_data()
     load_date = _load_date_from_state(data)
-    text = f"📦 <b>Подтверди публикацию:</b>\n\n"
+
+    ati_line = ""
+    try:
+        from src.services.ati_service import get_route_rate_cached
+        rate = await get_route_rate_cached(data['from_city'], data['to_city'])
+        if rate:
+            price_rub = data.get('price') or 0
+            diff = ""
+            if price_rub and rate.price_rub:
+                delta = price_rub - rate.price_rub
+                if abs(delta) > 1000:
+                    sign = "+" if delta > 0 else "−"
+                    diff = f" ({sign}{abs(delta):,} ₽ от рынка)".replace(",", " ")
+            ati_line = f"\n📊 Рынок ATI: <b>{rate.price_rub:,} ₽</b> ({rate.loads_count} грузов){diff}".replace(",", " ")
+    except Exception as e:
+        logger.debug("ATI rate fetch skipped: %s", e)
+
+    text = "📦 <b>Подтверди публикацию:</b>\n\n"
     text += f"📍 {data['from_city']} → {data['to_city']}\n"
     text += f"📦 {data['cargo_type']}\n"
     text += f"⚖️ {data['weight']} т\n"
-    text += f"💰 {data['price']} ₽\n"
+    text += f"💰 {data['price']} ₽{ati_line}\n"
     text += f"📅 {load_date.strftime('%d.%m.%Y')}"
     if data.get("load_time"):
         text += f" в {data['load_time']}"
     text += "\n"
     if data.get('comment'):
         text += f"💬 {data['comment']}\n"
-    await message.answer(text, reply_markup=confirm_kb())
+    await message.answer(text, parse_mode="HTML", reply_markup=confirm_kb())
     await state.set_state(CargoForm.confirm)
 
 @router.callback_query(CargoForm.confirm, F.data == "yes")
@@ -912,6 +929,143 @@ async def cargo_confirm_no(cb: CallbackQuery, state: FSMContext):
     await cb.message.edit_text("❌ Отменено", reply_markup=main_menu())
     await cb.answer()
 
+
+def _nlp_confirm_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Создать", callback_data="nlp_cargo_confirm"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="nlp_cargo_cancel"),
+    ]])
+
+
+@router.message(StateFilter(None), F.text.regexp(r"(?is).*\d+(?:[.,]\d+)?\s*(кг|т\b|тн\b|тонн).*"))
+async def nlp_cargo_detect(message: Message, state: FSMContext):
+    """Detect free-text cargo descriptions and offer quick creation."""
+    logger.info("NLP handler called: user=%s text=%r", message.from_user.id, message.text)
+    try:
+        parsed = await parse_cargo_nlp(message.text)
+    except Exception as e:
+        logger.error("parse_cargo_nlp error: %s", e, exc_info=True)
+        return
+    logger.info("NLP parsed: %s", parsed)
+    if not parsed:
+        return
+
+    if not parsed.get("price"):
+        try:
+            from src.core.ai import estimate_price_smart
+
+            est = await estimate_price_smart(
+                parsed["from_city"], parsed["to_city"], parsed["weight"], parsed.get("cargo_type", "тент")
+            )
+            if est.get("price"):
+                parsed["price"] = est["price"]
+                parsed["price_estimated"] = True
+        except Exception as e:
+            logger.warning("estimate_price_smart error: %s", e)
+
+    weight_display = parsed["weight"]
+    if parsed.get("load_date"):
+        from datetime import datetime as _dt
+
+        load_date_str = _dt.strptime(parsed["load_date"], "%Y-%m-%d").strftime("%d.%m.%Y")
+        if parsed.get("load_time"):
+            load_date_str += f" в {parsed['load_time']}"
+    else:
+        from datetime import datetime as _dt
+
+        load_date_str = _dt.now().strftime("%d.%m.%Y")
+        parsed.setdefault("load_date", _dt.now().strftime("%Y-%m-%d"))
+
+    price_line = f"{parsed['price']:,} ₽" if parsed.get("price") else "не указана"
+    if parsed.get("price_estimated"):
+        price_line += " (расчётная)"
+    urgent_line = "\n⚡ <b>СРОЧНО</b>" if parsed.get("is_urgent") else ""
+
+    ati_line = ""
+    try:
+        from src.services.ati_service import get_route_rate_cached
+        rate = await get_route_rate_cached(parsed["from_city"], parsed["to_city"])
+        if rate:
+            ati_line = f"\n📊 Рынок ATI: <b>{rate.price_rub:,} ₽</b> ({rate.loads_count} грузов)".replace(",", " ")
+            if parsed.get("price") and rate.price_rub:
+                delta = int(parsed["price"]) - rate.price_rub
+                if abs(delta) > 1000:
+                    sign = "+" if delta > 0 else "−"
+                    ati_line += f" → {sign}{abs(delta):,} ₽ от рынка".replace(",", " ")
+    except Exception as e:
+        logger.debug("ATI rate skipped in NLP: %s", e)
+
+    text = (
+        f"📦 <b>Распознал груз:</b>{urgent_line}\n\n"
+        f"📍 {parsed['from_city']} → {parsed['to_city']}\n"
+        f"📦 {parsed['cargo_type']}\n"
+        f"⚖️ {weight_display} т\n"
+        f"💰 {price_line}{ati_line}\n"
+        f"📅 {load_date_str}\n\n"
+        "Опубликовать?"
+    )
+
+    await state.set_state(CargoNLPConfirm.wait_confirm)
+    await state.update_data(nlp_parsed=parsed)
+    try:
+        await message.answer(text, parse_mode="HTML", reply_markup=_nlp_confirm_kb())
+        logger.info("NLP reply sent to user=%s", message.from_user.id)
+    except Exception as e:
+        logger.error("NLP reply failed: %s", e, exc_info=True)
+
+
+@router.callback_query(CargoNLPConfirm.wait_confirm, F.data == "nlp_cargo_confirm")
+async def nlp_cargo_confirm(cb: CallbackQuery, state: FSMContext):
+    from src.core.services.notifications import notify_subscribers
+    from datetime import datetime as _dt
+
+    data = await state.get_data()
+    parsed = data.get("nlp_parsed", {})
+
+    load_date_raw = parsed.get("load_date")
+    load_date = _dt.strptime(load_date_raw, "%Y-%m-%d") if load_date_raw else _dt.now()
+    price = parsed.get("price") or 0
+
+    async with async_session() as session:
+        cargo = Cargo(
+            owner_id=cb.from_user.id,
+            from_city=parsed["from_city"],
+            to_city=parsed["to_city"],
+            cargo_type=parsed.get("cargo_type", "груз"),
+            weight=parsed["weight"],
+            price=price,
+            load_date=load_date,
+            load_time=parsed.get("load_time"),
+            comment="⚡ СРОЧНО" if parsed.get("is_urgent") else None,
+        )
+        session.add(cargo)
+        await session.commit()
+        await session.refresh(cargo)
+        cargo_id = cargo.id
+
+    await state.clear()
+    await cb.message.edit_text(f"✅ Груз #{cargo_id} опубликован!", reply_markup=main_menu())
+
+    try:
+        await notify_subscribers(cargo)
+    except Exception as e:
+        logger.warning("NLP cargo notify failed for #%s: %s", cargo_id, e)
+
+    try:
+        await _publish_cargo_sync_event(cargo, event_type="cargo.created")
+    except Exception as e:
+        logger.warning("NLP cargo cross-sync failed for #%s: %s", cargo_id, e)
+
+    await cb.answer()
+    logger.info("NLP cargo %s created by %s", cargo_id, cb.from_user.id)
+
+
+@router.callback_query(CargoNLPConfirm.wait_confirm, F.data == "nlp_cargo_cancel")
+async def nlp_cargo_cancel(cb: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await cb.message.edit_text("❌ Отменено", reply_markup=main_menu())
+    await cb.answer()
+
 @router.message(F.text.startswith("/cargo_"))
 async def show_cargo(message: Message):
     try:
@@ -924,7 +1078,7 @@ async def show_cargo(message: Message):
 @router.callback_query(F.data.startswith("respond_"))
 async def respond_cargo(cb: CallbackQuery):
     cargo_id = int(cb.data.split("_")[1])
-    
+
     async with async_session() as session:
         existing = await session.execute(
             select(CargoResponse)
@@ -934,14 +1088,14 @@ async def respond_cargo(cb: CallbackQuery):
         if existing.scalar_one_or_none():
             await cb.answer("❌ Ты уже откликался", show_alert=True)
             return
-        
+
         response = CargoResponse(cargo_id=cargo_id, carrier_id=cb.from_user.id)
         session.add(response)
         await session.commit()
-        
+
         cargo = await session.execute(select(Cargo).where(Cargo.id == cargo_id))
         cargo = cargo.scalar_one_or_none()
-        
+
         if cargo:
             link = cargo_deeplink(cargo_id)
             try:
@@ -951,7 +1105,7 @@ async def respond_cargo(cb: CallbackQuery):
                 )
             except:
                 pass
-    
+
     await cb.answer("✅ Отклик отправлен!", show_alert=True)
     logger.info(f"Response from {cb.from_user.id} to cargo {cargo_id}")
 
@@ -1182,18 +1336,18 @@ async def reject_response_cb(cb: CallbackQuery):
 @router.callback_query(F.data.startswith("complete_"))
 async def complete_cargo(cb: CallbackQuery):
     cargo_id = int(cb.data.split("_")[1])
-    
+
     async with async_session() as session:
         result = await session.execute(select(Cargo).where(Cargo.id == cargo_id))
         cargo = result.scalar_one_or_none()
-        
+
         if not cargo or cargo.owner_id != cb.from_user.id:
             await cb.answer("❌ Нет доступа", show_alert=True)
             return
-        
+
         cargo.status = CargoStatus.COMPLETED
         await session.commit()
-        
+
         if cargo.carrier_id:
             try:
                 await bot.send_message(
@@ -1202,7 +1356,7 @@ async def complete_cargo(cb: CallbackQuery):
                 )
             except:
                 pass
-    
+
     await cb.message.edit_text(
         f"✅ Груз #{cargo_id} завершён!\n\nОцени перевозчика: /rate_{cargo_id}",
         reply_markup=main_menu()
@@ -1213,18 +1367,18 @@ async def complete_cargo(cb: CallbackQuery):
 @router.callback_query(F.data.startswith("cancel_"))
 async def cancel_cargo(cb: CallbackQuery):
     cargo_id = int(cb.data.split("_")[1])
-    
+
     async with async_session() as session:
         result = await session.execute(select(Cargo).where(Cargo.id == cargo_id))
         cargo = result.scalar_one_or_none()
-        
+
         if not cargo or cargo.owner_id != cb.from_user.id:
             await cb.answer("❌ Нет доступа", show_alert=True)
             return
-        
+
         cargo.status = CargoStatus.CANCELLED
         await session.commit()
-    
+
     await cb.message.edit_text(f"❌ Груз #{cargo_id} отменён", reply_markup=main_menu())
     await cb.answer()
     logger.info(f"Cargo {cargo_id} cancelled")
@@ -1329,11 +1483,11 @@ async def delete_cargo_ask(cb: CallbackQuery):
 @router.callback_query(F.data.startswith("ttn_"))
 async def send_ttn(cb: CallbackQuery):
     cargo_id = int(cb.data.split("_")[1])
-    
+
     async with async_session() as session:
         result = await session.execute(select(Cargo).where(Cargo.id == cargo_id))
         cargo = result.scalar_one_or_none()
-        
+
         if not cargo:
             await cb.answer("❌ Груз не найден", show_alert=True)
             return
@@ -1347,17 +1501,17 @@ async def send_ttn(cb: CallbackQuery):
         if cargo.status not in {CargoStatus.IN_PROGRESS, CargoStatus.COMPLETED}:
             await cb.answer("🔒 Документы доступны после выбора перевозчика", show_alert=True)
             return
-        
+
         owner = await session.execute(select(User).where(User.id == cargo.owner_id))
         owner = owner.scalar_one_or_none()
-        
+
         carrier = None
         if cargo.carrier_id:
             carrier_result = await session.execute(select(User).where(User.id == cargo.carrier_id))
             carrier = carrier_result.scalar_one_or_none()
-    
+
     pdf_bytes = generate_ttn(cargo, owner, carrier)
-    
+
     await cb.message.answer_document(
         BufferedInputFile(pdf_bytes, filename=f"TTN_{cargo_id}.pdf"),
         caption=f"📄 ТТН для груза #{cargo_id}"

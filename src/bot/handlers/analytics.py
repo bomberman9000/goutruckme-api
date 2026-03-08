@@ -26,14 +26,14 @@ async def my_earnings(cb: CallbackQuery):
             .where(Cargo.status == CargoStatus.COMPLETED)
         )
         carrier_cargos = carrier_result.scalars().all()
-        
+
         owner_result = await session.execute(
             select(Cargo)
             .where(Cargo.owner_id == cb.from_user.id)
             .where(Cargo.status == CargoStatus.COMPLETED)
         )
         owner_cargos = owner_result.scalars().all()
-        
+
         month_ago = datetime.utcnow() - timedelta(days=30)
         month_carrier = await session.execute(
             select(Cargo)
@@ -42,20 +42,20 @@ async def my_earnings(cb: CallbackQuery):
             .where(Cargo.created_at >= month_ago)
         )
         month_cargos = month_carrier.scalars().all()
-    
+
     total_earned = sum(c.actual_price or c.price for c in carrier_cargos)
     total_spent = sum(c.actual_price or c.price for c in owner_cargos)
     month_earned = sum(c.actual_price or c.price for c in month_cargos)
-    
+
     text = "💰 <b>Мой заработок</b>\n\n"
-    text += f"<b>Как перевозчик:</b>\n"
+    text += "<b>Как перевозчик:</b>\n"
     text += f"   Перевозок: {len(carrier_cargos)}\n"
     text += f"   Заработано: {total_earned:,} ₽\n"
     text += f"   За месяц: {month_earned:,} ₽\n\n"
-    text += f"<b>Как заказчик:</b>\n"
+    text += "<b>Как заказчик:</b>\n"
     text += f"   Заказов: {len(owner_cargos)}\n"
     text += f"   Потрачено: {total_spent:,} ₽"
-    
+
     try:
         await cb.message.edit_text(text, reply_markup=analytics_menu())
     except TelegramBadRequest:
@@ -79,7 +79,7 @@ async def my_routes(cb: CallbackQuery):
             .limit(10)
         )
         routes = result.all()
-    
+
     if not routes:
         try:
             await cb.message.edit_text("📊 Нет завершённых перевозок", reply_markup=analytics_menu())
@@ -87,12 +87,12 @@ async def my_routes(cb: CallbackQuery):
             pass
         await cb.answer()
         return
-    
+
     text = "📊 <b>Мои маршруты:</b>\n\n"
     for r in routes:
         text += f"🛣 {r.from_city} → {r.to_city}\n"
         text += f"   Рейсов: {r.count} | Средняя: {int(r.avg_price):,} ₽\n\n"
-    
+
     try:
         await cb.message.edit_text(text, reply_markup=analytics_menu())
     except TelegramBadRequest:
@@ -114,7 +114,7 @@ async def popular_routes(cb: CallbackQuery):
             .limit(10)
         )
         routes = result.all()
-    
+
     if not routes:
         try:
             await cb.message.edit_text("📊 Нет данных", reply_markup=analytics_menu())
@@ -122,12 +122,12 @@ async def popular_routes(cb: CallbackQuery):
             pass
         await cb.answer()
         return
-    
+
     text = "🔥 <b>Популярные маршруты:</b>\n\n"
     for i, r in enumerate(routes, 1):
         text += f"{i}. {r.from_city} → {r.to_city}\n"
         text += f"   Грузов: {r.count} | Средняя: {int(r.avg_price):,} ₽\n\n"
-    
+
     try:
         await cb.message.edit_text(text, reply_markup=analytics_menu())
     except TelegramBadRequest:
@@ -142,7 +142,7 @@ async def avg_prices(cb: CallbackQuery):
             .where(Cargo.weight > 0)
         )
         avg_per_ton = result.scalar() or 0
-        
+
         expensive = await session.execute(
             select(
                 Cargo.from_city,
@@ -155,13 +155,13 @@ async def avg_prices(cb: CallbackQuery):
             .limit(5)
         )
         top_routes = expensive.all()
-    
+
     text = "📈 <b>Средние цены:</b>\n\n"
     text += f"💰 Цена за тонну: {int(avg_per_ton):,} ₽\n\n"
     text += "<b>Топ дорогих маршрутов:</b>\n"
     for r in top_routes:
         text += f"• {r.from_city} → {r.to_city}: {int(r.avg_price):,} ₽\n"
-    
+
     try:
         await cb.message.edit_text(text, reply_markup=analytics_menu())
     except TelegramBadRequest:

@@ -340,7 +340,7 @@ async def do_search(message: Message, state: FSMContext):
     from_city = data.get('from_city')
     to_city = data.get('to_city')
     search_id = make_search_id()
-    
+
     async with async_session() as session:
         query = select(Cargo).where(Cargo.status == CargoStatus.NEW)
         if from_city:
@@ -349,9 +349,9 @@ async def do_search(message: Message, state: FSMContext):
             query = query.where(Cargo.to_city.ilike(f"%{to_city}%"))
         result = await session.execute(query.limit(10))
         cargos = result.scalars().all()
-    
+
     await state.clear()
-    
+
     if not cargos:
         if await _reply_with_feed_fallback(
             message=message,
@@ -377,7 +377,7 @@ async def do_search(message: Message, state: FSMContext):
             search_id=search_id,
         )
         return
-    
+
     text = f"🔍 Найдено ({len(cargos)}):\n\n"
     for c in cargos:
         link = cargo_deeplink(c.id)

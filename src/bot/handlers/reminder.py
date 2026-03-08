@@ -15,10 +15,10 @@ async def cmd_remind(message: Message):
     if len(args) < 3:
         await message.answer("Использование: /remind 30m Текст напоминания\n\nВремя: 10m, 1h, 1d")
         return
-    
+
     time_str = args[1]
     text = args[2]
-    
+
     try:
         if time_str.endswith("m"):
             delta = timedelta(minutes=int(time_str[:-1]))
@@ -32,14 +32,14 @@ async def cmd_remind(message: Message):
     except ValueError:
         await message.answer("❌ Неверный формат времени")
         return
-    
+
     remind_at = datetime.utcnow() + delta
-    
+
     async with async_session() as session:
         reminder = Reminder(user_id=message.from_user.id, text=text, remind_at=remind_at)
         session.add(reminder)
         await session.commit()
-    
+
     await message.answer(f"✅ Напомню через {time_str}:\n{text}")
     logger.info(f"Reminder set for {message.from_user.id}: {text}")
 
@@ -54,13 +54,13 @@ async def cmd_reminders(message: Message):
             .limit(10)
         )
         reminders = result.scalars().all()
-    
+
     if not reminders:
         await message.answer("📭 Нет активных напоминаний")
         return
-    
+
     text = "⏰ Твои напоминания:\n\n"
     for r in reminders:
         text += f"• {r.remind_at.strftime('%d.%m %H:%M')} — {r.text[:30]}\n"
-    
+
     await message.answer(text)

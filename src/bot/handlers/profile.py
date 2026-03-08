@@ -66,7 +66,7 @@ async def show_profile(cb: CallbackQuery):
     wallet_balance = int(wallet.balance_rub) if wallet else 0
     wallet_frozen = int(wallet.frozen_balance_rub) if wallet else 0
 
-    text = f"👤 <b>Кабинет / профиль</b>\n\n"
+    text = "👤 <b>Кабинет / профиль</b>\n\n"
     text += f"🆔 <code>{user.id}</code>\n"
     text += f"📝 {user.full_name}\n"
     if user.username:
@@ -102,14 +102,14 @@ async def edit_phone(cb: CallbackQuery, state: FSMContext):
 @router.message(ProfileEdit.phone)
 async def save_phone(message: Message, state: FSMContext):
     phone = message.text.strip()
-    
+
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == message.from_user.id))
         user = result.scalar_one_or_none()
         if user:
             user.phone = phone
             await session.commit()
-    
+
     await state.clear()
     await message.answer(f"✅ Телефон сохранён: {phone}", reply_markup=main_menu())
     logger.info(f"User {message.from_user.id} updated phone: {phone}")
@@ -123,14 +123,14 @@ async def edit_company(cb: CallbackQuery, state: FSMContext):
 @router.message(ProfileEdit.company)
 async def save_company(message: Message, state: FSMContext):
     company = message.text.strip()
-    
+
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == message.from_user.id))
         user = result.scalar_one_or_none()
         if user:
             user.company = company
             await session.commit()
-    
+
     await state.clear()
     await message.answer(f"✅ Компания: {company}", reply_markup=main_menu())
     logger.info(f"User {message.from_user.id} updated company: {company}")
@@ -148,7 +148,7 @@ async def show_history(cb: CallbackQuery):
             .limit(10)
         )
         cargos = result.scalars().all()
-    
+
     if not cargos:
         try:
             await cb.message.edit_text("📜 История пуста", reply_markup=profile_menu())
@@ -156,7 +156,7 @@ async def show_history(cb: CallbackQuery):
             pass
         await cb.answer()
         return
-    
+
     header = "📜 <b>История рейсов:</b>\n\n"
     try:
         await cb.message.edit_text(header, reply_markup=profile_menu())

@@ -53,11 +53,11 @@ async def start_verify(cb: CallbackQuery, state: FSMContext):
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == cb.from_user.id))
         user = result.scalar_one_or_none()
-        
+
         if user and user.is_verified:
             await cb.answer("✅ Ты уже верифицирован!", show_alert=True)
             return
-    
+
     await cb.message.edit_text("📱 Введи номер телефона:\n\nФормат: +79001234567")
     await state.set_state(VerifyForm.phone)
     await cb.answer()
@@ -65,13 +65,13 @@ async def start_verify(cb: CallbackQuery, state: FSMContext):
 @router.message(VerifyForm.phone)
 async def verify_phone(message: Message, state: FSMContext):
     phone = message.text.strip()
-    
+
     if not phone.startswith("+") or len(phone) < 10:
         await message.answer("❌ Неверный формат. Пример: +79001234567")
         return
-    
+
     code = str(randint(1000, 9999))
-    
+
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == message.from_user.id))
         user = result.scalar_one_or_none()
@@ -79,9 +79,9 @@ async def verify_phone(message: Message, state: FSMContext):
             user.phone = phone
             user.verification_code = code
             await session.commit()
-    
+
     await state.update_data(phone=phone, code=code)
-    
+
     await message.answer(
         f"📨 Код верификации: <code>{code}</code>\n\n"
         f"(В реальном боте код отправляется по SMS)\n\n"
@@ -93,11 +93,11 @@ async def verify_phone(message: Message, state: FSMContext):
 @router.message(VerifyForm.code)
 async def verify_code(message: Message, state: FSMContext):
     data = await state.get_data()
-    
+
     if message.text.strip() != data['code']:
         await message.answer("❌ Неверный код. Попробуй ещё:")
         return
-    
+
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == message.from_user.id))
         user = result.scalar_one_or_none()
@@ -106,7 +106,7 @@ async def verify_code(message: Message, state: FSMContext):
             user.verification_code = None
             user.trust_score = min(100, user.trust_score + 20)
             await session.commit()
-    
+
     await state.clear()
     await message.answer("✅ Телефон подтверждён!\n\n+20 к рейтингу доверия", reply_markup=main_menu())
     logger.info(f"User {message.from_user.id} verified")
@@ -116,17 +116,17 @@ async def show_trust_score(cb: CallbackQuery):
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == cb.from_user.id))
         user = result.scalar_one_or_none()
-        
+
         if not user:
             await cb.answer("❌ Профиль не найден", show_alert=True)
             return
-        
+
         avg_rating = await session.scalar(
             select(func.avg(Rating.score)).where(Rating.to_user_id == cb.from_user.id)
         )
 
         profile = await session.scalar(select(UserProfile).where(UserProfile.user_id == cb.from_user.id))
-        
+
         completed = await session.scalar(
             select(func.count()).select_from(Cargo)
             .where(
@@ -134,12 +134,12 @@ async def show_trust_score(cb: CallbackQuery):
             )
             .where(Cargo.status == CargoStatus.COMPLETED)
         )
-        
+
         reports = await session.scalar(
             select(func.count()).select_from(Report)
             .where(Report.to_user_id == cb.from_user.id)
         )
-    
+
     score = user.trust_score
     if score >= 80:
         level = "🟢 Высокий"
@@ -147,21 +147,21 @@ async def show_trust_score(cb: CallbackQuery):
         level = "🟡 Средний"
     else:
         level = "🔴 Низкий"
-    
-    text = f"🛡 <b>Рейтинг доверия</b>\n\n"
+
+    text = "🛡 <b>Рейтинг доверия</b>\n\n"
     text += f"Уровень: {level}\n"
     text += f"Баллы: {score}/100\n\n"
-    text += f"<b>Факторы:</b>\n"
+    text += "<b>Факторы:</b>\n"
     text += f"{'✅' if user.is_verified else '❌'} Верификация телефона (+20)\n"
     if profile and profile.verification_status != VerificationStatus.BASIC:
-        text += f"✅ Верификация компании (+10)\n"
+        text += "✅ Верификация компании (+10)\n"
     else:
-        text += f"❌ Верификация компании (+10)\n"
+        text += "❌ Верификация компании (+10)\n"
     text += f"⭐ Средний рейтинг: {round(avg_rating, 1) if avg_rating else 'нет'}\n"
     text += f"📦 Завершённых сделок: {completed}\n"
     text += f"⚠️ Жалоб на вас: {reports}\n"
     text += f"🚫 Предупреждений: {user.warnings_count}"
-    
+
     try:
         await cb.message.edit_text(text, reply_markup=antifraud_menu())
     except TelegramBadRequest:
@@ -185,18 +185,18 @@ async def report_user_id(message: Message, state: FSMContext):
     except:
         await message.answer("❌ Введи числовой ID")
         return
-    
+
     if user_id == message.from_user.id:
         await message.answer("❌ Нельзя жаловаться на себя")
         return
-    
+
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if not user:
             await message.answer("❌ Пользователь не найден")
             return
-    
+
     await state.update_data(to_user_id=user_id)
     await message.answer("Выбери тип жалобы:", reply_markup=report_type_kb())
     await state.set_state(ReportForm.report_type)
@@ -212,7 +212,7 @@ async def report_type_selected(cb: CallbackQuery, state: FSMContext):
 @router.message(ReportForm.description)
 async def report_description(message: Message, state: FSMContext):
     data = await state.get_data()
-    
+
     report_type_map = {
         "fraud": ReportType.FRAUD,
         "spam": ReportType.SPAM,
@@ -220,7 +220,7 @@ async def report_description(message: Message, state: FSMContext):
         "no_payment": ReportType.NO_PAYMENT,
         "other": ReportType.OTHER
     }
-    
+
     async with async_session() as session:
         report = Report(
             from_user_id=message.from_user.id,
@@ -229,14 +229,14 @@ async def report_description(message: Message, state: FSMContext):
             description=message.text
         )
         session.add(report)
-        
+
         result = await session.execute(select(User).where(User.id == data['to_user_id']))
         user = result.scalar_one_or_none()
         if user:
             user.trust_score = max(0, user.trust_score - 5)
-        
+
         await session.commit()
-    
+
     if settings.admin_id:
         try:
             await bot.send_message(
@@ -249,7 +249,7 @@ async def report_description(message: Message, state: FSMContext):
             )
         except:
             pass
-    
+
     await state.clear()
     await message.answer("✅ Жалоба отправлена на рассмотрение", reply_markup=main_menu())
     logger.info(f"Report from {message.from_user.id} to {data['to_user_id']}")
@@ -260,7 +260,7 @@ async def quick_report(message: Message, state: FSMContext):
         user_id = int(message.text.split("_")[1])
     except:
         return
-    
+
     await state.update_data(to_user_id=user_id)
     await message.answer("Выбери тип жалобы:", reply_markup=report_type_kb())
     await state.set_state(ReportForm.report_type)
