@@ -88,9 +88,12 @@ def get_my_stats(
 def get_leaderboard(
     limit: int = Query(10, ge=1, le=50),
     role: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user_id: Optional[int] = Depends(get_user_from_token),
 ):
     """Топ пользователей по баллам."""
+    if not current_user_id:
+        raise HTTPException(status_code=401, detail="Необходима авторизация")
     query = db.query(User)
     
     if role:
@@ -157,4 +160,3 @@ def add_points_manual(
         raise HTTPException(status_code=404, detail=result["error"])
     
     return result
-

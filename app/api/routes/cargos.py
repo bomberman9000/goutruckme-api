@@ -25,6 +25,14 @@ from app.trust.service import recalc_company_trust
 router = APIRouter()
 
 
+def _is_admin(user: User | None) -> bool:
+    if user is None:
+        return False
+    role = getattr(user.role, "value", user.role)
+    normalized = str(role or "").strip().lower()
+    return normalized == "admin" or normalized.endswith("admin")
+
+
 def _recalc_trust_safely(db: Session, *company_ids: int) -> None:
     seen: set[int] = set()
     for company_id in company_ids:
@@ -175,7 +183,9 @@ async def get_cargo_detail(
     """Получить детали груза."""
     expire_outdated_cargos(db)
     cargo = db.query(Load).filter(Load.id == cargo_id).first()
-    if not is_public_load(cargo):
+    if not cargo:
+        raise HTTPException(status_code=404, detail="Груз не найден")
+    if int(cargo.user_id) != int(current_user.id) and not _is_admin(current_user):
         raise HTTPException(status_code=404, detail="Груз не найден")
     stats = MarketStats.from_db(db, lookback_days=60)
     return _load_to_detail(cargo, compute_ai_score(cargo, stats))

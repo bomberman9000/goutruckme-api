@@ -432,9 +432,13 @@ def get_public_company_profile(
     db: Session = Depends(get_db),
     authorization: str | None = Header(None, alias="Authorization"),
 ):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Необходима авторизация")
     company = db.query(User).filter(User.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Компания не найдена")
     request_user = _get_request_user(authorization, db)
+    if request_user is None:
+        raise HTTPException(status_code=401, detail="Необходима авторизация")
     can_view_private = request_user is not None and (int(request_user.id) == int(company.id) or _is_admin(request_user))
     return _build_company_profile_payload(db, company, include_private=can_view_private)

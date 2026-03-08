@@ -1,6 +1,9 @@
 """
 💬 API для форума обсуждения недобросовестных перевозчиков
 """
+import html
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -13,6 +16,7 @@ from app.core.security import SECRET_KEY, ALGORITHM
 from jose import jwt
 
 router = APIRouter()
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
 def get_db():
@@ -33,6 +37,29 @@ def get_user_from_token(authorization: Optional[str] = Header(None)):
         return payload["id"]
     except:
         return None
+
+
+def _is_admin(user: User | None) -> bool:
+    if not user:
+        return False
+    role = getattr(user.role, "value", user.role)
+    normalized = str(role or "").strip().lower()
+    return normalized == "admin" or normalized.endswith("admin")
+
+
+def _sanitize_forum_text(value: Optional[str]) -> str:
+    text = str(value or "").replace("\x00", " ").strip()
+    text = _HTML_TAG_RE.sub(" ", text)
+    return " ".join(text.split())
+
+
+def _escape_for_output(value: Optional[str]) -> str:
+    return html.escape(str(value or ""), quote=False)
+
+
+def _safe_preview(value: Optional[str], limit: int) -> str:
+    safe = _escape_for_output(value)
+    return safe[:limit] + "..." if len(safe) > limit else safe
 
 
 # ============ SCHEMAS ============
@@ -63,6 +90,13 @@ def create_post(
     """Создать пост на форуме."""
     if not author_id:
         raise HTTPException(status_code=401, detail="Необходима авторизация")
+
+    safe_title = _sanitize_forum_text(post.title)
+    safe_content = _sanitize_forum_text(post.content)
+    safe_target_company = _sanitize_forum_text(post.target_company)
+    safe_target_phone = _sanitize_forum_text(post.target_phone)
+    if not safe_title or not safe_content:
+        raise HTTPException(status_code=422, detail="title и content обязательны")
     
     # Проверка существования пользователя, если указан
     if post.target_user_id:
@@ -76,11 +110,11 @@ def create_post(
     
     try:
         post_data = {
-            "title": post.title,
-            "content": post.content,
+            "title": safe_title,
+            "content": safe_content,
             "post_type": post.post_type,
-            "target_company": post.target_company,
-            "target_phone": post.target_phone
+            "target_company": safe_target_company or None,
+            "target_phone": safe_target_phone or None
         }
         
         ai_analysis = ai_lawyer_llm.analyze_forum_post(post_data)
@@ -94,12 +128,12 @@ def create_post(
     
     new_post = ForumPost(
         author_id=author_id,
-        title=post.title,
-        content=post.content,
+        title=safe_title,
+        content=safe_content,
         post_type=post.post_type,
         target_user_id=post.target_user_id,
-        target_company=post.target_company,
-        target_phone=post.target_phone,
+        target_company=safe_target_company or None,
+        target_phone=safe_target_phone or None,
         is_verified=is_verified
     )
     
@@ -157,12 +191,12 @@ def get_posts(
                 "id": p.id,
                 "author_id": p.author_id,
                 "author_name": db.query(User).filter(User.id == p.author_id).first().fullname if db.query(User).filter(User.id == p.author_id).first() else "Аноним",
-                "title": p.title,
-                "content": p.content[:200] + "..." if len(p.content) > 200 else p.content,  # Превью
+                "title": _escape_for_output(p.title),
+                "content": _safe_preview(p.content, 200),
                 "post_type": p.post_type,
                 "target_user_id": p.target_user_id,
-                "target_company": p.target_company,
-                "target_phone": p.target_phone,
+                "target_company": _escape_for_output(p.target_company) if p.target_company else None,
+                "target_phone": _escape_for_output(p.target_phone) if p.target_phone else None,
                 "is_verified": p.is_verified,
                 "is_pinned": p.is_pinned,
                 "views": p.views,
@@ -193,16 +227,16 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
         "id": post.id,
         "author": {
             "id": author.id if author else None,
-            "fullname": author.fullname if author else "Аноним",
+            "fullname": _escape_for_output(author.fullname) if author else "Аноним",
             "rating": author.rating if author else 5.0,
             "points": author.points if author else 100
         },
-        "title": post.title,
-        "content": post.content,
+        "title": _escape_for_output(post.title),
+        "content": _escape_for_output(post.content),
         "post_type": post.post_type,
         "target_user_id": post.target_user_id,
-        "target_company": post.target_company,
-        "target_phone": post.target_phone,
+        "target_company": _escape_for_output(post.target_company) if post.target_company else None,
+        "target_phone": _escape_for_output(post.target_phone) if post.target_phone else None,
         "is_verified": post.is_verified,
         "is_pinned": post.is_pinned,
         "views": post.views,
@@ -213,8 +247,8 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
             {
                 "id": c.id,
                 "author_id": c.author_id,
-                "author_name": db.query(User).filter(User.id == c.author_id).first().fullname if db.query(User).filter(User.id == c.author_id).first() else "Аноним",
-                "content": c.content,
+                "author_name": _escape_for_output(db.query(User).filter(User.id == c.author_id).first().fullname) if db.query(User).filter(User.id == c.author_id).first() else "Аноним",
+                "content": _escape_for_output(c.content),
                 "is_verified": c.is_verified,
                 "likes": c.likes,
                 "created_at": c.created_at.isoformat() if c.created_at else None
@@ -239,10 +273,14 @@ def add_comment(
     if not post:
         raise HTTPException(status_code=404, detail="Пост не найден")
     
+    safe_content = _sanitize_forum_text(comment.content)
+    if not safe_content:
+        raise HTTPException(status_code=422, detail="content обязателен")
+
     new_comment = ForumComment(
         post_id=post_id,
         author_id=author_id,
-        content=comment.content,
+        content=safe_content,
         is_verified=False
     )
     
@@ -308,7 +346,7 @@ def verify_post(
         raise HTTPException(status_code=401, detail="Необходима авторизация")
     
     admin = db.query(User).filter(User.id == admin_id).first()
-    if not admin or admin.role != "admin":
+    if not _is_admin(admin):
         raise HTTPException(status_code=403, detail="Только для администраторов")
     
     post = db.query(ForumPost).filter(ForumPost.id == post_id).first()
@@ -332,7 +370,7 @@ def pin_post(
         raise HTTPException(status_code=401, detail="Необходима авторизация")
     
     admin = db.query(User).filter(User.id == admin_id).first()
-    if not admin or admin.role != "admin":
+    if not _is_admin(admin):
         raise HTTPException(status_code=403, detail="Только для администраторов")
     
     post = db.query(ForumPost).filter(ForumPost.id == post_id).first()
@@ -364,10 +402,10 @@ def search_posts(
         "results": [
             {
                 "id": p.id,
-                "title": p.title,
-                "content": p.content[:150] + "..." if len(p.content) > 150 else p.content,
-                "target_company": p.target_company,
-                "target_phone": p.target_phone,
+                "title": _escape_for_output(p.title),
+                "content": _safe_preview(p.content, 150),
+                "target_company": _escape_for_output(p.target_company) if p.target_company else None,
+                "target_phone": _escape_for_output(p.target_phone) if p.target_phone else None,
                 "created_at": p.created_at.isoformat() if p.created_at else None
             }
             for p in posts
@@ -397,4 +435,3 @@ def get_post_ai_analysis(post_id: int, db: Session = Depends(get_db)):
         "ai_analysis": ai_analysis,
         "needs_moderation": ai_analysis.get("needs_moderation", False)
     }
-

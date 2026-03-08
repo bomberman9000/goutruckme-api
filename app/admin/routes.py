@@ -11,12 +11,22 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
+from app.core.security import get_current_user
 from app.db.database import get_db
-from app.models.models import Document, Deal, AuditEvent, DealSync, ModerationReview
+from app.models.models import AuditEvent, Deal, DealSync, Document, ModerationReview, User
 from app.admin.audit_filter import selected_groups, actions_from_groups
 from app.moderation.service import get_review, list_reviews, run_deal_review_background, set_review_pending
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+
+def require_admin_user(current_user: User = Depends(get_current_user)) -> User:
+    role = getattr(current_user.role, "value", current_user.role)
+    normalized = str(role or "").strip().lower()
+    if normalized != "admin" and not normalized.endswith("admin"):
+        raise HTTPException(status_code=403, detail="Только для администраторов")
+    return current_user
+
+
+router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(require_admin_user)])
 _BASE = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(_BASE / "templates"))
 

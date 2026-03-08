@@ -7,15 +7,19 @@ API синхронизации сделок с фронта (localStorage → с
 
 import logging
 from datetime import datetime
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
 from typing import List, Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
+from jose import jwt
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
+from app.core.config import get_settings
+from app.core.security import ALGORITHM, SECRET_KEY
 from app.db.database import get_db
-from app.models.models import DealSync, Load
+from app.models.models import DealSync, Load, User
 from app.trust.service import recalc_company_trust
 
 router = APIRouter()
@@ -89,17 +93,39 @@ def _recalc_trust_safely(db: Session, payload: dict | None) -> None:
             logger.warning("recalc_company_trust failed for company_id=%s: %s", company_id, e)
 
 
-def verify_client_sync_key(
+def _get_request_user(
+    authorization: Optional[str],
+    db: Session,
+) -> User | None:
+    if not authorization:
+        return None
+    try:
+        token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub") or payload.get("id")
+        if user_id is None:
+            return None
+        return db.query(User).filter(User.id == int(user_id)).first()
+    except Exception:
+        return None
+
+
+def require_sync_access(
+    db: Session = Depends(get_db),
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
     x_client_key: Optional[str] = Header(default=None, alias="X-Client-Key"),
 ):
-    """Проверка X-Client-Key для доступа к deals-sync (минимум защиты)."""
-    from app.core.config import get_settings
+    """Доступ к deals-sync только по JWT или service-to-service key."""
     settings = get_settings()
     key = getattr(settings, "CLIENT_SYNC_KEY", None) or ""
-    if not key:
-        return
-    if not x_client_key or x_client_key.strip() != key.strip():
-        raise HTTPException(status_code=401, detail="Invalid or missing X-Client-Key")
+    if key and x_client_key and x_client_key.strip() == key.strip():
+        return {"mode": "client_key"}
+
+    user = _get_request_user(authorization, db)
+    if user:
+        return {"mode": "user", "user_id": int(user.id)}
+
+    raise HTTPException(status_code=401, detail="Необходима авторизация")
 
 
 class DealSyncCreate(BaseModel):
@@ -114,7 +140,7 @@ class DealSyncUpdate(BaseModel):
 @router.get("/deals-sync", response_model=List[dict])
 def list_deals_sync(
     db: Session = Depends(get_db),
-    _: None = Depends(verify_client_sync_key),
+    _: dict = Depends(require_sync_access),
 ):
     """Список всех синхронизированных сделок. server_id = id в БД."""
     rows = db.query(DealSync).order_by(DealSync.updated_at.desc()).all()
@@ -136,7 +162,7 @@ def create_deal_sync(
     body: DealSyncCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _: None = Depends(verify_client_sync_key),
+    _: dict = Depends(require_sync_access),
 ):
     """Upsert по local_id. Возвращает только {server_id, updated_at}. Запускает модерацию в фоне."""
     existing = db.query(DealSync).filter(DealSync.local_id == body.local_id).first()
@@ -170,7 +196,7 @@ def update_deal_sync(
     body: DealSyncUpdate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    _: None = Depends(verify_client_sync_key),
+    _: dict = Depends(require_sync_access),
 ):
     """Обновить сделку по server_id (id в БД). Перезапускает модерацию в фоне."""
     row = db.query(DealSync).filter(DealSync.id == server_id).first()
@@ -194,7 +220,7 @@ def update_deal_sync(
 def get_deal_sync(
     server_id: int,
     db: Session = Depends(get_db),
-    _: None = Depends(verify_client_sync_key),
+    _: dict = Depends(require_sync_access),
 ):
     """Получить одну сделку по server_id (id в БД)."""
     row = db.query(DealSync).filter(DealSync.id == server_id).first()

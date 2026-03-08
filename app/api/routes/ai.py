@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.security import get_current_user
 from app.db.database import SessionLocal
@@ -21,6 +21,19 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _is_admin(user: User | None) -> bool:
+    if user is None:
+        return False
+    role = getattr(user.role, "value", user.role)
+    normalized = str(role or "").strip().lower()
+    return normalized == "admin" or normalized.endswith("admin")
+
+
+def _ensure_self_or_admin(current_user: User, target_user_id: int) -> None:
+    if int(current_user.id) != int(target_user_id) and not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Доступ разрешен только владельцу профиля")
 
 
 # ============ AI MODERATOR ============
@@ -215,6 +228,7 @@ def generate_waybill(load_id: int, driver_name: str, driver_phone: str,
 @router.get("/analytics/company/{user_id}")
 def company_stats(user_id: int, period_days: int = 30, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Статистика компании."""
+    _ensure_self_or_admin(current_user, user_id)
     loads = db.query(Load).filter(Load.user_id == user_id).all()
     bids = db.query(Bid).all()
     return ai_analytics.calculate_company_stats(loads, bids, period_days)
@@ -223,6 +237,7 @@ def company_stats(user_id: int, period_days: int = 30, db: Session = Depends(get
 @router.get("/analytics/carrier/{user_id}")
 def carrier_stats(user_id: int, period_days: int = 30, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Статистика перевозчика."""
+    _ensure_self_or_admin(current_user, user_id)
     bids = db.query(Bid).all()
     loads = db.query(Load).all()
     return ai_analytics.calculate_carrier_stats(user_id, bids, loads, period_days)
@@ -239,6 +254,7 @@ def market_rates(from_city: str = None, to_city: str = None, db: Session = Depen
 @router.post("/analytics/optimize-rates/{user_id}")
 def optimize_rates(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Оптимизация ставок."""
+    _ensure_self_or_admin(current_user, user_id)
     bids = db.query(Bid).filter(Bid.carrier_id == user_id).all()
     return ai_analytics.optimize_rates(bids)
 
@@ -246,6 +262,7 @@ def optimize_rates(user_id: int, db: Session = Depends(get_db), current_user: Us
 @router.get("/analytics/report/{user_id}")
 def generate_report(user_id: int, period: str = "month", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Генерация отчёта."""
+    _ensure_self_or_admin(current_user, user_id)
     loads = db.query(Load).filter(Load.user_id == user_id).all()
     bids = db.query(Bid).all()
     return ai_analytics.generate_report(user_id, loads, bids, period)
