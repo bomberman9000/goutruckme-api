@@ -61,9 +61,5 @@ def health():
 
     return {
         "status": status,
-        "message": "ГрузПоток API работает",
-        "db": db,
-        "migrations": migrations,
-        "build": build,
-        "version": "1.0.0",
+        "message": "ok" if status == "ok" else "degraded",
     }

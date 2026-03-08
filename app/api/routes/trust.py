@@ -27,10 +27,29 @@ def _normalize_role(role: Any) -> str:
     return "forwarder"
 
 
+def _public_trust_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    signals = payload.get("signals") or {}
+    return {
+        "company_id": payload.get("company_id"),
+        "trust_score": payload.get("trust_score"),
+        "stars": payload.get("stars"),
+        "components": payload.get("components") or {},
+        "signals": {
+            "company_age_days": signals.get("company_age_days"),
+            "deals_total": signals.get("deals_total"),
+            "deals_total_bucket": signals.get("deals_total_bucket"),
+            "response_time_avg_min": signals.get("response_time_avg_min"),
+        },
+        "flags": payload.get("flags") or [],
+        "updated_at": payload.get("updated_at"),
+    }
+
+
 @router.get("/companies/{company_id}/trust")
 def get_company_trust(company_id: int, db: Session = Depends(get_db)):
     try:
-        return get_company_trust_payload(db, company_id, force_recalc=False)
+        payload = get_company_trust_payload(db, company_id, force_recalc=False)
+        return _public_trust_payload(payload)
     except ValueError:
         raise HTTPException(status_code=404, detail="Компания не найдена")
 

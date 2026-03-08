@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import case, desc, func
 from sqlalchemy.orm import Session
 
@@ -10,15 +10,27 @@ from app.antifraud.graph import component_cache
 from app.antifraud.rates import route_rate_cache
 from app.antifraud.learning import recompute_route_stats
 from app.antifraud.service import get_average_review_duration_ms
+from app.core.security import get_current_user
 from app.db.database import get_db
-from app.models.models import ClosedDealStat, CounterpartyList, CounterpartyRiskHistory, RouteRateStats
+from app.models.models import ClosedDealStat, CounterpartyList, CounterpartyRiskHistory, RouteRateStats, User
 
 
 router = APIRouter()
 
 
+def require_antifraud_admin(current_user: User = Depends(get_current_user)) -> User:
+    role = getattr(current_user.role, "value", current_user.role)
+    normalized = str(role or "").strip().lower()
+    if normalized != "admin" and not normalized.endswith("admin"):
+        raise HTTPException(status_code=403, detail="Только для администраторов")
+    return current_user
+
+
 @router.get("/antifraud/admin/stats/routes")
-async def antifraud_admin_routes_stats(db: Session = Depends(get_db)) -> dict[str, Any]:
+async def antifraud_admin_routes_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_antifraud_admin),
+) -> dict[str, Any]:
     rows = (
         db.query(RouteRateStats)
         .order_by(RouteRateStats.sample_size.desc(), RouteRateStats.updated_at.desc())
@@ -43,7 +55,10 @@ async def antifraud_admin_routes_stats(db: Session = Depends(get_db)) -> dict[st
 
 
 @router.get("/antifraud/admin/stats/counterparties")
-async def antifraud_admin_counterparties_stats(db: Session = Depends(get_db)) -> dict[str, Any]:
+async def antifraud_admin_counterparties_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_antifraud_admin),
+) -> dict[str, Any]:
     high_case = case((CounterpartyRiskHistory.risk_level == "high", 1), else_=0)
 
     rows = (
@@ -78,7 +93,10 @@ async def antifraud_admin_counterparties_stats(db: Session = Depends(get_db)) ->
 
 
 @router.get("/antifraud/admin/health")
-async def antifraud_admin_health(db: Session = Depends(get_db)) -> dict[str, Any]:
+async def antifraud_admin_health(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_antifraud_admin),
+) -> dict[str, Any]:
     closed_deals_total = int(db.query(func.count(ClosedDealStat.id)).scalar() or 0)
     route_rate_stats_total = int(db.query(func.count(RouteRateStats.id)).scalar() or 0)
     blacklist_entries_total = int(
@@ -97,5 +115,8 @@ async def antifraud_admin_health(db: Session = Depends(get_db)) -> dict[str, Any
 
 
 @router.post("/antifraud/admin/jobs/recompute-routes")
-async def antifraud_admin_recompute_routes(db: Session = Depends(get_db)) -> dict[str, Any]:
+async def antifraud_admin_recompute_routes(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_antifraud_admin),
+) -> dict[str, Any]:
     return await recompute_route_stats(db)

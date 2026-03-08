@@ -3,10 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from jose import jwt
+from app.core.security import ALGORITHM, SECRET_KEY
 from app.db.database import get_db
 from app.models.models import Complaint, Deal, DealSync, ModerationReview, User
 from app.trust.service import (
@@ -111,12 +113,7 @@ def _company_payload_public(company: User) -> dict[str, Any]:
     return {
         "id": int(company.id),
         "name": _company_name(company),
-        "inn": company.inn,
-        "ogrn": company.ogrn,
         "city": company.city,
-        "phone": company.phone,
-        "contact_person": company.contact_person or company.fullname,
-        "website": company.website,
         "edo_enabled": bool(company.edo_enabled),
         "verification": {
             "profile_verified": bool(company.verified),
@@ -125,6 +122,33 @@ def _company_payload_public(company: User) -> dict[str, Any]:
         },
         "created_at": company.created_at.isoformat() if company.created_at else None,
     }
+
+
+def _get_request_user(
+    authorization: str | None,
+    db: Session,
+) -> User | None:
+    if not authorization:
+        return None
+    token = authorization.replace("Bearer ", "").strip() if authorization.startswith("Bearer ") else authorization.strip()
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub") or payload.get("id")
+        if user_id is None:
+            return None
+        return db.query(User).filter(User.id == int(user_id)).first()
+    except Exception:
+        return None
+
+
+def _is_admin(user: User | None) -> bool:
+    if user is None:
+        return False
+    role = getattr(user.role, "value", user.role)
+    normalized = str(role or "").strip().lower()
+    return normalized == "admin" or normalized.endswith("admin")
 
 
 def _extract_user_ids_from_payload(payload: Any) -> set[int]:
@@ -363,8 +387,16 @@ def _build_company_profile_payload(db: Session, company: User, include_private: 
         "company": company_block,
         "trust": trust_payload,
         "stats": stats,
-        "risk_summary": risk_summary,
-        "recent_activity": recent_activity,
+        "risk_summary": risk_summary if include_private else {
+            "high_reviews": risk_summary.get("high_reviews"),
+            "medium_reviews": risk_summary.get("medium_reviews"),
+            "low_reviews": risk_summary.get("low_reviews"),
+        },
+        "recent_activity": recent_activity if include_private else {
+            "latest_deal_at": None,
+            "latest_dispute_at": None,
+            "timeline": [],
+        },
     }
 
     if include_private:
@@ -395,9 +427,14 @@ def clean_str(value: str | None) -> str | None:
 
 
 @router.get("/companies/{company_id}/profile")
-def get_public_company_profile(company_id: int, db: Session = Depends(get_db)):
+def get_public_company_profile(
+    company_id: int,
+    db: Session = Depends(get_db),
+    authorization: str | None = Header(None, alias="Authorization"),
+):
     company = db.query(User).filter(User.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Компания не найдена")
-
-    return _build_company_profile_payload(db, company, include_private=False)
+    request_user = _get_request_user(authorization, db)
+    can_view_private = request_user is not None and (int(request_user.id) == int(company.id) or _is_admin(request_user))
+    return _build_company_profile_payload(db, company, include_private=can_view_private)

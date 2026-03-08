@@ -6,13 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
+from app.core.security import get_current_user
 from app.db.database import SessionLocal
 from app.models.models import Load, Truck, Bid, User
 from app.services.cargo_status import apply_cargo_status_filter, expire_outdated_cargos
 from app.services.ai_logist import ai_logist
 from app.trust.service import get_company_trust_snapshot
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def get_db():

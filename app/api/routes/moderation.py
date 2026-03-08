@@ -14,6 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.security import get_current_user
 from app.db.database import get_db
 from app.models.models import DealSync, DocumentSync, ModerationReview, User
@@ -53,6 +54,11 @@ def require_moderation_user(current_user: User = Depends(get_current_user)) -> U
     if role not in {"admin", "forwarder"}:
         raise HTTPException(status_code=403, detail="Недостаточно прав")
     return current_user
+
+
+def _ensure_admin_mutations_enabled() -> None:
+    if not settings.ADMIN_MUTATIONS_ENABLED:
+        raise HTTPException(status_code=403, detail="Административные изменения временно отключены")
 
 
 def verify_client_sync_key(
@@ -232,6 +238,7 @@ def moderation_review_run(
     db: Session = Depends(get_db),
     _: User = Depends(require_moderation_user),
 ):
+    _ensure_admin_mutations_enabled()
     entity_type = (body.entity_type or "").strip().lower()
     if entity_type not in _ALLOWED_ENTITY_TYPES:
         raise HTTPException(status_code=422, detail="entity_type должен быть deal|document")
@@ -250,6 +257,7 @@ def moderation_review_batch(
     db: Session = Depends(get_db),
     _: User = Depends(require_moderation_user),
 ):
+    _ensure_admin_mutations_enabled()
     entity_type = (body.entity_type or "").strip().lower()
     if entity_type not in _ALLOWED_ENTITY_TYPES:
         raise HTTPException(status_code=422, detail="entity_type должен быть deal|document")
@@ -294,6 +302,7 @@ def moderation_review_patch(
     db: Session = Depends(get_db),
     _: User = Depends(require_moderation_user),
 ):
+    _ensure_admin_mutations_enabled()
     status = (body.status or "").strip().lower()
     if status not in _ALLOWED_PATCH_STATUSES:
         raise HTTPException(status_code=422, detail="status должен быть pending|done|error")
@@ -386,6 +395,7 @@ def moderation_run_legacy(
     db: Session = Depends(get_db),
     _: None = Depends(verify_client_sync_key),
 ):
+    _ensure_admin_mutations_enabled()
     if entity_type not in _ALLOWED_ENTITY_TYPES:
         raise HTTPException(status_code=400, detail="entity_type must be 'deal' or 'document'")
 

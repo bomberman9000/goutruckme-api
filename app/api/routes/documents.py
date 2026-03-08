@@ -7,12 +7,13 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List, Dict
+from app.core.security import get_current_user
 from app.db.database import SessionLocal
 from app.models.models import Load, User, Bid
 from app.services.load_public import build_public_load_context
 from app.services.ai_documents import ai_documents
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def get_db():
@@ -398,5 +399,4 @@ def get_documents_status():
             "GET /documents/list": "Список документов"
         }
     }
-
 

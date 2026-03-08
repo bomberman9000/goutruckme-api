@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.ai.scoring import MarketStats, compute_ai_score
+from app.core.security import get_current_user
 from app.db.database import get_db
-from app.models.models import Load
+from app.models.models import Load, User
 from app.services.cargo_status import apply_cargo_status_filter, expire_outdated_cargos
 
 
@@ -30,6 +31,7 @@ def _safe_created_at(value: Any) -> datetime:
 def get_best_loads(
     limit: int = Query(default=3, ge=1, le=20),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     expire_outdated_cargos(db)
     loads = (

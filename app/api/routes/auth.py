@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal
 from app.models.models import User, UserRole
+from app.core.config import settings
 from app.core.security import hash_password, verify_password, create_token, get_current_user
 from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse
 from app.services.login_tokens import verify_login_token
@@ -36,6 +37,13 @@ def _normalize_role(role: str) -> str:
     return "forwarder"
 
 
+def _normalize_public_registration_role(role: str | None) -> str:
+    value = _normalize_role(role or "forwarder")
+    if value not in {"carrier", "client", "forwarder"}:
+        return "forwarder"
+    return value
+
+
 def _normalize_magic_redirect_path(raw_value: str | None) -> str:
     value = (raw_value or "").strip()
     if not value:
@@ -45,6 +53,11 @@ def _normalize_magic_redirect_path(raw_value: str | None) -> str:
     if value.startswith("//"):
         return "/dashboard"
     return value
+
+
+def _ensure_admin_mutations_enabled() -> None:
+    if not settings.ADMIN_MUTATIONS_ENABLED:
+        raise HTTPException(status_code=403, detail="Административные изменения временно отключены")
 
 
 @router.post("/register", response_model=dict)
@@ -60,13 +73,15 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     if exists_inn:
         raise HTTPException(status_code=400, detail="ИНН уже зарегистрирован")
 
+    public_role = _normalize_public_registration_role(data.role)
+
     new_user = User(
         organization_type=data.organization_type,
         inn=data.inn,
         organization_name=data.organization_name,
         phone=data.phone,
         password_hash=hash_password(data.password),
-        role=data.role,
+        role=public_role,
         # Банковские реквизиты
         bank_name=data.bank_name,
         bank_account=data.bank_account,
@@ -129,6 +144,7 @@ def confirm_payment(
     """
     if current_user.role != UserRole.admin:
         raise HTTPException(status_code=403, detail="Только для администраторов")
+    _ensure_admin_mutations_enabled()
 
     user_to_confirm = db.query(User).filter(User.id == user_id).first()
     if not user_to_confirm:

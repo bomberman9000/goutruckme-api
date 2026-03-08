@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from app.core.security import get_current_user
 from app.db.database import SessionLocal
 from app.models.models import Load, User, Bid, Message, Truck
 from app.services.ai_moderator import ai_moderator
@@ -25,7 +26,7 @@ def get_db():
 # ============ AI MODERATOR ============
 
 @router.post("/moderate/load/{load_id}")
-def moderate_load(load_id: int, db: Session = Depends(get_db)):
+def moderate_load(load_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Проверка заявки ИИ-модератором."""
     load = db.query(Load).filter(Load.id == load_id).first()
     if not load:
@@ -34,7 +35,7 @@ def moderate_load(load_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/moderate/user/{user_id}")
-def moderate_user(user_id: int, db: Session = Depends(get_db)):
+def moderate_user(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Проверка пользователя ИИ-модератором."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -43,7 +44,7 @@ def moderate_user(user_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/moderate/bid/{bid_id}")
-def moderate_bid(bid_id: int, db: Session = Depends(get_db)):
+def moderate_bid(bid_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Проверка ставки ИИ-модератором."""
     bid = db.query(Bid).filter(Bid.id == bid_id).first()
     if not bid:
@@ -53,7 +54,7 @@ def moderate_bid(bid_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/moderate/fraud-check")
-def check_fraud(text: str):
+def check_fraud(text: str, current_user: User = Depends(get_current_user)):
     """Проверка текста на мошенничество."""
     return ai_moderator.detect_fraud(text)
 
@@ -61,7 +62,7 @@ def check_fraud(text: str):
 # ============ AI LAWYER ============
 
 @router.post("/lawyer/contract/{load_id}/{bid_id}")
-def generate_contract(load_id: int, bid_id: int, db: Session = Depends(get_db)):
+def generate_contract(load_id: int, bid_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Генерация договора ИИ-юристом."""
     load = db.query(Load).filter(Load.id == load_id).first()
     bid = db.query(Bid).filter(Bid.id == bid_id).first()
@@ -73,7 +74,7 @@ def generate_contract(load_id: int, bid_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/lawyer/contract-text/{load_id}/{bid_id}")
-def generate_contract_text(load_id: int, bid_id: int, db: Session = Depends(get_db)):
+def generate_contract_text(load_id: int, bid_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Генерация текста договора."""
     load = db.query(Load).filter(Load.id == load_id).first()
     bid = db.query(Bid).filter(Bid.id == bid_id).first()
@@ -85,7 +86,7 @@ def generate_contract_text(load_id: int, bid_id: int, db: Session = Depends(get_
 
 
 @router.get("/lawyer/verify/{user_id}")
-def verify_carrier(user_id: int, db: Session = Depends(get_db)):
+def verify_carrier(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Проверка документов перевозчика."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -94,7 +95,7 @@ def verify_carrier(user_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/lawyer/dispute/{load_id}")
-def analyze_dispute(load_id: int, db: Session = Depends(get_db)):
+def analyze_dispute(load_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Анализ спора по заявке."""
     load = db.query(Load).filter(Load.id == load_id).first()
     if not load:
@@ -106,13 +107,13 @@ def analyze_dispute(load_id: int, db: Session = Depends(get_db)):
 # ============ AI SUPPORT ============
 
 @router.post("/support/chat")
-def chat_support(message: str):
+def chat_support(message: str, current_user: User = Depends(get_current_user)):
     """Чат с ИИ-поддержкой."""
     return ai_support.get_response(message)
 
 
 @router.post("/support/complaint")
-def create_complaint(user_id: int, complaint_text: str):
+def create_complaint(user_id: int, complaint_text: str, current_user: User = Depends(get_current_user)):
     """Создание жалобы."""
     return ai_support.handle_complaint(user_id, complaint_text)
 
@@ -126,7 +127,7 @@ def get_help():
 # ============ AI DISPATCHER ============
 
 @router.post("/dispatcher/match/{load_id}")
-def find_trucks_for_load(load_id: int, db: Session = Depends(get_db)):
+def find_trucks_for_load(load_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Поиск подходящих машин для груза."""
     load = db.query(Load).filter(Load.id == load_id).first()
     if not load:
@@ -136,7 +137,7 @@ def find_trucks_for_load(load_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/dispatcher/check-rate")
-def check_rate(load_id: int, proposed_rate: float, db: Session = Depends(get_db)):
+def check_rate(load_id: int, proposed_rate: float, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Проверка адекватности ставки."""
     load = db.query(Load).filter(Load.id == load_id).first()
     if not load:
@@ -145,7 +146,7 @@ def check_rate(load_id: int, proposed_rate: float, db: Session = Depends(get_db)
 
 
 @router.post("/dispatcher/distribute")
-def auto_distribute(db: Session = Depends(get_db)):
+def auto_distribute(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Автоматическое распределение заявок по машинам."""
     expire_outdated_cargos(db)
     loads = apply_cargo_status_filter(db.query(Load), "active").all()
@@ -154,7 +155,7 @@ def auto_distribute(db: Session = Depends(get_db)):
 
 
 @router.post("/dispatcher/alerts/{load_id}/{carrier_id}")
-def get_alerts(load_id: int, carrier_id: int, db: Session = Depends(get_db)):
+def get_alerts(load_id: int, carrier_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Получить предупреждения по заявке и перевозчику."""
     load = db.query(Load).filter(Load.id == load_id).first()
     carrier = db.query(User).filter(User.id == carrier_id).first()
@@ -166,32 +167,32 @@ def get_alerts(load_id: int, carrier_id: int, db: Session = Depends(get_db)):
 # ============ AI DRIVER ============
 
 @router.post("/driver/route")
-def calculate_route(from_city: str, to_city: str):
+def calculate_route(from_city: str, to_city: str, current_user: User = Depends(get_current_user)):
     """Расчёт маршрута."""
     return ai_driver.calculate_route(from_city, to_city)
 
 
 @router.post("/driver/fuel")
-def calculate_fuel(distance_km: float, truck_type: str):
+def calculate_fuel(distance_km: float, truck_type: str, current_user: User = Depends(get_current_user)):
     """Расчёт топлива."""
     return ai_driver.calculate_fuel(distance_km, truck_type)
 
 
 @router.post("/driver/profitability")
 def calculate_profitability(load_price: float, distance_km: float, 
-                            truck_type: str, toll_cost: float = 0):
+                            truck_type: str, toll_cost: float = 0, current_user: User = Depends(get_current_user)):
     """Расчёт прибыльности рейса."""
     return ai_driver.calculate_profitability(load_price, distance_km, truck_type, toll_cost)
 
 
 @router.post("/driver/loading-time")
-def estimate_loading_time(cargo_type: str = "general", weight: float = 10):
+def estimate_loading_time(cargo_type: str = "general", weight: float = 10, current_user: User = Depends(get_current_user)):
     """Оценка времени погрузки."""
     return ai_driver.estimate_loading_time(cargo_type, weight)
 
 
 @router.post("/driver/voice-hints")
-def get_voice_hints(from_city: str, to_city: str):
+def get_voice_hints(from_city: str, to_city: str, current_user: User = Depends(get_current_user)):
     """Голосовые подсказки для водителя."""
     route_info = ai_driver.calculate_route(from_city, to_city)
     return ai_driver.generate_voice_hints(route_info)
@@ -199,7 +200,7 @@ def get_voice_hints(from_city: str, to_city: str):
 
 @router.post("/driver/waybill/{load_id}")
 def generate_waybill(load_id: int, driver_name: str, driver_phone: str,
-                     truck_plate: str, truck_type: str, db: Session = Depends(get_db)):
+                     truck_plate: str, truck_type: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Генерация путевого листа."""
     load = db.query(Load).filter(Load.id == load_id).first()
     if not load:
@@ -212,7 +213,7 @@ def generate_waybill(load_id: int, driver_name: str, driver_phone: str,
 # ============ AI ANALYTICS ============
 
 @router.get("/analytics/company/{user_id}")
-def company_stats(user_id: int, period_days: int = 30, db: Session = Depends(get_db)):
+def company_stats(user_id: int, period_days: int = 30, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Статистика компании."""
     loads = db.query(Load).filter(Load.user_id == user_id).all()
     bids = db.query(Bid).all()
@@ -220,7 +221,7 @@ def company_stats(user_id: int, period_days: int = 30, db: Session = Depends(get
 
 
 @router.get("/analytics/carrier/{user_id}")
-def carrier_stats(user_id: int, period_days: int = 30, db: Session = Depends(get_db)):
+def carrier_stats(user_id: int, period_days: int = 30, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Статистика перевозчика."""
     bids = db.query(Bid).all()
     loads = db.query(Load).all()
@@ -228,7 +229,7 @@ def carrier_stats(user_id: int, period_days: int = 30, db: Session = Depends(get
 
 
 @router.post("/analytics/market-rates")
-def market_rates(from_city: str = None, to_city: str = None, db: Session = Depends(get_db)):
+def market_rates(from_city: str = None, to_city: str = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Анализ рыночных ставок."""
     loads = db.query(Load).all()
     route = (from_city, to_city) if from_city and to_city else None
@@ -236,14 +237,14 @@ def market_rates(from_city: str = None, to_city: str = None, db: Session = Depen
 
 
 @router.post("/analytics/optimize-rates/{user_id}")
-def optimize_rates(user_id: int, db: Session = Depends(get_db)):
+def optimize_rates(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Оптимизация ставок."""
     bids = db.query(Bid).filter(Bid.carrier_id == user_id).all()
     return ai_analytics.optimize_rates(bids)
 
 
 @router.get("/analytics/report/{user_id}")
-def generate_report(user_id: int, period: str = "month", db: Session = Depends(get_db)):
+def generate_report(user_id: int, period: str = "month", db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Генерация отчёта."""
     loads = db.query(Load).filter(Load.user_id == user_id).all()
     bids = db.query(Bid).all()
@@ -251,7 +252,7 @@ def generate_report(user_id: int, period: str = "month", db: Session = Depends(g
 
 
 @router.post("/analytics/demand-forecast")
-def demand_forecast(from_city: str, to_city: str, db: Session = Depends(get_db)):
+def demand_forecast(from_city: str, to_city: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Прогноз спроса на направлении."""
     loads = db.query(Load).all()
     return ai_analytics.predict_demand(loads, (from_city, to_city))
@@ -260,38 +261,38 @@ def demand_forecast(from_city: str, to_city: str, db: Session = Depends(get_db))
 # ============ AI VERIFICATION ============
 
 @router.post("/verify/inn")
-def verify_inn(inn: str):
+def verify_inn(inn: str, current_user: User = Depends(get_current_user)):
     """Проверка ИНН."""
     return ai_verification.verify_inn(inn)
 
 
 @router.post("/verify/ogrn")
-def verify_ogrn(ogrn: str):
+def verify_ogrn(ogrn: str, current_user: User = Depends(get_current_user)):
     """Проверка ОГРН."""
     return ai_verification.verify_ogrn(ogrn)
 
 
 @router.post("/verify/phone")
-def verify_phone(phone: str):
+def verify_phone(phone: str, current_user: User = Depends(get_current_user)):
     """Проверка телефона."""
     return ai_verification.verify_phone(phone)
 
 
 @router.post("/verify/contractor")
-def verify_contractor(inn: str = None, ogrn: str = None, phone: str = None):
+def verify_contractor(inn: str = None, ogrn: str = None, phone: str = None, current_user: User = Depends(get_current_user)):
     """Комплексная проверка контрагента."""
     return ai_verification.verify_contractor(inn, ogrn, phone)
 
 
 @router.post("/verify/blacklist")
-def check_blacklist(inn: str = None, phone: str = None):
+def check_blacklist(inn: str = None, phone: str = None, current_user: User = Depends(get_current_user)):
     """Проверка по чёрному списку."""
     return ai_verification.check_blacklist(inn, phone)
 
 
 @router.post("/verify/full-report")
 def full_verification_report(inn: str = None, ogrn: str = None, 
-                             phone: str = None, company_name: str = None):
+                             phone: str = None, company_name: str = None, current_user: User = Depends(get_current_user)):
     """Полный отчёт верификации."""
     contractor_data = {
         "inn": inn,

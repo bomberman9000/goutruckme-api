@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.ai.ai_service import AIUnavailableError, ai_service
+from app.core.security import get_current_user
+from app.models.models import User
 
 
 router = APIRouter()
@@ -28,7 +30,7 @@ def check_local_available() -> bool:
 
 
 @router.post("/ai/ask", response_model=AskResponse)
-def ask_ai(request: AskRequest) -> AskResponse:
+def ask_ai(request: AskRequest, current_user: User = Depends(get_current_user)) -> AskResponse:
     try:
         result = ai_service.ask(
             prompt=request.prompt,

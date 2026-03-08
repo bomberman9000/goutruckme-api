@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
+    AUTH_LOGIN_RATE_LIMIT_PER_MINUTE: int = int(os.getenv("AUTH_LOGIN_RATE_LIMIT_PER_MINUTE", "10"))
+    PUBLIC_RATE_LIMIT_PER_MINUTE: int = int(os.getenv("PUBLIC_RATE_LIMIT_PER_MINUTE", "60"))
+    ADMIN_MUTATIONS_ENABLED: bool = os.getenv("ADMIN_MUTATIONS_ENABLED", "false").lower() == "true"
     # Защита API синхронизации сделок (X-Client-Key). Пусто = не проверять (dev).
     CLIENT_SYNC_KEY: str = os.getenv("CLIENT_SYNC_KEY", "")
     # Внутренний токен для межсервисного обмена (tg-bot <-> gruzpotok-api)

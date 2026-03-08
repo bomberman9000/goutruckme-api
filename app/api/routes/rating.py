@@ -1,13 +1,14 @@
 """
 ⭐ API для системы баллов и рейтинга
 """
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 from app.db.database import SessionLocal
 from app.models.models import User
 from app.services.rating_system import rating_system
 from app.core.security import SECRET_KEY, ALGORITHM
+from app.core.config import settings
 from jose import jwt
 
 router = APIRouter()
@@ -33,9 +34,35 @@ def get_user_from_token(authorization: Optional[str] = Header(None)):
         return None
 
 
+def _is_admin(user: User | None) -> bool:
+    if user is None:
+        return False
+    role = getattr(user.role, "value", user.role)
+    return str(role or "").strip().lower().endswith("admin") or str(role or "").strip().lower() == "admin"
+
+
+def _ensure_admin_mutations_enabled() -> None:
+    if not settings.ADMIN_MUTATIONS_ENABLED:
+        raise HTTPException(status_code=403, detail="Административные изменения временно отключены")
+
+
 @router.get("/stats/{user_id}")
-def get_user_stats(user_id: int, db: Session = Depends(get_db)):
+def get_user_stats(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user_id: Optional[int] = Depends(get_user_from_token),
+):
     """Получить статистику пользователя (баллы, рейтинг, история)."""
+    if not current_user_id:
+        raise HTTPException(status_code=401, detail="Необходима авторизация")
+
+    current_user = db.query(User).filter(User.id == current_user_id).first()
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Пользователь не найден")
+
+    if current_user_id != user_id and not _is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Доступ разрешен только владельцу профиля")
+
     stats = rating_system.get_user_stats(db, user_id)
     if "error" in stats:
         raise HTTPException(status_code=404, detail=stats["error"])
@@ -59,7 +86,7 @@ def get_my_stats(
 
 @router.get("/leaderboard")
 def get_leaderboard(
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=50),
     role: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
@@ -76,13 +103,9 @@ def get_leaderboard(
         "leaderboard": [
             {
                 "rank": idx + 1,
-                "user_id": user.id,
-                "fullname": user.fullname,
-                "company": user.company,
+                "name": user.company or user.fullname or f"Участник #{idx + 1}",
                 "rating": user.rating,
                 "points": user.points,
-                "trust_level": user.trust_level,
-                "successful_deals": user.successful_deals,
                 "verified": user.verified
             }
             for idx, user in enumerate(users)
@@ -101,8 +124,9 @@ def verify_user(
         raise HTTPException(status_code=401, detail="Необходима авторизация")
     
     admin = db.query(User).filter(User.id == admin_id).first()
-    if not admin or admin.role != "admin":
+    if not _is_admin(admin):
         raise HTTPException(status_code=403, detail="Только для администраторов")
+    _ensure_admin_mutations_enabled()
     
     result = rating_system.verify_user(db, user_id)
     if "error" in result:
@@ -124,15 +148,13 @@ def add_points_manual(
         raise HTTPException(status_code=401, detail="Необходима авторизация")
     
     admin = db.query(User).filter(User.id == admin_id).first()
-    if not admin or admin.role != "admin":
+    if not _is_admin(admin):
         raise HTTPException(status_code=403, detail="Только для администраторов")
+    _ensure_admin_mutations_enabled()
     
     result = rating_system.add_points(db, user_id, points, reason)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
     
     return result
-
-
-
 

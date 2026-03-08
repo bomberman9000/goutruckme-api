@@ -1,7 +1,11 @@
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from threading import Lock
+from time import monotonic
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 import os
@@ -75,7 +79,10 @@ app = FastAPI(
 
 **Такого НЕТ ни у кого. Это убийца АТИ!** 🔥
 """,
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
+    openapi_url="/openapi.json" if settings.DEBUG else None,
 )
 
 # Сжимаем крупные ответы (index.html, списки, аналитика), чтобы UI открывался быстрее.
@@ -83,6 +90,80 @@ app.add_middleware(
     GZipMiddleware,
     minimum_size=1024,
 )
+
+_rate_limit_buckets: dict[str, deque[float]] = defaultdict(deque)
+_rate_limit_lock = Lock()
+
+
+def _client_ip(request: Request) -> str:
+    real_ip = request.headers.get("x-real-ip", "").strip()
+    if real_ip:
+        return real_ip
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    if forwarded_for:
+        parts = [part.strip() for part in forwarded_for.split(",") if part.strip()]
+        if parts:
+            return parts[-1]
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _is_exempt_rate_limit_path(path: str) -> bool:
+    return (
+        path.startswith("/internal/")
+        or path.startswith("/static/")
+        or path.startswith("/sign/")
+        or path == "/favicon.ico"
+    )
+
+
+def _is_authenticated_request(request: Request) -> bool:
+    return bool(request.headers.get("authorization") or request.cookies.get("auth_token"))
+
+
+def _check_rate_limit(key: str, *, limit: int, window_sec: int = 60) -> bool:
+    now = monotonic()
+    with _rate_limit_lock:
+        bucket = _rate_limit_buckets[key]
+        while bucket and now - bucket[0] >= window_sec:
+            bucket.popleft()
+        if len(bucket) >= limit:
+            return False
+        bucket.append(now)
+        return True
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    path = request.url.path
+
+    if request.method == "OPTIONS" or _is_exempt_rate_limit_path(path):
+        return await call_next(request)
+
+    ip = _client_ip(request)
+    if path == "/auth/login":
+        allowed = _check_rate_limit(
+            f"login:{ip}",
+            limit=max(1, settings.AUTH_LOGIN_RATE_LIMIT_PER_MINUTE),
+        )
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Слишком много попыток входа. Попробуйте позже."},
+            )
+    elif not _is_authenticated_request(request):
+        allowed = _check_rate_limit(
+            f"public:{ip}",
+            limit=max(1, settings.PUBLIC_RATE_LIMIT_PER_MINUTE),
+        )
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Слишком много запросов. Попробуйте позже."},
+            )
+
+    return await call_next(request)
 
 # ==================== ОСНОВНЫЕ РОУТЫ ====================
 app.include_router(auth.router, prefix="/auth", tags=["🔐 Auth"])
@@ -165,6 +246,12 @@ def root():
             headers={"Cache-Control": "no-store, max-age=0"},
         )
     return {"status": "ok", "project": settings.APP_NAME, "docs": "/docs"}
+
+
+@app.get("/webapp")
+def webapp_root():
+    """Alias для Telegram Mini App."""
+    return root()
 
 
 @app.get("/api")

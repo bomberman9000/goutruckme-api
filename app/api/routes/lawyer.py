@@ -6,12 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
+from app.core.security import get_current_user
 from app.db.database import SessionLocal
 from app.models.models import Load, User
 from app.services.load_public import build_public_load_context
 from app.services.ai_lawyer_llm import ai_lawyer_llm
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def get_db():
@@ -214,5 +215,4 @@ def get_lawyer_status():
             "POST /lawyer/quick-check": "Быстрая проверка"
         }
     }
-
 

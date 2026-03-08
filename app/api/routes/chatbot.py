@@ -2,16 +2,19 @@
 💬 API для AI-Чатбота
 Автоматический диспетчер: общение с водителями, сбор ставок, переговоры
 """
+import os
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List, Dict
+from app.core.security import get_current_user
 from app.db.database import SessionLocal
 from app.models.models import Load, User, Truck, Bid
 from app.services.ai_chatbot import ai_chatbot
 from app.services.load_public import build_public_load_context
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 # ============ CHATGPT SIMPLE CHAT ============
@@ -22,27 +25,8 @@ class ChatMessage(BaseModel):
     conversation_id: Optional[str] = None
 
 
-@router.post("/chat")
-async def chat_with_gpt(request: ChatMessage):
-    """
-    💬 Простой чат с ChatGPT.
-    Универсальный помощник для любых вопросов.
-    """
-    try:
-        import os
-        from openai import OpenAI
-        
-        api_key = os.getenv("OPENAI_API_KEY", "")
-        if not api_key:
-            return {
-                "response": "⚠️ ChatGPT не настроен. Добавьте OPENAI_API_KEY в .env файл.",
-                "error": "no_api_key"
-            }
-        
-        client = OpenAI(api_key=api_key)
-        
-        # Системный промпт для контекста грузоперевозок
-        system_prompt = """Ты — AI-помощник платформы ГрузПоток, умной биржи грузоперевозок.
+def _build_chat_messages(user_message: str) -> list[dict[str, str]]:
+    system_prompt = """Ты — AI-помощник платформы ГрузПоток, умной биржи грузоперевозок.
 
 Твоя задача — помогать пользователям с вопросами о:
 - Грузоперевозках
@@ -54,23 +38,101 @@ async def chat_with_gpt(request: ChatMessage):
 - Использовании платформы
 
 Отвечай дружелюбно, профессионально и по делу. Если вопрос не связан с грузоперевозками, всё равно помоги пользователю."""
-        
-        response = client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": request.message}
-            ],
-            temperature=0.7,
-            max_tokens=500
-        )
-        
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message},
+    ]
+
+
+def _call_openai_chat(user_message: str) -> str:
+    from openai import OpenAI
+
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("no_openai_api_key")
+
+    client = OpenAI(api_key=api_key)
+    response = client.chat.completions.create(
+        model=os.getenv("OPENAI_MODEL", "gpt-4o"),
+        messages=_build_chat_messages(user_message),
+        temperature=0.7,
+        max_tokens=500,
+    )
+    return response.choices[0].message.content
+
+
+def _call_groq_chat(user_message: str) -> str:
+    from openai import OpenAI
+
+    api_key = os.getenv("GROQ_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("no_groq_api_key")
+
+    client = OpenAI(
+        api_key=api_key,
+        base_url=os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
+    )
+    response = client.chat.completions.create(
+        model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
+        messages=_build_chat_messages(user_message),
+        temperature=0.7,
+        max_tokens=500,
+    )
+    return response.choices[0].message.content
+
+
+def _is_openai_quota_error(error: Exception) -> bool:
+    text = str(error).lower()
+    return "insufficient_quota" in text or "exceeded your current quota" in text or "429" in text
+
+
+@router.post("/chat")
+async def chat_with_gpt(request: ChatMessage):
+    """
+    💬 Простой чат с ChatGPT.
+    Универсальный помощник для любых вопросов.
+    """
+    try:
+        content = _call_openai_chat(request.message)
         return {
-            "response": response.choices[0].message.content,
-            "conversation_id": request.conversation_id or "default"
+            "response": content,
+            "conversation_id": request.conversation_id or "default",
+            "provider": "openai",
         }
-        
     except Exception as e:
+        if str(e) == "no_openai_api_key":
+            if os.getenv("GROQ_API_KEY", ""):
+                try:
+                    content = _call_groq_chat(request.message)
+                    return {
+                        "response": content,
+                        "conversation_id": request.conversation_id or "default",
+                        "provider": "groq",
+                    }
+                except Exception as groq_error:
+                    return {
+                        "response": f"❌ Ошибка: {str(groq_error)}",
+                        "error": str(groq_error),
+                    }
+            return {
+                "response": "⚠️ ChatGPT не настроен. Добавьте OPENAI_API_KEY или GROQ_API_KEY в .env файл.",
+                "error": "no_api_key"
+            }
+
+        if _is_openai_quota_error(e) and os.getenv("GROQ_API_KEY", ""):
+            try:
+                content = _call_groq_chat(request.message)
+                return {
+                    "response": content,
+                    "conversation_id": request.conversation_id or "default",
+                    "provider": "groq",
+                    "fallback": "openai_quota",
+                }
+            except Exception as groq_error:
+                return {
+                    "response": f"❌ Ошибка: {str(groq_error)}",
+                    "error": str(groq_error),
+                }
         return {
             "response": f"❌ Ошибка: {str(e)}",
             "error": str(e)

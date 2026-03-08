@@ -54,9 +54,9 @@ class RegisterRequest(BaseModel):
             "expeditor": "forwarder",
         }
         role = aliases.get(role, role)
-        allowed = {"carrier", "client", "forwarder", "admin"}
+        allowed = {"carrier", "client", "forwarder"}
         if role not in allowed:
-            raise ValueError('role должен быть одним из: carrier, client, forwarder, admin')
+            raise ValueError('role должен быть одним из: carrier, client, forwarder')
         return role
 
 

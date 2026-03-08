@@ -15,12 +15,13 @@ from app.antifraud.enforcement import (
 from app.antifraud.lists import add_to_list
 from app.antifraud.rates import get_route_rate_profile
 from app.antifraud.service import run_deal_review_and_save
+from app.core.config import settings
 from app.core.security import get_current_user
 from app.db.database import get_db
 from app.models.models import EnforcementDecision, User
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 def _normalize_role(role: Any) -> str:
@@ -40,6 +41,11 @@ def require_antifraud_admin(current_user: User = Depends(get_current_user)) -> U
     if role not in {"admin", "forwarder"}:
         raise HTTPException(status_code=403, detail="Недостаточно прав")
     return current_user
+
+
+def _ensure_admin_mutations_enabled() -> None:
+    if not settings.ADMIN_MUTATIONS_ENABLED:
+        raise HTTPException(status_code=403, detail="Административные изменения временно отключены")
 
 
 class DealReviewRequest(BaseModel):
@@ -165,6 +171,7 @@ async def add_counterparty_whitelist(
     body: CounterpartyListRequest,
     db: Session = Depends(get_db),
 ) -> CounterpartyListResponse:
+    _ensure_admin_mutations_enabled()
     try:
         row = await add_to_list(
             db,
@@ -193,6 +200,7 @@ async def add_counterparty_blacklist(
     body: CounterpartyListRequest,
     db: Session = Depends(get_db),
 ) -> CounterpartyListResponse:
+    _ensure_admin_mutations_enabled()
     try:
         row = await add_to_list(
             db,
@@ -247,6 +255,7 @@ async def antifraud_enforcement_override(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_antifraud_admin),
 ) -> dict[str, Any]:
+    _ensure_admin_mutations_enabled()
     row = await override_enforcement_for_deal(
         db,
         deal_id=int(deal_id),
@@ -265,6 +274,7 @@ async def antifraud_enforcement_resolve(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_antifraud_admin),
 ) -> dict[str, Any]:
+    _ensure_admin_mutations_enabled()
     return await resolve_enforcement_for_deal(
         db,
         deal_id=int(deal_id),

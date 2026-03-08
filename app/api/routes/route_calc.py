@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core.security import get_current_user
 from app.db.database import get_db
 from app.services.route_calc import calculate_route_distance_km, resolve_city_point
 
@@ -21,7 +22,11 @@ class RouteCalcRequest(BaseModel):
 
 @router.post("/route/calc")
 @router.post("/route/calcLogic")
-def calculate_route(payload: RouteCalcRequest, db: Session = Depends(get_db)) -> dict:
+def calculate_route(
+    payload: RouteCalcRequest,
+    db: Session = Depends(get_db),
+    _: object = Depends(get_current_user),
+) -> dict:
     if not payload.from_city_id or not payload.to_city_id:
         raise HTTPException(status_code=422, detail="Для расчёта нужны from_city_id и to_city_id")
 

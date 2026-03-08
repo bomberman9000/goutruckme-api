@@ -405,14 +405,17 @@ def create_load(
 def list_loads(
     status: Optional[str] = Query("active", description="active|expired|all"),
     db: Session = Depends(get_db),
+    user_id: Optional[int] = Depends(get_user_from_token),
 ):
     """Список всех открытых заявок с информацией о пользователях."""
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Необходима авторизация")
     expire_outdated_cargos(db)
     if status and str(status).strip().lower() not in {"active", "expired", "all", "closed", "cancelled", "open", "covered"}:
         raise HTTPException(status_code=422, detail="status должен быть active|expired|all")
 
     query = apply_cargo_status_filter(db.query(Load), normalize_cargo_status(status), default=CargoStatus.active.value)
-    loads = query.all()
+    loads = query.order_by(Load.created_at.desc(), Load.id.desc()).all()
     stats = MarketStats.from_db(db, lookback_days=60)
     
     result = []
@@ -441,16 +444,11 @@ def list_loads(
             "created_at": load.created_at.isoformat() if load.created_at else None,
             "ai_risk": ai_payload.get("ai_risk") or "low",
             "ai_score": int(ai_payload.get("ai_score") or 0),
-            "ai_explain": ai_payload.get("ai_explain") or "",
-            "ai_flags": ai_payload.get("ai_flags") or [],
-            "market_rate_per_km": ai_payload.get("market_rate_per_km"),
             "creator": {
                 "id": creator.id if creator else None,
                 "fullname": creator.fullname if creator else "Неизвестно",
                 "company": creator.company if creator else None,
                 "rating": creator.rating if creator else 5.0,
-                "points": creator.points if creator else 100,
-                "trust_level": creator.trust_level if creator else "new",
                 "verified": creator.verified if creator else False
             } if creator else None
         }
