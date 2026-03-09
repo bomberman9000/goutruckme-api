@@ -19,6 +19,8 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 log = logging.getLogger(__name__)
+
+AI_ENGINE_TOKEN = os.environ.get("AI_ENGINE_TOKEN", "")
 router = Router()
 
 AI_ENGINE_URL = os.environ.get("AI_ENGINE_URL", "http://localhost:8010")
@@ -72,6 +74,58 @@ def _ask_ai_confirm_kb() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
+
+
+def _feedback_kb(feedback_id: str) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(
+        InlineKeyboardButton(text="👍", callback_data=f"fb_up:{feedback_id}"),
+        InlineKeyboardButton(text="👎", callback_data=f"fb_down:{feedback_id}"),
+        InlineKeyboardButton(text="◀️ Меню", callback_data="menu"),
+    )
+    return b.as_markup()
+
+
+@router.callback_query(F.data.startswith("fb_up:"))
+async def cb_feedback_up(call: CallbackQuery):
+    fid = call.data.split(":", 1)[1]
+    await _ai("/feedback", {"feedback_id": fid, "rating": 1})
+    await call.answer("👍 Спасибо!", show_alert=False)
+    try:
+        await call.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data.startswith("fb_down:"))
+async def cb_feedback_down(call: CallbackQuery, state: FSMContext):
+    fid = call.data.split(":", 1)[1]
+    await _ai("/feedback", {"feedback_id": fid, "rating": -1})
+    await state.update_data(fb_correction_id=fid)
+    await state.set_state("fb_correction:waiting")
+    await call.answer()
+    await call.message.reply(
+        "😕 Понял. Напиши правильный ответ — добавлю в базу знаний. "
+        "Или /skip чтобы просто отметить как неудачный.",
+    )
+
+
+@router.message(F.state == "fb_correction:waiting")
+async def handle_fb_correction(message: Message, state: FSMContext):
+    data = await state.get_data()
+    fid = data.get("fb_correction_id")
+    await state.clear()
+    if message.text and message.text.strip().lower() == "/skip":
+        await message.answer("Отмечено. Спасибо за сигнал 🙏")
+        return
+    if fid:
+        await _ai("/feedback", {
+            "feedback_id": fid,
+            "rating": -1,
+            "correct_answer": message.text,
+        })
+    await message.answer("✅ Записал! Ответ уйдёт на проверку.")
+
 @router.callback_query(F.data == "ask_ai_logist")
 async def cb_ask_ai_logist(call: CallbackQuery, state: FSMContext):
     await state.set_state("ask_ai_logist:waiting")
@@ -104,10 +158,13 @@ async def handle_ask_ai_question(message: Message, state: FSMContext):
 
     answer = result.get("answer", "").strip()
     cached = "⚡ (кэш)" if result.get("cached") else ""
+    fid = result.get("feedback_id", "")
+    rag_mark = " 📚" if result.get("rag_used") else ""
+    cached_mark = " ⚡" if result.get("cached") else ""
     await message.answer(
-        f"🤖 <b>AI-логист</b> {cached}\n\n{answer}",
+        f"🤖 <b>AI-логист</b>{rag_mark}{cached_mark}\n\n{answer}",
         parse_mode="HTML",
-        reply_markup=_ask_ai_confirm_kb(),
+        reply_markup=_feedback_kb(fid) if fid else _ask_ai_confirm_kb(),
     )
 
 
@@ -327,10 +384,12 @@ async def nlu_catch_all(message: Message, state: FSMContext):
         b = InlineKeyboardBuilder()
         b.row(InlineKeyboardButton(text="🔄 Ещё вопрос", callback_data="ask_ai_logist"))
         b.row(InlineKeyboardButton(text="◀️ Меню", callback_data="menu"))
+        fid2 = result.get("feedback_id", "")
+        rag_mark2 = " 📚" if result.get("rag_used") else ""
         await message.answer(
-            f"🤖 <b>AI-логист</b>\n\n{answer}",
+            f"🤖 <b>AI-логист</b>{rag_mark2}\n\n{answer}",
             parse_mode="HTML",
-            reply_markup=b.as_markup(),
+            reply_markup=_feedback_kb(fid2) if fid2 else b.as_markup(),
         )
 
     # ── place_cargo ───────────────────────────────────────────────────────────

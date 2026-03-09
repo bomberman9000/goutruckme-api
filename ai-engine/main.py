@@ -26,6 +26,7 @@ from extractors import (
 )
 from llm import LLMClient
 from queue_manager import CONTEXT_PRIORITY, InferenceJob, InferenceQueue
+from knowledge import kb_add, kb_search, kb_count, kb_list, kb_delete
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -517,6 +518,10 @@ async def suggest_carriers(req: LoadRequest):
 
 
 
+
+# ─── Feedback / Learning ──────────────────────────────────────────────────────
+_FEEDBACK_QUEUE = "ai_feedback_queue"
+_FEEDBACK_TTL   = 86400 * 7   # храним 7 дней
 # ─── NLU Context Memory ───────────────────────────────────────────────────────
 
 _CTX_TTL      = 600   # 10 мин неактивности → сброс сессии
@@ -663,9 +668,21 @@ async def ask_logist(req: AskLogistRequest):
 
     context_str = f"\nКонтекст пользователя: {req.context}" if req.context else ""
 
+    # RAG: ищем похожие вопросы в базе знаний
+    rag_hits = []
+    rag_str  = ""
+    try:
+        rag_hits = await kb_search(req.question)
+        if rag_hits:
+            rag_str = "\n\nПроверенные ответы из базы знаний GoTruck:\n"
+            for h in rag_hits:
+                rag_str += f'- Q: {h["question"]}\n  A: {h["answer"]}\n'
+    except Exception as _e:
+        log.warning("RAG search failed: %s", _e)
+
     prompt = (
         f"Ты AI-логист платформы GoTruck (Россия). Отвечай как эксперт-практик: "
-        f"конкретно, с цифрами, без воды.{context_str}\n\n"
+        f"конкретно, с цифрами, без воды.{context_str}{rag_str}\n\n"
         f"Вопрос: {req.question}\n\n"
         f"Ответ (3-5 предложений, конкретика, если есть — цифры и рекомендация):"
     )
@@ -678,8 +695,142 @@ async def ask_logist(req: AskLogistRequest):
         await _save_ctx(req.user_id, ctx)
     answer, from_cache = await llm.chat(prompt, context="ask_logist", timeout=90, use_cache=True)
 
+    # Сохраняем в очередь обратной связи (для /review)
+    import uuid as _uuid
+    feedback_id = str(_uuid.uuid4())[:8]
+    try:
+        r = await inference_queue._get_redis()
+        payload = json.dumps({
+            "id": feedback_id,
+            "question": req.question,
+            "answer": answer,
+            "rag_used": bool(rag_hits),
+            "user_id": req.user_id,
+        }, ensure_ascii=False)
+        await r.setex(f"ai_fb:{feedback_id}", _FEEDBACK_TTL, payload)
+    except Exception:
+        pass
+
     return {
         "answer": answer,
         "model": OLLAMA_MODEL,
         "cached": from_cache,
+        "feedback_id": feedback_id,
+        "rag_used": bool(rag_hits),
+        "rag_sources": len(rag_hits),
     }
+
+# ─── Feedback & Learning ─────────────────────────────────────────────────────
+
+class FeedbackRequest(BaseModel):
+    feedback_id: str
+    rating: int           # 1 = thumbs up, -1 = thumbs down
+    correct_answer: str | None = None   # если пользователь написал правильный ответ
+    token: str | None = None
+
+
+class KnowledgeAddRequest(BaseModel):
+    question: str
+    answer: str
+    entry_id: str | None = None
+    token: str | None = None
+
+
+@app.post("/feedback")
+async def post_feedback(req: FeedbackRequest):
+    """Принять оценку ответа (👍/👎) от пользователя."""
+    _check_token(req.token)
+    try:
+        r = await inference_queue._get_redis()
+        raw = await r.get(f"ai_fb:{req.feedback_id}")
+        if not raw:
+            raise HTTPException(status_code=404, detail="feedback_id not found or expired")
+
+        data = json.loads(raw)
+        data["rating"] = req.rating
+        if req.correct_answer:
+            data["correct_answer"] = req.correct_answer
+
+        await r.setex(f"ai_fb:{req.feedback_id}", _FEEDBACK_TTL, json.dumps(data, ensure_ascii=False))
+
+        if req.rating == -1:
+            # Добавляем в очередь на ревью
+            await r.lpush(_FEEDBACK_QUEUE, req.feedback_id)
+            await r.ltrim(_FEEDBACK_QUEUE, 0, 199)
+            log.info("Negative feedback queued: %s", req.feedback_id)
+
+        return {"ok": True, "feedback_id": req.feedback_id, "rating": req.rating}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/review/pending")
+async def review_pending(limit: int = 20, token: str | None = None):
+    """Список вопросов с негативной оценкой — для /review в admin-боте."""
+    _check_token(token)
+    try:
+        r = await inference_queue._get_redis()
+        ids = await r.lrange(_FEEDBACK_QUEUE, 0, limit - 1)
+        items = []
+        for fid in ids:
+            raw = await r.get(f"ai_fb:{fid.decode()}")
+            if raw:
+                items.append(json.loads(raw))
+        return {"pending": items, "total": len(items)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/review/approve")
+async def review_approve(req: KnowledgeAddRequest):
+    """Одобрить вопрос: добавить Q&A в базу знаний (ChromaDB)."""
+    _check_token(req.token)
+    import uuid as _uuid
+    entry_id = req.entry_id or str(_uuid.uuid4())[:12]
+    try:
+        await kb_add(entry_id, req.question, req.answer, meta={"source": "admin_approved"})
+        # Убираем из очереди обратной связи если есть
+        try:
+            r = await inference_queue._get_redis()
+            await r.lrem(_FEEDBACK_QUEUE, 0, entry_id)
+        except Exception:
+            pass
+        return {"ok": True, "entry_id": entry_id, "kb_total": kb_count()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/knowledge/add")
+async def knowledge_add(req: KnowledgeAddRequest):
+    """Добавить Q&A напрямую в базу знаний (без ревью — из admin-бота)."""
+    _check_token(req.token)
+    import uuid as _uuid
+    entry_id = req.entry_id or str(_uuid.uuid4())[:12]
+    try:
+        await kb_add(entry_id, req.question, req.answer, meta={"source": "manual"})
+        return {"ok": True, "entry_id": entry_id, "kb_total": kb_count()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/knowledge/search")
+async def knowledge_search(q: str, token: str | None = None):
+    _check_token(token)
+    hits = await kb_search(q)
+    return {"results": hits, "count": len(hits)}
+
+
+@app.get("/knowledge/list")
+async def knowledge_list(limit: int = 50, token: str | None = None):
+    _check_token(token)
+    items = await kb_list(limit)
+    return {"items": items, "total": kb_count()}
+
+
+@app.delete("/knowledge/{entry_id}")
+async def knowledge_delete(entry_id: str, token: str | None = None):
+    _check_token(token)
+    ok = await kb_delete(entry_id)
+    return {"ok": ok, "kb_total": kb_count()}
