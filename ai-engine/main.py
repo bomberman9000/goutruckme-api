@@ -516,56 +516,136 @@ async def suggest_carriers(req: LoadRequest):
     return await _enqueue_and_resolve("suggest_carriers", prompt, response_data, req.wait)
 
 
+
+# ─── NLU Context Memory ───────────────────────────────────────────────────────
+
+_CTX_TTL      = 600   # 10 мин неактивности → сброс сессии
+_CTX_MESSAGES = 3     # хранить N последних сообщений
+
+
+def _ctx_key(user_id: int) -> str:
+    return f"nlu_context:{user_id}"
+
+
+async def _load_ctx(user_id: int | None) -> dict:
+    if not user_id:
+        return {}
+    try:
+        r = await inference_queue._get_redis()
+        raw = await r.get(_ctx_key(user_id))
+        return json.loads(raw) if raw else {}
+    except Exception:
+        return {}
+
+
+async def _save_ctx(user_id: int | None, ctx: dict) -> None:
+    if not user_id:
+        return
+    try:
+        r = await inference_queue._get_redis()
+        await r.setex(_ctx_key(user_id), _CTX_TTL, json.dumps(ctx, ensure_ascii=False))
+    except Exception:
+        pass
+
+
+def _merge_intent(prev: dict, new: dict) -> dict:
+    """Мержим новый интент с предыдущим. Новые непустые поля перезаписывают старые."""
+    result = {k: v for k, v in prev.items() if k != "messages"}
+    for key in ("intent", "from_city", "to_city", "weight_t",
+                "cargo_type", "body_type", "date"):
+        val = new.get(key)
+        if val is not None:
+            result[key] = val
+    if new.get("confidence") is not None:
+        result["confidence"] = new["confidence"]
+    msgs = list(prev.get("messages", []))
+    if new.get("_text"):
+        msgs = (msgs + [new["_text"]])[-_CTX_MESSAGES:]
+    result["messages"] = msgs
+    return result
+
+
 # ─── NLU / Smart Entry ────────────────────────────────────────────────────────
 
 class ParseIntentRequest(BaseModel):
     text: str
+    user_id: int | None = None
     token: str | None = None
 
 class AskLogistRequest(BaseModel):
     question: str
     context: str | None = None   # опциональный контекст: "Москва→Питер, 10т"
+    user_id: int | None = None
     token: str | None = None
 
 
 @app.post("/parse_intent")
 async def parse_intent(req: ParseIntentRequest):
-    """
-    NLU: свободный текст → структурированный интент.
-    Возвращает JSON — не ставим в очередь, нужен realtime.
-    """
+    """NLU: текст + контекст сессии → структурированный интент."""
     _check_token(req.token)
 
+    ctx = await _load_ctx(req.user_id)
+    prev_intent = {k: v for k, v in ctx.items() if k != "messages"}
+    history     = ctx.get("messages", [])
+
+    history_str = ""
+    if history:
+        history_str = (
+            "Предыдущие сообщения пользователя в этой сессии:\n"
+            + "\n".join(f"  - {m}" for m in history)
+            + "\n\n"
+        )
+
+    prev_str = ""
+    if prev_intent:
+        known = {k: v for k, v in prev_intent.items() if v and k != "confidence"}
+        if known:
+            prev_str = f"Уже известно из контекста: {json.dumps(known, ensure_ascii=False)}\n\n"
+
     prompt = (
-        'Ты парсер запросов логистической платформы GoTruck (Россия). '
-        'Из текста извлеки структурированные данные.\n\n'
-        f'Текст пользователя: "{req.text}"\n\n'
-        'Верни ТОЛЬКО валидный JSON без markdown:\n'
-        '{\n'
-        '  "intent": "find_transport" | "place_cargo" | "get_price" | "ask_question" | "unknown",\n'
-        '  "from_city": "город или null",\n'
-        '  "to_city": "город или null",\n'
-        '  "weight_t": число или null,\n'
-        '  "cargo_type": "тип груза или null",\n'
-        '  "body_type": "тент/реф/манипулятор/рефрижератор/контейнер/газель или null",\n'
-        '  "date": "today/tomorrow/YYYY-MM-DD или null",\n'
-        '  "confidence": 0.0-1.0\n'
-        '}\n\n'
-        'Примеры интентов:\n'
-        '- "перевезти запчасти из Челнов в Самару 5 тонн завтра" → find_transport\n'
-        '- "сколько стоит Москва-Питер" → get_price\n'
-        '- "почему так дорого до Тюмени" → ask_question\n'
-        '- "хочу разместить груз" → place_cargo\n'
-        'ТОЛЬКО JSON. Ничего больше.'
+        "Ты парсер запросов логистической платформы GoTruck (Россия). "
+        "Из текста извлеки структурированные данные.\n\n"
+        + history_str
+        + prev_str
+        + f'Текст пользователя: "{req.text}"\n\n'
+        "Верни ТОЛЬКО валидный JSON без markdown:\n"
+        "{\n"
+        '  \"intent\": \"find_transport\" | \"place_cargo\" | \"get_price\" | \"ask_question\" | \"unknown\",\n'
+        '  \"from_city\": \"город или null — если уже известен из контекста, повтори его\",\n'
+        '  \"to_city\": \"город или null\",\n'
+        '  \"weight_t\": число или null,\n'
+        '  \"cargo_type\": \"тип груза или null\",\n'
+        '  \"body_type\": \"тент/реф/манипулятор/рефрижератор/контейнер/газель или null\",\n'
+        '  \"date\": \"today/tomorrow/YYYY-MM-DD или null\",\n'
+        '  \"confidence\": 0.0-1.0\n'
+        "}\n\n"
+        "Примеры:\n"
+        '- \"перевезти запчасти из Челнов в Самару 5 тонн завтра\" → find_transport\n'
+        '- \"сколько стоит Москва-Питер\" → get_price\n'
+        '- \"почему так дорого до Тюмени\" → ask_question\n'
+        '- \"хочу разместить груз\" → place_cargo\n'
+        "ТОЛЬКО JSON. Ничего больше."
     )
 
-    raw, _ = await llm.chat(prompt, context="parse_intent", timeout=25, use_cache=False)
+    raw, _ = await llm.chat(prompt, context="parse_intent", timeout=30, use_cache=False)
 
-    # Вытаскиваем JSON из ответа
-    import re
-    match = re.search(r'\{[\s\S]*\}', raw)
+    import re as _re
+    match = _re.search(r'\{[\s\S]*\}', raw)
     if not match:
-        return {"intent": "unknown", "confidence": 0.0, "raw_llm": raw[:200]}
+        return {**prev_intent, "intent": prev_intent.get("intent", "unknown"),
+                "confidence": 0.0, "context_used": bool(prev_intent)}
+
+    try:
+        new_data = json.loads(match.group())
+        new_data["_text"] = req.text
+        merged = _merge_intent(ctx, new_data)
+        await _save_ctx(req.user_id, merged)
+        out = {k: v for k, v in merged.items() if k not in ("messages", "_text")}
+        out["context_used"] = bool(prev_intent)
+        return out
+    except json.JSONDecodeError:
+        return {**prev_intent, "intent": "unknown", "confidence": 0.0, "context_used": bool(prev_intent)}
+
 
     try:
         data = json.loads(match.group())
@@ -590,6 +670,12 @@ async def ask_logist(req: AskLogistRequest):
         f"Ответ (3-5 предложений, конкретика, если есть — цифры и рекомендация):"
     )
 
+    # Сохраняем вопрос в контекст пользователя
+    if req.user_id:
+        ctx = await _load_ctx(req.user_id)
+        ctx.setdefault("messages", [])
+        ctx["messages"] = (ctx["messages"] + [req.question])[-_CTX_MESSAGES:]
+        await _save_ctx(req.user_id, ctx)
     answer, from_cache = await llm.chat(prompt, context="ask_logist", timeout=90, use_cache=True)
 
     return {

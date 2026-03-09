@@ -93,7 +93,8 @@ async def handle_ask_ai_question(message: Message, state: FSMContext):
     stop = asyncio.Event()
     typing_task = asyncio.create_task(_send_typing(message, stop))
 
-    result = await _ai("/ask_logist", {"question": message.text})
+    uid = message.from_user.id if message.from_user else None
+    result = await _ai("/ask_logist", {"question": message.text, "user_id": uid})
     stop.set()
     typing_task.cancel()
 
@@ -214,7 +215,8 @@ async def nlu_catch_all(message: Message, state: FSMContext):
     stop = asyncio.Event()
     typing_task = asyncio.create_task(_send_typing(message, stop))
 
-    intent_data = await _ai("/parse_intent", {"text": text})
+    uid = message.from_user.id if message.from_user else None
+    intent_data = await _ai("/parse_intent", {"text": text, "user_id": uid})
     stop.set()
     typing_task.cancel()
 
@@ -314,7 +316,7 @@ async def nlu_catch_all(message: Message, state: FSMContext):
         stop2 = asyncio.Event()
         typing_task2 = asyncio.create_task(_send_typing(message, stop2))
         context_hint = f"{from_city}→{to_city}" if from_city and to_city else None
-        result = await _ai("/ask_logist", {"question": text, "context": context_hint})
+        result = await _ai("/ask_logist", {"question": text, "context": context_hint, "user_id": uid})
         stop2.set()
         typing_task2.cancel()
 
