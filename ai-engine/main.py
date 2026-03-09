@@ -514,3 +514,86 @@ async def suggest_carriers(req: LoadRequest):
         f"1) Кого звонить первым, 2) вероятность закрытия (%), 3) риски. Кратко."
     )
     return await _enqueue_and_resolve("suggest_carriers", prompt, response_data, req.wait)
+
+
+# ─── NLU / Smart Entry ────────────────────────────────────────────────────────
+
+class ParseIntentRequest(BaseModel):
+    text: str
+    token: str | None = None
+
+class AskLogistRequest(BaseModel):
+    question: str
+    context: str | None = None   # опциональный контекст: "Москва→Питер, 10т"
+    token: str | None = None
+
+
+@app.post("/parse_intent")
+async def parse_intent(req: ParseIntentRequest):
+    """
+    NLU: свободный текст → структурированный интент.
+    Возвращает JSON — не ставим в очередь, нужен realtime.
+    """
+    _check_token(req.token)
+
+    prompt = (
+        'Ты парсер запросов логистической платформы GoTruck (Россия). '
+        'Из текста извлеки структурированные данные.\n\n'
+        f'Текст пользователя: "{req.text}"\n\n'
+        'Верни ТОЛЬКО валидный JSON без markdown:\n'
+        '{\n'
+        '  "intent": "find_transport" | "place_cargo" | "get_price" | "ask_question" | "unknown",\n'
+        '  "from_city": "город или null",\n'
+        '  "to_city": "город или null",\n'
+        '  "weight_t": число или null,\n'
+        '  "cargo_type": "тип груза или null",\n'
+        '  "body_type": "тент/реф/манипулятор/рефрижератор/контейнер/газель или null",\n'
+        '  "date": "today/tomorrow/YYYY-MM-DD или null",\n'
+        '  "confidence": 0.0-1.0\n'
+        '}\n\n'
+        'Примеры интентов:\n'
+        '- "перевезти запчасти из Челнов в Самару 5 тонн завтра" → find_transport\n'
+        '- "сколько стоит Москва-Питер" → get_price\n'
+        '- "почему так дорого до Тюмени" → ask_question\n'
+        '- "хочу разместить груз" → place_cargo\n'
+        'ТОЛЬКО JSON. Ничего больше.'
+    )
+
+    raw, _ = await llm.chat(prompt, context="parse_intent", timeout=25, use_cache=False)
+
+    # Вытаскиваем JSON из ответа
+    import re
+    match = re.search(r'\{[\s\S]*\}', raw)
+    if not match:
+        return {"intent": "unknown", "confidence": 0.0, "raw_llm": raw[:200]}
+
+    try:
+        data = json.loads(match.group())
+        return data
+    except json.JSONDecodeError:
+        return {"intent": "unknown", "confidence": 0.0, "raw_llm": raw[:200]}
+
+
+@app.post("/ask_logist")
+async def ask_logist(req: AskLogistRequest):
+    """
+    AI-логист: свободный вопрос → экспертный ответ с данными рынка.
+    """
+    _check_token(req.token)
+
+    context_str = f"\nКонтекст пользователя: {req.context}" if req.context else ""
+
+    prompt = (
+        f"Ты AI-логист платформы GoTruck (Россия). Отвечай как эксперт-практик: "
+        f"конкретно, с цифрами, без воды.{context_str}\n\n"
+        f"Вопрос: {req.question}\n\n"
+        f"Ответ (3-5 предложений, конкретика, если есть — цифры и рекомендация):"
+    )
+
+    answer, from_cache = await llm.chat(prompt, context="ask_logist", timeout=90, use_cache=True)
+
+    return {
+        "answer": answer,
+        "model": OLLAMA_MODEL,
+        "cached": from_cache,
+    }
