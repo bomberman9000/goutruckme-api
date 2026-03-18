@@ -256,6 +256,7 @@ export type VehicleItem = {
   location_city: string | null;
   is_available: boolean;
   plate_number: string | null;
+  trailer_number: string | null;
   sts_verified: boolean;
 };
 
@@ -265,6 +266,7 @@ export type VehicleMapItem = {
   capacity_tons: number;
   location_city: string;
   plate_number: string | null;
+  trailer_number: string | null;
   status: "available" | "in_work";
   lat: number;
   lon: number;
@@ -574,7 +576,7 @@ export async function fetchWebappProfile(): Promise<WebappProfileResponse> {
 }
 
 export async function fetchVehicles(): Promise<VehicleItem[]> {
-  const headers = await buildRequiredTmaHeaders("Флот");
+  const headers = await buildRequiredTmaHeaders("Мой парк");
   const response = await fetch("/api/v1/fleet/vehicles", { credentials: "include", headers });
   if (!response.ok) return [];
   const data = await response.json();
@@ -596,8 +598,12 @@ export async function addVehicle(
   capacity_tons: number,
   city?: string,
   plate_number?: string,
+  trailer_number?: string,
 ): Promise<VehicleItem> {
-  const headers = { "Content-Type": "application/json", ...(await buildRequiredTmaHeaders("Добавление машины")) };
+  const headers = {
+    "Content-Type": "application/json",
+    ...(await buildRequiredTmaHeaders("Добавление машины в парк")),
+  };
   const response = await fetch("/api/v1/fleet/vehicles", {
     method: "POST", credentials: "include", headers,
     body: JSON.stringify({
@@ -605,12 +611,25 @@ export async function addVehicle(
       capacity_tons,
       location_city: city || null,
       plate_number: plate_number || null,
+      trailer_number: trailer_number || null,
     }),
   });
   if (!response.ok) {
     throw new Error(`Add vehicle failed: ${response.status}`);
   }
   return response.json();
+}
+
+export async function deleteVehicle(vehicleId: number): Promise<void> {
+  const headers = await buildRequiredTmaHeaders("Удаление машины из парка");
+  const response = await fetch(`/api/v1/fleet/vehicles/${vehicleId}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers,
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, "Delete vehicle failed");
+  }
 }
 
 export async function setVehicleAvailable(vehicleId: number, city: string): Promise<any> {

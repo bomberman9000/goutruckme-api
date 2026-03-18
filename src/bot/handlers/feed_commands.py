@@ -16,7 +16,7 @@ from sqlalchemy import select, func, or_
 
 from src.core.database import async_session
 from src.core.geo import city_coords, haversine_km, resolve_region
-from src.core.models import Favorite, ParserIngestEvent
+from src.core.models import Favorite, ParserIngestEvent, User
 
 router = Router()
 
@@ -236,7 +236,7 @@ async def my_feed(message: Message):
             text += f"{icon} <b>{ev.from_city} → {ev.to_city}</b>\n"
             text += f"   {ev.body_type or '?'} • {ev.rate_rub or 0:,}₽"
             if ev.phone:
-                text += f" • 📞 {ev.phone}"
+                text += " • 📞 ****"
             text += "\n"
         else:
             text += f"{icon} Груз #{fav.feed_id}\n"
@@ -298,6 +298,13 @@ async def cargo_detail(message: Message):
             await message.answer("❌ Груз не найден")
             return
 
+        recipient = await session.get(User, message.from_user.id)
+        from datetime import datetime
+        _is_premium = bool(
+            recipient and recipient.is_premium
+            and (recipient.premium_until is None or recipient.premium_until >= datetime.utcnow())
+        )
+
         similar = (
             await session.execute(
                 select(ParserIngestEvent)
@@ -346,7 +353,11 @@ async def cargo_detail(message: Message):
     text += "\n"
 
     if ev.phone:
-        text += f"\n📞 <b>{ev.phone}</b>\n"
+        if _is_premium:
+            text += "\nð <b>" + ev.phone + "</b>\n"
+        else:
+            masked = ev.phone[:-4] + "****" if len(ev.phone) > 4 else "****"
+            text += "\nð ð " + masked + "  <i>(Premium â Ð¾ÑÐºÑÑÑÑ ÐºÐ¾Ð½ÑÐ°ÐºÑ)</i>\n"
     if ev.inn:
         text += f"🏢 ИНН: {ev.inn} (<a href='https://ati.su/firms?inn={ev.inn}'>АТИ</a>)\n"
 

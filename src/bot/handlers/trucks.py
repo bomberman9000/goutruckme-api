@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import logging
 from datetime import datetime
+import json
 
 from aiogram import F, Router
 from aiogram.filters import Command, StateFilter
@@ -11,11 +11,13 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select
 
-from src.bot.keyboards import webapp_entry_kb
+from src.bot.keyboards import webapp_entry_kb, cancel_kb
 from src.core.config import settings
 from src.core.database import async_session
+from src.core.logger import logger
 from src.core.matching import TruckMatch, match_trucks
 from src.core.models import TruckContactUnlock, User
+from src.core.redis import get_redis
 from src.core.truck_search import (
     extract_truck_search_params,
     looks_like_truck_offer_text,
@@ -23,7 +25,6 @@ from src.core.truck_search import (
     parse_truck_type,
 )
 
-logger = logging.getLogger(__name__)
 router = Router()
 
 CANCEL_TEXT = "\n\n❌ Отмена: /cancel"
@@ -64,6 +65,52 @@ def _parse_weight(text: str) -> float | None:
 
 def _is_cancel_text(text: str | None) -> bool:
     return (text or "").strip().lower() in _CANCEL_WORDS
+
+
+def _truck_to_cargo_prefill_key(user_id: int) -> str:
+    return f"truck:to_cargo:{user_id}"
+
+
+async def _store_truck_to_cargo_prefill(
+    *,
+    user_id: int | None,
+    from_city: str | None,
+    to_city: str | None,
+    weight: float | None,
+) -> None:
+    if not user_id:
+        return
+    payload = {
+        "from_city": from_city,
+        "to_city": to_city,
+        "weight": weight,
+    }
+    redis = await get_redis()
+    await redis.set(
+        _truck_to_cargo_prefill_key(int(user_id)),
+        json.dumps(payload, ensure_ascii=False),
+        ex=3600,
+    )
+
+
+async def _load_truck_to_cargo_prefill(user_id: int | None) -> dict | None:
+    if not user_id:
+        return None
+    redis = await get_redis()
+    raw = await redis.get(_truck_to_cargo_prefill_key(int(user_id)))
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+
+def _looks_like_truck_free_text_candidate(text: str | None) -> bool:
+    raw = (text or "").strip()
+    if not raw or raw.startswith("/") or _is_cancel_text(raw):
+        return False
+    return looks_like_truck_offer_text(raw) or looks_like_truck_search_text(raw)
 
 
 async def _is_premium_active(user_id: int | None) -> bool:
@@ -233,7 +280,7 @@ async def _reply_truck_offer_hint(message: Message, text: str) -> None:
         preview.append(parsed.base_city)
     if preview:
         parts.append("Распознал: " + " • ".join(preview))
-    parts.append("Сейчас публикация своей машины идет через Mini App → раздел «Флот».")
+    parts.append("Сейчас публикация своей машины идет через Mini App → раздел «Мой парк».")
     await message.answer("\n\n".join(parts), reply_markup=webapp_entry_kb())
 
 
@@ -246,6 +293,7 @@ async def _run_match_and_reply(
     truck_type: str | None,
 ) -> None:
     await message.answer("⏳ Подбираю машины...")
+    user_id = message.from_user.id if message.from_user else None
 
     async with async_session() as session:
         trucks = await match_trucks(
@@ -258,14 +306,26 @@ async def _run_match_and_reply(
         )
 
     if not trucks:
+        await _store_truck_to_cargo_prefill(
+            user_id=user_id,
+            from_city=from_city,
+            to_city=to_city,
+            weight=weight,
+        )
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="🔄 Искать другую машину", callback_data="find_truck"))
+        builder.row(InlineKeyboardButton(text="📦 Это мой груз — разместить", callback_data="truck_to_cargo"))
+        builder.row(InlineKeyboardButton(text="📱 Открыть Mini App", callback_data="menu"))
         await message.answer(
             "😔 Машин по вашему запросу не нашлось.\n\n"
-            "Попробуйте другой маршрут, тоннаж или тип кузова.",
-            reply_markup=InlineKeyboardBuilder().button(text="🔄 Попробовать снова", callback_data="find_truck").as_markup(),
+            "Это был именно поиск машины.\n"
+            "Попробуйте другой маршрут, тоннаж или тип кузова.\n\n"
+            "Если вы заказчик и у вас уже есть груз, можно сразу опубликовать его как заявку — "
+            "маршрут и тоннаж я уже перенесу в форму.",
+            reply_markup=builder.as_markup(),
         )
         return
 
-    user_id = message.from_user.id if message.from_user else None
     is_premium = await _is_premium_active(user_id)
     unlocked_ids = await _get_unlocked_truck_ids(user_id, [truck.id for truck in trucks])
 
@@ -305,23 +365,25 @@ async def start_find_truck(event: Message | CallbackQuery, state: FSMContext):
     await state.set_state(FindTruck.route)
     text = (
         "🔍 <b>Поиск машины</b>\n\n"
-        "Введи маршрут в формате:\n"
-        "<code>Москва - Тверь</code>\n"
-        "<code>Казань Самара</code>"
-        + CANCEL_TEXT
+        "Шаг 1 из 3 — <b>Маршрут</b>\n\n"
+        "Введи маршрут, например:\n"
+        "<code>Москва → Питер</code>\n"
+        "<code>Казань Самара</code>\n"
+        "<code>Екб - Тюмень</code>"
     )
     if isinstance(event, CallbackQuery):
         await event.answer()
-        await event.message.answer(text)
+        await event.message.answer(text, reply_markup=cancel_kb())
     else:
-        await event.answer(text)
+        await event.answer(text, reply_markup=cancel_kb())
 
 
 @router.message(FindTruck.route)
 async def got_route(message: Message, state: FSMContext):
     if _is_cancel_text(message.text):
         await state.clear()
-        await message.answer("Отменено.")
+        from src.bot.keyboards import main_menu as _mm
+        await message.answer("Отменено.", reply_markup=_mm())
         return
 
     from_city, to_city = _parse_route(message.text or "")
@@ -334,10 +396,16 @@ async def got_route(message: Message, state: FSMContext):
 
     await state.update_data(from_city=from_city, to_city=to_city)
     await state.set_state(FindTruck.weight)
+    from aiogram.utils.keyboard import InlineKeyboardBuilder as _IKB2
+    from aiogram.types import InlineKeyboardButton as _IKB3
+    _wb = _IKB2()
+    _wb.row(_IKB3(text="⏭ Пропустить", callback_data="skip_weight"))
+    _wb.row(_IKB3(text="◀️ Отмена / Главное меню", callback_data="menu"))
     await message.answer(
         f"📍 Маршрут: <b>{from_city} → {to_city or '?'}</b>\n\n"
-        "Сколько тонн? (введи число, например <code>5</code> или <code>20</code>)\n"
-        "Или нажми /skip чтобы пропустить" + CANCEL_TEXT
+        "Шаг 2 из 3 — <b>Вес груза (тонны)</b>\n\n"
+        "Сколько тонн нужно перевезти?",
+        reply_markup=_wb.as_markup(),
     )
 
 
@@ -345,8 +413,9 @@ async def got_route(message: Message, state: FSMContext):
 async def got_weight(message: Message, state: FSMContext):
     text = (message.text or "").strip()
     if _is_cancel_text(text):
+        from src.bot.keyboards import main_menu as _mm2
         await state.clear()
-        await message.answer("Отменено.")
+        await message.answer("Отменено.", reply_markup=_mm2())
         return
 
     weight: float | None = None
@@ -373,9 +442,16 @@ async def skip_field(message: Message, state: FSMContext):
     if current == FindTruck.weight.state:
         await state.update_data(weight=None)
         await state.set_state(FindTruck.truck_type)
+        from aiogram.utils.keyboard import InlineKeyboardBuilder as _IKB6
+        from aiogram.types import InlineKeyboardButton as _IKB7
+        _tb2 = _IKB6()
+        _tb2.row(_IKB7(text="⏭ Любой тип", callback_data="skip_truck_type"))
+        _tb2.row(_IKB7(text="◀️ Отмена / Главное меню", callback_data="menu"))
         await message.answer(
-            "Тип кузова? Например: <code>тент</code>, <code>реф</code>, <code>газель</code>\n"
-            "Или /skip для любого" + CANCEL_TEXT
+            "Шаг 3 из 3 — <b>Тип машины</b>\n\n"
+            "Какой тип кузова?\n\n"
+            "<i>тент / реф / газель / борт / контейнер / манипулятор</i>",
+            reply_markup=_tb2.as_markup(),
         )
     elif current == FindTruck.truck_type.state:
         await _do_search(message, state)
@@ -387,8 +463,9 @@ async def skip_field(message: Message, state: FSMContext):
 async def got_truck_type(message: Message, state: FSMContext):
     text = (message.text or "").strip()
     if _is_cancel_text(text):
+        from src.bot.keyboards import main_menu as _mm3
         await state.clear()
-        await message.answer("Отменено.")
+        await message.answer("Отменено.", reply_markup=_mm3())
         return
 
     truck_type: str | None = None
@@ -436,37 +513,76 @@ async def cancel(message: Message, state: FSMContext):
 
 @router.message(StateFilter(FindTruck), F.text.func(lambda text: (text or "").strip().lower() in _CANCEL_WORDS))
 async def cancel_by_text(message: Message, state: FSMContext):
+    from src.bot.keyboards import main_menu as _main_menu
     await state.clear()
-    await message.answer("Отменено.")
+    await message.answer("Отменено.", reply_markup=_main_menu())
 
 
-@router.message(StateFilter(None), F.text)
+@router.callback_query(F.data == "truck_to_cargo")
+async def truck_to_cargo(cb: CallbackQuery, state: FSMContext):
+    draft = await _load_truck_to_cargo_prefill(cb.from_user.id if cb.from_user else None)
+    if not draft:
+        await cb.answer("Черновик не найден", show_alert=True)
+        return
+
+    from src.bot.handlers.cargo import _continue_cargo_prefill
+
+    await state.clear()
+    await state.update_data(
+        from_city=draft.get("from_city"),
+        to_city=draft.get("to_city"),
+        cargo_type=None,
+        weight=draft.get("weight"),
+        price=None,
+        load_date=None,
+        load_time=None,
+        comment=None,
+    )
+    try:
+        await cb.message.edit_text(
+            "📦 <b>Заполняем груз</b>\n\n"
+            "Вы выбрали публикацию груза после неудачного подбора машины.\n"
+            "Я уже подставил маршрут и тоннаж из вашего запроса.\n"
+            "Сейчас уточним недостающие поля.",
+        )
+    except Exception:
+        pass
+    await _continue_cargo_prefill(cb.message, state)
+    await cb.answer()
+
+
+@router.message(StateFilter(None), F.text.func(_looks_like_truck_free_text_candidate))
 async def smart_truck_text(message: Message, state: FSMContext):
     _ = state
     text = (message.text or "").strip()
     if not text or text.startswith("/") or _is_cancel_text(text):
         return
 
-    if looks_like_truck_offer_text(text):
-        await _reply_truck_offer_hint(message, text)
-        return
+    try:
+        logger.info("truck.free_text candidate=%r", text)
 
-    if not looks_like_truck_search_text(text):
-        return
+        if looks_like_truck_offer_text(text):
+            logger.info("truck.free_text classified=offer text=%r", text)
+            await _reply_truck_offer_hint(message, text)
+            return
 
-    params = await extract_truck_search_params(text)
-    if not params or not params.get("from_city"):
-        await message.answer(
-            "Напишите запрос свободным текстом, например:\n"
-            "<code>ищу машину из Москвы в Самару 4 тонны завтра</code>\n\n"
-            "Или используйте /findtruck для пошагового подбора."
+        params = await extract_truck_search_params(text)
+        logger.info("truck.free_text params=%s text=%r", params, text)
+        if not params or not params.get("from_city"):
+            await message.answer(
+                "Напишите запрос свободным текстом, например:\n"
+                "<code>ищу машину из Москвы в Самару 4 тонны завтра</code>\n\n"
+                "Или используйте /findtruck для пошагового подбора."
+            )
+            return
+
+        await _run_match_and_reply(
+            message=message,
+            from_city=params.get("from_city"),
+            to_city=params.get("to_city"),
+            weight=params.get("weight"),
+            truck_type=params.get("truck_type"),
         )
-        return
-
-    await _run_match_and_reply(
-        message=message,
-        from_city=params.get("from_city"),
-        to_city=params.get("to_city"),
-        weight=params.get("weight"),
-        truck_type=params.get("truck_type"),
-    )
+    except Exception as exc:
+        logger.exception("truck.free_text failed text=%r error=%s", text, exc)
+        await message.answer("Не удалось выполнить подбор. Попробуйте еще раз.")

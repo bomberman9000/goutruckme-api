@@ -56,8 +56,34 @@ async def start_rate(message: Message, state: FSMContext):
             return
 
     await state.update_data(cargo_id=cargo_id, to_user_id=to_user_id)
-    await message.answer("⭐ Оцени от 1 до 5:")
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton as _IKB
+    stars_kb = InlineKeyboardMarkup(inline_keyboard=[[
+        _IKB(text="⭐", callback_data="rate_star_1"),
+        _IKB(text="⭐⭐", callback_data="rate_star_2"),
+        _IKB(text="⭐⭐⭐", callback_data="rate_star_3"),
+        _IKB(text="⭐⭐⭐⭐", callback_data="rate_star_4"),
+        _IKB(text="⭐⭐⭐⭐⭐", callback_data="rate_star_5"),
+    ]])
+    await message.answer(
+        f"⭐ Как прошёл рейс #{cargo_id}? Оцени контрагента:",
+        reply_markup=stars_kb,
+    )
     await state.set_state(RateForm.score)
+
+
+@router.callback_query(RateForm.score, F.data.startswith("rate_star_"))
+async def rate_star(cb: CallbackQuery, state: FSMContext):
+    score = int(cb.data.split("_")[2])
+    await state.update_data(score=score)
+    stars = "⭐" * score
+    from src.bot.keyboards import skip_kb
+    await cb.message.edit_text(
+        f"Оценка: {stars}\n\n💬 Напиши комментарий или пропусти:",
+        reply_markup=skip_kb(),
+    )
+    await state.set_state(RateForm.comment)
+    await cb.answer()
+
 
 @router.message(RateForm.score)
 async def rate_score(message: Message, state: FSMContext):

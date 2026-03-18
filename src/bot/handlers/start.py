@@ -11,7 +11,7 @@ from aiogram.types import (
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select
-from src.bot.keyboards import main_menu, role_kb, contact_request_kb, legal_type_kb, webapp_entry_kb
+from src.bot.keyboards import main_menu, role_kb, contact_request_kb, legal_type_kb, business_type_kb, webapp_entry_kb
 from src.bot.handlers.cargo import send_cargo_details
 from src.core.database import async_session
 from src.core.models import User, Reminder, UserProfile, UserRole
@@ -22,6 +22,7 @@ from src.core.services.cross_sync import (
 )
 from src.core.services.referral import attach_referral_invite
 from src.bot.states import Onboarding
+from src.services.scoring import lookup_company_by_inn
 from src.core.config import settings
 
 router = Router()
@@ -62,6 +63,55 @@ def _guest_entry_kb() -> InlineKeyboardMarkup:
             ]
         )
 
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ── Intro slides ──────────────────────────────────────────────────────────────
+_SLIDES = [
+    {
+        "text": (
+            "📦 <b>Для заказчиков грузоперевозок</b>\n\n"
+            "• Разместите груз за 2 минуты\n"
+            "• Получите отклики от проверенных перевозчиков\n"
+            "• Отслеживайте рейс в реальном времени\n"
+            "• Оплата через безопасную сделку — деньги у перевозчика только после доставки"
+        ),
+        "step": "1/3",
+    },
+    {
+        "text": (
+            "🚛 <b>Для водителей и перевозчиков</b>\n\n"
+            "• Находите грузы по своему маршруту\n"
+            "• AI подбирает подходящие заявки автоматически\n"
+            "• Зарегистрируйте машину — заказчики найдут вас сами\n"
+            "• Стройте репутацию через рейтинг и отзывы"
+        ),
+        "step": "2/3",
+    },
+    {
+        "text": (
+            "🔒 <b>Платформа ГрузПоток</b>\n\n"
+            "• Верификация участников по ИНН и документам\n"
+            "• Антифрод-защита от подозрительных заявок\n"
+            "• Чат напрямую между водителем и заказчиком\n"
+            "• Работает в Telegram, Mini App и на сайте"
+        ),
+        "step": "3/3",
+    },
+]
+
+
+def _slide_kb(idx: int) -> InlineKeyboardMarkup:
+    rows = []
+    nav = []
+    if idx > 0:
+        nav.append(InlineKeyboardButton(text="◀️", callback_data=f"intro_{idx - 1}"))
+    if idx < len(_SLIDES) - 1:
+        nav.append(InlineKeyboardButton(text="Далее ▶️", callback_data=f"intro_{idx + 1}"))
+    else:
+        rows.append([InlineKeyboardButton(text="🚀 Зарегистрироваться", callback_data="begin_onboarding")])
+    if nav:
+        rows.insert(0, nav)
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 async def upsert_text(obj, text: str, reply_markup=None, disable_web_page_preview=True):
@@ -155,10 +205,11 @@ async def start_onboarding(obj: Message | CallbackQuery, state: FSMContext):
     await state.clear()
     await upsert_text(
         obj,
-        "👋 Добро пожаловать! Чтобы начать, выберите роль:" + CANCEL_HINT,
-        reply_markup=role_kb(),
+        "👋 Добро пожаловать в ГрузПоток!\n\n"
+        "Шаг 1 из 4 — Тип вашего предприятия:" + CANCEL_HINT,
+        reply_markup=business_type_kb(),
     )
-    await state.set_state(Onboarding.role)
+    await state.set_state(Onboarding.business_type)
 
 
 async def _try_attach_referral(start_payload: str | None, invited_user_id: int) -> str | None:
@@ -187,13 +238,15 @@ async def _try_attach_referral(start_payload: str | None, invited_user_id: int) 
 @router.callback_query(F.data == "cancel")
 async def cancel_flow_cb(cb: CallbackQuery, state: FSMContext):
     await state.clear()
-    await upsert_text(cb, "Ок, отменил", reply_markup=main_menu())
+    await cb.message.answer("Ок, отменил.", reply_markup=ReplyKeyboardRemove())
+    await cb.message.answer("🏠 Главное меню", reply_markup=main_menu())
     await cb.answer()
 
 @router.message(F.text.in_({"отмена", "cancel", "/cancel"}))
 async def cancel_flow_msg(message: Message, state: FSMContext):
     await state.clear()
-    await upsert_text(message, "Ок, отменил", reply_markup=main_menu())
+    await message.answer("Ок, отменил.", reply_markup=ReplyKeyboardRemove())
+    await message.answer("🏠 Главное меню", reply_markup=main_menu())
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
@@ -357,13 +410,8 @@ async def cmd_start(message: Message, state: FSMContext):
     if await needs_onboarding(message.from_user.id):
         await state.clear()
         await message.answer(
-            "👋 <b>Добро пожаловать в ГрузПоток</b>\n\n"
-            "Чтобы сайт, бот и Mini App работали как единое целое, сначала свяжите аккаунт.\n\n"
-            "Выберите удобный сценарий:\n"
-            "• начать регистрацию прямо в Telegram\n"
-            "• открыть сайт для привязки\n"
-            "• зайти в Mini App",
-            reply_markup=_guest_entry_kb(),
+            f"<b>ГрузПоток</b>  1/3\n\n" + _SLIDES[0]["text"],
+            reply_markup=_slide_kb(0),
         )
         return
 
@@ -373,6 +421,34 @@ async def cmd_start(message: Message, state: FSMContext):
         reply_markup=main_menu(),
     )
 
+
+
+
+@router.message(F.text.func(lambda t: (t or "").strip().lower() in {"старт", "начать", "меню", "menu", "start"}))
+async def text_start_fallback(message: Message, state: FSMContext):
+    """Текстовые алиасы для /start — для водителей, которые не знают команды."""
+    current = await state.get_state()
+    if current is not None:
+        return  # не мешаем активным FSM
+    await message.answer(
+        f"👋 Привет, <b>{message.from_user.full_name}</b>!\n\nВыбери действие:",
+        reply_markup=main_menu(),
+    )
+
+
+@router.callback_query(F.data.startswith("intro_"))
+async def intro_slide(cb: CallbackQuery):
+    idx = int(cb.data.split("_")[1])
+    slide = _SLIDES[idx]
+    step = slide["step"]
+    try:
+        await cb.message.edit_text(
+            f"<b>ГрузПоток</b>  {step}\n\n" + slide["text"],
+            reply_markup=_slide_kb(idx),
+        )
+    except Exception:
+        pass
+    await cb.answer()
 
 @router.callback_query(F.data == "begin_onboarding")
 async def begin_onboarding(cb: CallbackQuery, state: FSMContext):
@@ -443,6 +519,28 @@ async def legacy_link(message: Message):
         reply_markup=webapp_entry_kb(),
     )
 
+
+@router.callback_query(Onboarding.business_type, F.data.startswith("biz_"))
+async def onboarding_business_type(cb: CallbackQuery, state: FSMContext):
+    biz_map = {
+        "biz_ooo": "ООО",
+        "biz_ip": "ИП",
+        "biz_selfemployed": "Самозанятый",
+        "biz_fizlico": "Физлицо",
+    }
+    biz = biz_map.get(cb.data)
+    if not biz:
+        await cb.answer("❌ Неизвестный тип", show_alert=True)
+        return
+    await cb.answer()
+    await state.update_data(business_type=biz)
+    await upsert_text(
+        cb,
+        "Шаг 2 из 4 — Ваша роль на платформе:" + CANCEL_HINT,
+        reply_markup=role_kb(),
+    )
+    await state.set_state(Onboarding.role)
+
 @router.callback_query(Onboarding.role, F.data.startswith("role_"))
 async def onboarding_role(cb: CallbackQuery, state: FSMContext):
     role_key = cb.data.replace("role_", "")
@@ -468,7 +566,7 @@ async def onboarding_role(cb: CallbackQuery, state: FSMContext):
     await state.update_data(role=role.value)
     await upsert_text(
         cb,
-        "📲 Поделись номером телефона через кнопку ниже." + CANCEL_HINT,
+        "Шаг 3 из 4 — Поделись номером телефона через кнопку ниже." + CANCEL_HINT,
         reply_markup=contact_request_kb(),
     )
     await state.set_state(Onboarding.contact)
@@ -499,20 +597,29 @@ async def onboarding_contact(message: Message, state: FSMContext):
         await state.set_state(Onboarding.role)
         return
 
-    if role == UserRole.CARRIER:
+    business_type = data.get("business_type", "")
+
+    if business_type in ("ООО", "ИП"):
         await upsert_text(
             message,
-            "✅ Номер сохранён.\n\n🏢 Укажите тип организации:" + CANCEL_HINT,
-            reply_markup=legal_type_kb(),
+            "Шаг 4 из 4 — Укажи ИНН (10 или 12 цифр):" + CANCEL_HINT,
+            reply_markup=ReplyKeyboardRemove(),
         )
-        await state.set_state(Onboarding.legal_type)
+        await state.set_state(Onboarding.inn)
         return
 
+    # Самозанятый или Физлицо — ИНН не нужен
+    async with async_session() as session:
+        prof2 = await ensure_profile(session, message.from_user.id)
+        prof2.inn = None
+        await session.commit()
+
+    await state.clear()
     await upsert_text(
         message,
-        "✅ Номер сохранён.\n\n🧾 Укажи ИНН (10 или 12 цифр):" + CANCEL_HINT,
+        "✅ Готово! Добро пожаловать в ГрузПоток.",
+        reply_markup=main_menu(),
     )
-    await state.set_state(Onboarding.inn)
 
 @router.message(Onboarding.legal_type)
 async def onboarding_legal_type(message: Message, state: FSMContext):
@@ -523,6 +630,7 @@ async def onboarding_legal_type(message: Message, state: FSMContext):
             "❌ Выбери тип из кнопок ниже.",
             reply_markup=legal_type_kb(),
         )
+        await message.answer("Выбери один из вариантов кнопкой 👇", reply_markup=legal_type_kb())
         return
 
     if legal_type == "Физлицо":
@@ -553,7 +661,7 @@ async def onboarding_legal_type(message: Message, state: FSMContext):
 async def onboarding_inn(message: Message, state: FSMContext):
     inn = message.text.strip()
     if not inn.isdigit() or len(inn) not in (10, 12):
-        await upsert_text(message, "❌ ИНН должен содержать 10 или 12 цифр")
+        await upsert_text(message, "❌ ИНН должен содержать 10 или 12 цифр. Попробуй ещё раз:")
         return
 
     async with async_session() as session:
@@ -561,8 +669,58 @@ async def onboarding_inn(message: Message, state: FSMContext):
         profile.inn = inn
         await session.commit()
 
+    # Пробуем автолукап через DADATA
+    await upsert_text(message, "🔍 Ищу компанию по ИНН...")
+    company_info = await lookup_company_by_inn(inn)
+
+    if company_info and company_info.get("name"):
+        name = company_info["name"]
+        status = company_info.get("status", "")
+        status_emoji = "✅" if status == "ACTIVE" else ("⚠️" if status == "LIQUIDATING" else "")
+        await state.update_data(dadata_company=name)
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"✅ Да, всё верно", callback_data="confirm_company")],
+            [InlineKeyboardButton(text="✏️ Ввести вручную", callback_data="manual_company")],
+        ])
+        await upsert_text(
+            message,
+            f"{status_emoji} Нашёл компанию:\n\n"
+            f"<b>{name}</b>\n"
+            f"ИНН: <code>{inn}</code>\n\n"
+            f"Всё верно?",
+            reply_markup=confirm_kb,
+        )
+        await state.set_state(Onboarding.company_confirm)
+        return
+
+    # DADATA не настроен или не нашёл — просим вручную
     await upsert_text(message, "🏢 Введи название компании (ООО/ИП):" + CANCEL_HINT)
     await state.set_state(Onboarding.company)
+
+
+@router.callback_query(Onboarding.company_confirm, F.data == "confirm_company")
+async def onboarding_confirm_company(cb: CallbackQuery, state: FSMContext):
+    await cb.answer()
+    data = await state.get_data()
+    company = data.get("dadata_company", "")
+    async with async_session() as session:
+        user = (await session.execute(select(User).where(User.id == cb.from_user.id))).scalar_one_or_none()
+        if not user:
+            user = User(id=cb.from_user.id, username=cb.from_user.username, full_name=cb.from_user.full_name)
+            session.add(user)
+        user.company = company
+        await session.commit()
+    await state.clear()
+    await upsert_text(cb, "✅ Готово! Добро пожаловать в ГрузПоток.", reply_markup=main_menu())
+
+
+@router.callback_query(Onboarding.company_confirm, F.data == "manual_company")
+async def onboarding_manual_company(cb: CallbackQuery, state: FSMContext):
+    await cb.answer()
+    await upsert_text(cb, "🏢 Введи название компании вручную:" + CANCEL_HINT)
+    await state.set_state(Onboarding.company)
+
 
 @router.message(Onboarding.company)
 async def onboarding_company(message: Message, state: FSMContext):

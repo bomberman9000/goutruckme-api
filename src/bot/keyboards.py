@@ -23,13 +23,21 @@ def _webapp_url(path: str = "") -> str:
 
 def main_menu():
     b = InlineKeyboardBuilder()
-    b.row(InlineKeyboardButton(text="🚛 Найти груз", callback_data="search_cargo"))
-    b.row(InlineKeyboardButton(text="🔍 Найти машину", callback_data="find_truck"))
+    b.row(InlineKeyboardButton(text="🔵 Найти груз (я водитель)", callback_data="search_cargo"))
+    b.row(InlineKeyboardButton(text="🚛 Найти машину (я заказчик)", callback_data="find_truck"))
     b.row(InlineKeyboardButton(text="📦 Разместить груз", callback_data="add_cargo"))
-    b.row(InlineKeyboardButton(text="🧾 Мои грузы", callback_data="my_cargos"))
-    b.row(InlineKeyboardButton(text="🤝 Мои отклики", callback_data="my_responses"))
-    b.row(InlineKeyboardButton(text="⭐ Кабинет / Профиль", callback_data="profile"))
-    b.row(InlineKeyboardButton(text="🆘 Поддержка", callback_data="feedback"))
+    b.row(
+        InlineKeyboardButton(text="📋 Мои грузы", callback_data="my_cargos"),
+        InlineKeyboardButton(text="🤝 Мои отклики", callback_data="my_responses"),
+    )
+    b.row(
+        InlineKeyboardButton(text="🚛 Мои машины", callback_data="my_trucks"),
+        InlineKeyboardButton(text="🤖 AI-логист", callback_data="ai_assist"),
+    )
+    b.row(
+        InlineKeyboardButton(text="⭐ Кабинет", callback_data="profile"),
+        InlineKeyboardButton(text="🆘 Поддержка", callback_data="feedback"),
+    )
     url = _webapp_url()
     if url:
         b.row(InlineKeyboardButton(
@@ -65,6 +73,7 @@ def cargo_actions(
     is_owner: bool,
     status: CargoStatus,
     owner_company_id: int | None = None,
+    show_unlock: bool = False,
 ):
     b = InlineKeyboardBuilder()
     if is_owner:
@@ -79,6 +88,8 @@ def cargo_actions(
             b.row(InlineKeyboardButton(text="♻️ Восстановить", callback_data=f"restore_cargo_{cargo_id}"))
     else:
         b.row(InlineKeyboardButton(text="📨 Откликнуться", callback_data=f"respond_{cargo_id}"))
+        if show_unlock:
+            b.row(InlineKeyboardButton(text="🔓 Открыть контакт", callback_data=f"unlock_contact_{cargo_id}"))
         if owner_company_id is not None:
             b.row(
                 InlineKeyboardButton(
@@ -214,6 +225,61 @@ def profile_menu():
     return b.as_markup()
 
 
+BODY_TYPES = ["Тент", "Рефрижератор", "Открытый", "Контейнер", "Изотерм", "Самосвал", "Автовоз"]
+
+
+def business_type_kb():
+    b = InlineKeyboardBuilder()
+    b.button(text="🏢 ООО", callback_data="biz_ooo")
+    b.button(text="👤 ИП", callback_data="biz_ip")
+    b.button(text="🧾 Самозанятый", callback_data="biz_selfemployed")
+    b.button(text="👨 Физлицо", callback_data="biz_fizlico")
+    b.adjust(2)
+    b.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"))
+    return b.as_markup()
+
+
+def body_type_kb():
+    b = InlineKeyboardBuilder()
+    for bt in BODY_TYPES:
+        b.button(text=bt, callback_data=f"body_{bt}")
+    b.adjust(2)
+    b.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"))
+    return b.as_markup()
+
+
+def trucks_menu():
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="➕ Добавить машину", callback_data="add_truck"))
+    b.row(InlineKeyboardButton(text="🚛 Мои машины", callback_data="my_trucks"))
+    b.row(InlineKeyboardButton(text="◀️ Меню", callback_data="menu"))
+    return b.as_markup()
+
+
+def truck_list_kb(vehicles: list):
+    b = InlineKeyboardBuilder()
+    for v in vehicles:
+        status = "🟢" if v.is_available else "🔴"
+        label = f"{status} {v.body_type} {v.capacity_tons}т"
+        if v.location_city:
+            label += f" — {v.location_city}"
+        b.row(InlineKeyboardButton(text=label[:60], callback_data=f"truck_view_{v.id}"))
+    b.row(InlineKeyboardButton(text="➕ Добавить", callback_data="add_truck"))
+    b.row(InlineKeyboardButton(text="◀️ Меню", callback_data="menu"))
+    return b.as_markup()
+
+
+def truck_detail_kb(vehicle_id: int, is_available: bool):
+    b = InlineKeyboardBuilder()
+    if is_available:
+        b.row(InlineKeyboardButton(text="🔴 Снять с линии", callback_data=f"truck_off_{vehicle_id}"))
+    else:
+        b.row(InlineKeyboardButton(text="🟢 Выйти на линию", callback_data=f"truck_on_{vehicle_id}"))
+    b.row(InlineKeyboardButton(text="🗑 Удалить", callback_data=f"truck_del_{vehicle_id}"))
+    b.row(InlineKeyboardButton(text="◀️ Мои машины", callback_data="my_trucks"))
+    return b.as_markup()
+
+
 def claim_type_kb():
     b = InlineKeyboardBuilder()
     b.row(InlineKeyboardButton(text="💰 Неоплата", callback_data="claim_type_payment"))
@@ -306,4 +372,10 @@ def notification_kb(cargo_id: int):
     wa_btn = webapp_cargo_button(cargo_id)
     if wa_btn:
         b.row(wa_btn)
+    return b.as_markup()
+
+
+def cancel_kb():
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"))
     return b.as_markup()

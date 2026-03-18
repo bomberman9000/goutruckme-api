@@ -18,7 +18,7 @@ from aiogram.types import (
 from src.bot.keyboards import main_menu
 from src.core.config import settings
 from src.core.database import async_session
-from src.core.models import AvailableTruck, PremiumPayment, TruckContactUnlock, User
+from src.core.models import AvailableTruck, CargoContactUnlock, PremiumPayment, TruckContactUnlock, User
 from src.core.services.referral import extend_premium_until, grant_referral_reward_if_applicable
 
 
@@ -223,6 +223,10 @@ async def successful_payment_handler(message: Message):
         return
 
     payload = (payment.invoice_payload or "").strip()
+    if payload.startswith("cargo_contact:"):
+        await _handle_cargo_contact_payment(message, payload, payment)
+        return
+
     if payload.startswith("truck_contact:"):
         parts = payload.split(":")
         if len(parts) < 4:
@@ -342,3 +346,257 @@ async def successful_payment_handler(message: Message):
             )
         except Exception:
             pass
+
+
+# ── Cargo contact unlock ──────────────────────────────────────────────────────
+
+async def _get_cargo_contact(cargo) -> dict:
+    """Возвращает {phone, username, tg_id} владельца груза."""
+    phone    = cargo.phone
+    username = None
+    tg_id    = None
+    async with async_session() as session:
+        owner = await session.get(User, int(cargo.owner_id))
+        if owner:
+            if not phone and owner.phone:
+                phone = owner.phone
+            username = owner.username
+            tg_id    = owner.id   # Telegram user id
+    return {"phone": phone, "username": username, "tg_id": tg_id}
+
+
+def _render_cargo_contact_text(cargo, contact: dict) -> str:
+    lines = [
+        "🔓 <b>Контакт открыт</b>",
+        f"📦 Груз #{cargo.id}: {cargo.from_city} → {cargo.to_city}",
+    ]
+    if contact.get("phone"):
+        lines.append(f"📞 {contact['phone']}")
+    if contact.get("username"):
+        lines.append(f"✈️ Telegram: @{contact['username']}")
+    elif contact.get("tg_id"):
+        lines.append(f'✈️ <a href="tg://user?id={contact['tg_id']}">Написать в Telegram</a>')
+    return "\n".join(lines)
+
+
+def _cargo_contact_kb(contact: dict, cargo_id: int) -> InlineKeyboardMarkup:
+    rows = []
+    phone = contact.get("phone") or ""
+    clean = "".join(c for c in phone if c.isdigit() or c == "+")
+    if clean:
+        rows.append([InlineKeyboardButton(text="📞 Позвонить", url=f"tel:{clean}")])
+    username = contact.get("username")
+    tg_id    = contact.get("tg_id")
+    if username:
+        rows.append([InlineKeyboardButton(text="✈️ Написать в Telegram", url=f"https://t.me/{username}")])
+    elif tg_id:
+        rows.append([InlineKeyboardButton(text="✈️ Написать в Telegram", url=f"tg://user?id={tg_id}")])
+    rows.append([InlineKeyboardButton(text="📦 К грузу", callback_data=f"cargo_view:{cargo_id}")])
+    rows.append([InlineKeyboardButton(text="◀️ Меню", callback_data="menu")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# back-compat aliases (used in older call sites)
+async def _get_cargo_phone(cargo) -> str | None:
+    contact = await _get_cargo_contact(cargo)
+    return contact.get("phone")
+
+
+
+async def _handle_cargo_contact_payment(message, payload: str, payment) -> None:
+    """Обработка успешной оплаты cargo_contact:..."""
+    parts = payload.split(":")
+    if len(parts) < 3:
+        await message.answer("⚠️ Платёж получен, но не удалось определить груз.")
+        return
+    try:
+        cargo_id = int(parts[2])
+    except ValueError:
+        await message.answer("⚠️ Платёж получен, но груз не распознан.")
+        return
+
+    from src.core.models import Cargo, CargoContactUnlock
+    async with async_session() as session:
+        cargo = await session.get(Cargo, cargo_id)
+        if not cargo:
+            await message.answer("⚠️ Груз уже недоступен. Напишите в поддержку.")
+            return
+
+        existing = (
+            await session.execute(
+                select(CargoContactUnlock).where(
+                    CargoContactUnlock.user_id == message.from_user.id,
+                    CargoContactUnlock.cargo_id == cargo_id,
+                )
+            )
+        ).scalar_one_or_none()
+
+        if existing is None:
+            session.add(CargoContactUnlock(
+                user_id=message.from_user.id,
+                cargo_id=cargo_id,
+                amount_stars=payment.total_amount,
+                currency=payment.currency,
+                status="success",
+                invoice_payload=payload,
+                telegram_payment_charge_id=payment.telegram_payment_charge_id,
+                provider_payment_charge_id=payment.provider_payment_charge_id,
+            ))
+            await session.commit()
+
+    contact = await _get_cargo_contact(cargo)
+    if contact.get("phone") or contact.get("username") or contact.get("tg_id"):
+        await message.answer(
+            _render_cargo_contact_text(cargo, contact),
+            reply_markup=_cargo_contact_kb(contact, cargo_id),
+            parse_mode="HTML",
+        )
+    else:
+        await message.answer("✅ Оплата принята. Контактные данные не указаны для этого груза.")
+
+@router.callback_query(F.data == "reveal_cargo_phone" or F.data.startswith("reveal_cargo_phone:"))
+async def reveal_cargo_phone_cb(cb: CallbackQuery):
+    """Премиум-юзер нажал Позвонить — сразу показываем телефон."""
+    cargo_id_str = (cb.data or "").split(":")[-1]
+    try:
+        cargo_id = int(cargo_id_str)
+    except ValueError:
+        await cb.answer("Ошибка", show_alert=True)
+        return
+
+    from src.core.models import Cargo
+    async with async_session() as session:
+        cargo = await session.get(Cargo, cargo_id)
+        if not cargo:
+            await cb.answer("Груз не найден", show_alert=True)
+            return
+        user = await session.get(User, cb.from_user.id)
+
+    is_premium = bool(
+        user
+        and user.is_premium
+        and (user.premium_until is None or user.premium_until >= datetime.now())
+    )
+
+    contact = await _get_cargo_contact(cargo)
+    if not contact.get("phone") and not contact.get("username") and not contact.get("tg_id"):
+        await cb.answer("Контакт не указан для этого груза", show_alert=True)
+        return
+
+    if is_premium:
+        await cb.message.answer(
+            _render_cargo_contact_text(cargo, contact),
+            reply_markup=_cargo_contact_kb(contact, cargo_id),
+            parse_mode="HTML",
+        )
+        await cb.answer()
+    else:
+        # Юзер как-то нажал кнопку без подписки — переключаем на оплату
+        await cb.answer()
+        await _send_cargo_unlock_invoice(cb.bot, cb.from_user.id, cargo_id, cargo)
+
+
+async def _send_cargo_unlock_invoice(bot, user_id: int, cargo_id: int, cargo) -> None:
+    stars = settings.cargo_contact_unlock_stars
+    payload = f"cargo_contact:{user_id}:{cargo_id}:{stars}"
+    title   = "Контакт грузовладельца"
+    desc    = f"Открывает телефон по грузу {cargo.from_city} → {cargo.to_city}"
+    await bot.send_message(
+        user_id,
+        f"💎 <b>Открой телефон за {stars} XTR</b>\n\n"
+        f"Груз #{cargo_id}: {cargo.from_city} → {cargo.to_city}\n"
+        f"Или оформи <b>подписку</b> и получай все контакты бесплатно:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text=f"🔓 Открыть за {stars} ⭐",
+                callback_data=f"pay_cargo_contact:{cargo_id}",
+            )],
+            [InlineKeyboardButton(text="💎 Подписка Premium", callback_data="buy_premium_menu")],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="menu")],
+        ]),
+    )
+
+
+@router.callback_query(F.data.startswith("unlock_cargo_contact:"))
+async def unlock_cargo_contact_cb(cb: CallbackQuery):
+    """Нажата кнопка 🔒 Показать телефон — проверяем подписку."""
+    cargo_id_str = cb.data.split(":")[-1]
+    try:
+        cargo_id = int(cargo_id_str)
+    except ValueError:
+        await cb.answer("Ошибка", show_alert=True)
+        return
+
+    from src.core.models import Cargo, CargoContactUnlock
+    async with async_session() as session:
+        cargo = await session.get(Cargo, cargo_id)
+        if not cargo:
+            await cb.answer("Груз не найден", show_alert=True)
+            return
+        user = await session.get(User, cb.from_user.id)
+
+        is_premium = bool(
+            user
+            and user.is_premium
+            and (user.premium_until is None or user.premium_until >= datetime.now())
+        )
+        existing_unlock = (
+            await session.execute(
+                select(CargoContactUnlock).where(
+                    CargoContactUnlock.user_id == cb.from_user.id,
+                    CargoContactUnlock.cargo_id == cargo_id,
+                    CargoContactUnlock.status == "success",
+                )
+            )
+        ).scalar_one_or_none()
+
+    contact = await _get_cargo_contact(cargo)
+    if not contact.get("phone") and not contact.get("username") and not contact.get("tg_id"):
+        await cb.answer("Контакт не указан для этого груза", show_alert=True)
+        return
+
+    if is_premium or existing_unlock:
+        await cb.message.answer(
+            _render_cargo_contact_text(cargo, contact),
+            reply_markup=_cargo_contact_kb(contact, cargo_id),
+            parse_mode="HTML",
+        )
+        await cb.answer()
+        return
+
+    await cb.answer()
+    await _send_cargo_unlock_invoice(cb.bot, cb.from_user.id, cargo_id, cargo)
+
+
+@router.callback_query(F.data.startswith("pay_cargo_contact:"))
+async def pay_cargo_contact_cb(cb: CallbackQuery):
+    """Юзер нажал 'Открыть за N ⭐' — шлём invoice."""
+    cargo_id_str = cb.data.split(":")[-1]
+    try:
+        cargo_id = int(cargo_id_str)
+    except ValueError:
+        await cb.answer("Ошибка", show_alert=True)
+        return
+
+    from src.core.models import Cargo
+    async with async_session() as session:
+        cargo = await session.get(Cargo, cargo_id)
+    if not cargo:
+        await cb.answer("Груз не найден", show_alert=True)
+        return
+
+    stars   = settings.cargo_contact_unlock_stars
+    payload = f"cargo_contact:{cb.from_user.id}:{cargo_id}:{stars}"
+    title   = "Контакт грузовладельца"
+    await cb.bot.send_invoice(
+        chat_id=cb.from_user.id,
+        title=title,
+        description=f"Открывает телефон по грузу {cargo.from_city} → {cargo.to_city}.",
+        payload=payload,
+        currency="XTR",
+        prices=[LabeledPrice(label=title, amount=stars)],
+        provider_token=None,
+        start_parameter=f"cargo_contact_{cargo_id}",
+    )
+    await cb.answer()

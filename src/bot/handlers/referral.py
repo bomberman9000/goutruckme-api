@@ -43,3 +43,43 @@ async def referral_info(message: Message):
         f"👥 Приглашено: {invited_count or 0}\n"
         f"🏆 Начислено бонусов: {rewards_count or 0}"
     )
+
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram import F
+
+@router.callback_query(F.data == "referral_menu")
+async def referral_menu_cb(cb: CallbackQuery):
+    link = build_referral_deeplink(settings.bot_username, cb.from_user.id)
+    if not link:
+        await cb.answer("BOT_USERNAME не настроен", show_alert=True)
+        return
+
+    from sqlalchemy import func, select
+    async with async_session() as session:
+        invited_count = await session.scalar(
+            select(func.count()).select_from(ReferralInvite).where(
+                ReferralInvite.inviter_user_id == cb.from_user.id
+            )
+        )
+        rewards_count = await session.scalar(
+            select(func.count()).select_from(ReferralReward).where(
+                ReferralReward.inviter_user_id == cb.from_user.id
+            )
+        )
+
+    share_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📤 Поделиться ссылкой", url=f"https://t.me/share/url?url={link}")],
+        [InlineKeyboardButton(text="◀️ Профиль", callback_data="my_profile")],
+    ])
+    await cb.message.edit_text(
+        "🎁 <b>Реферальная программа</b>\n\n"
+        "Приглашай коллег — за первую оплату приглашенного бонус получают оба.\n"
+        f"• Тебе: +{settings.referral_reward_days} дней Premium\n"
+        f"• Другу: +{settings.referral_invited_reward_days} дней Premium\n\n"
+        f"🔗 Твоя ссылка:\n<code>{link}</code>\n\n"
+        f"👥 Приглашено: {invited_count or 0}\n"
+        f"🏆 Бонусов начислено: {rewards_count or 0}",
+        parse_mode="HTML",
+        reply_markup=share_kb,
+    )
+    await cb.answer()

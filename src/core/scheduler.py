@@ -54,24 +54,64 @@ async def check_reminders_job():
         await session.commit()
 
 async def archive_old_cargos_job():
+    from datetime import timedelta
+    from src.bot.bot import bot
     from src.core.database import async_session
     from src.core.models import Cargo, CargoStatus
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-    cutoff = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    now = datetime.utcnow()
+    date_cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    age_cutoff = now - timedelta(days=7)
+
     async with async_session() as session:
+        # 1) По дате погрузки
         result = await session.execute(
             select(Cargo)
-            .where(Cargo.status == CargoStatus.NEW)
-            .where(Cargo.load_date < cutoff)
+            .where(Cargo.status.in_([CargoStatus.NEW, CargoStatus.ACTIVE]))
+            .where(Cargo.load_date < date_cutoff)
         )
-        cargos = result.scalars().all()
+        by_date = result.scalars().all()
 
-        for cargo in cargos:
+        # 2) Старше 7 дней (не взяты в работу)
+        result2 = await session.execute(
+            select(Cargo)
+            .where(Cargo.status.in_([CargoStatus.NEW, CargoStatus.ACTIVE]))
+            .where(Cargo.created_at < age_cutoff)
+        )
+        by_age = result2.scalars().all()
+
+        all_ids = {c.id for c in by_date} | {c.id for c in by_age}
+        all_cargos = {c.id: c for c in by_date + by_age}
+
+        notify_map: dict[int, list[Cargo]] = {}  # owner_id -> list
+        for cargo in all_cargos.values():
             cargo.status = CargoStatus.ARCHIVED
+            notify_map.setdefault(cargo.owner_id, []).append(cargo)
 
-        if cargos:
+        if all_cargos:
             await session.commit()
-            logger.info("Archived cargos: %s", len(cargos))
+            logger.info("Archived cargos: %s", len(all_cargos))
+
+        # 3) Уведомляем владельцев
+        for owner_id, cargos in notify_map.items():
+            try:
+                lines = []
+                for c in cargos[:5]:
+                    route = f"{c.from_city} → {c.to_city}"
+                    lines.append(f"• {route}, {c.weight}т")
+                text = (
+                    "📦 Следующие грузы автоматически закрыты (истёк срок или дата погрузки прошла):\n\n"
+                    + "\n".join(lines)
+                    + "\n\nХочешь переразместить — нажми кнопку."
+                )
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="♻️ Переразместить", callback_data=f"repeat_cargo_{cargos[0].id}")],
+                    [InlineKeyboardButton(text="📋 Мои грузы", callback_data="my_cargos")],
+                ])
+                await bot.send_message(owner_id, text, reply_markup=kb)
+            except Exception as exc:
+                logger.debug("notify archive: %s %s", owner_id, exc)
 
 
 async def push_notifications_job():

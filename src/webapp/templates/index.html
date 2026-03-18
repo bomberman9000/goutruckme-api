@@ -96,6 +96,20 @@
             margin-bottom: 10px;
         }
         @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+        #map-container { width: 100%; height: calc(100vh - 130px); position: relative; }
+        #ymap { width: 100%; height: 100%; }
+        .map-legend {
+            position: absolute; bottom: 12px; left: 12px; z-index: 100;
+            background: rgba(0,0,0,0.7); color: #fff;
+            border-radius: 10px; padding: 8px 12px;
+            font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap;
+        }
+        .map-legend span { display: flex; align-items: center; gap: 4px; }
+        .ldot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .ldot.cargo  { background: #f97316; }
+        .ldot.tfree  { background: #22c55e; }
+        .ldot.tbusy  { background: #ef4444; }
+
     </style>
 </head>
 <body>
@@ -109,6 +123,9 @@
         </div>
         <div class="tab-item" onclick="showScreen('profile')">
             <span class="tab-icon">👤</span>Профиль
+        </div>
+        <div class="tab-item" onclick="showScreen('map')">
+            <span class="tab-icon">🗺</span>Карта
         </div>
     </div>
 
@@ -173,6 +190,19 @@
         </div>
     </div>
 
+
+    <!-- MAP SCREEN -->
+    <div id="screen-map" class="screen">
+        <div id="map-container">
+            <div id="ymap"></div>
+            <div class="map-legend">
+                <span><i class="ldot cargo"></i> Грузы</span>
+                <span><i class="ldot tfree"></i> Свободен</span>
+                <span><i class="ldot tbusy"></i> В работе</span>
+            </div>
+        </div>
+    </div>
+
     </div>
 
 <script>
@@ -197,10 +227,11 @@ function showScreen(name) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById('screen-' + name).classList.add('active');
     document.querySelectorAll('.tab-item').forEach((t, i) => {
-        t.classList.toggle('active', ['list','search','profile'][i] === name);
+        t.classList.toggle('active', ['list','search','profile','map'][i] === name);
     });
     if (name === 'profile') loadProfile();
     if (name === 'list' && document.getElementById('cargo-list').innerHTML === '') loadCargos();
+    if (name === 'map') initMap();
 }
 
 function goBack() {
@@ -485,6 +516,70 @@ async function loadProfile() {
     } catch (e) {
         content.innerHTML = '<div class="tg-hint" style="text-align:center; padding:20px;">Ошибка загрузки</div>';
     }
+}
+
+
+// ── Map ───────────────────────────────────────────────────────────────────────
+let mapInitialized = false;
+
+async function initMap() {
+    if (mapInitialized) return;
+    mapInitialized = true;
+
+    await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU&load=package.full';
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+    });
+
+    ymaps.ready(async () => {
+        const map = new ymaps.Map('ymap', {
+            center: [55.75, 49.0],
+            zoom: 4,
+            controls: ['zoomControl'],
+        });
+
+        const [cargoData, truckData] = await Promise.all([
+            apiFetch('/api/v1/feed?limit=200').catch(() => ({ items: [] })),
+            apiFetch('/api/v1/fleet/vehicles/map').catch(() => ({ items: [] })),
+        ]);
+
+        for (const c of (cargoData.items || [])) {
+            if (c.from_lat == null || c.from_lon == null) continue;
+            map.geoObjects.add(new ymaps.Placemark(
+                [c.from_lat, c.from_lon],
+                {
+                    balloonContentHeader: '📦 Груз',
+                    balloonContentBody:
+                        '<b>' + (c.from_city||'') + ' → ' + (c.to_city||'') + '</b><br>' +
+                        (c.body_type ? '🚚 ' + c.body_type + '<br>' : '') +
+                        (c.weight_t  ? '⚖️ ' + c.weight_t + ' т<br>' : '') +
+                        (c.rate_rub  ? '💰 ' + c.rate_rub.toLocaleString('ru-RU') + ' ₽' : ''),
+                    hintContent: (c.from_city||'') + ' → ' + (c.to_city||''),
+                },
+                { preset: 'islands#orangeDeliveryIcon' }
+            ));
+        }
+
+        for (const v of (truckData.items || [])) {
+            if (v.lat == null || v.lon == null) continue;
+            const free = v.status === 'available';
+            map.geoObjects.add(new ymaps.Placemark(
+                [v.lat, v.lon],
+                {
+                    balloonContentHeader: (free ? '🟢 ' : '🔴 ') + v.location_city,
+                    balloonContentBody:
+                        '<b>' + v.body_type + '</b> · ' + v.capacity_tons + ' т<br>' +
+                        (v.plate_number ? v.plate_number + '<br>' : '') +
+                        (free ? 'Свободен' : 'В работе'),
+                    hintContent: v.location_city + ' · ' + v.body_type,
+                },
+                { preset: free ? 'islands#greenAutoIcon' : 'islands#redAutoIcon' }
+            ));
+        }
+    });
 }
 
 // --- Init ---

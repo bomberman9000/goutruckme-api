@@ -80,7 +80,7 @@ async def start_chat(cb: CallbackQuery, state: FSMContext):
             await cb.answer("❌ Нет доступа", show_alert=True)
             return
 
-        if cargo.status not in (CargoStatus.IN_PROGRESS, CargoStatus.COMPLETED):
+        if cargo.status not in (CargoStatus.ACTIVE, CargoStatus.IN_PROGRESS, CargoStatus.COMPLETED):
             await cb.answer("🔒 Чат доступен после выбора перевозчика", show_alert=True)
             return
 
@@ -120,7 +120,7 @@ async def start_chat_cmd(message: Message, state: FSMContext):
             await message.answer("❌ Нет доступа")
             return
 
-        if cargo.status not in (CargoStatus.IN_PROGRESS, CargoStatus.COMPLETED):
+        if cargo.status not in (CargoStatus.ACTIVE, CargoStatus.IN_PROGRESS, CargoStatus.COMPLETED):
             await message.answer("🔒 Чат доступен после выбора перевозчика")
             return
 
@@ -180,13 +180,19 @@ async def send_chat_message(message: Message, state: FSMContext):
         await session.commit()
 
     try:
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        reply_kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="✏️ Ответить", callback_data=f"reply_{cargo_id}_{message.from_user.id}"),
+        ]])
+        sender_name = message.from_user.full_name or f"ID:{message.from_user.id}"
         await bot.send_message(
             to_user_id,
-            f"💬 <b>Новое сообщение</b> по грузу #{cargo_id}:\n\n"
-            f"{message.text}\n\n"
-            f"Ответить: /chat_{cargo_id}_{message.from_user.id}"
+            f"💬 <b>Сообщение по грузу #{cargo_id}</b>\n"
+            f"От: {sender_name}\n\n"
+            f"{message.text}",
+            reply_markup=reply_kb,
         )
-    except:
+    except Exception:
         pass
 
     await state.clear()

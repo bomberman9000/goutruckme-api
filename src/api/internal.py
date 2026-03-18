@@ -15,6 +15,15 @@ from src.core.models import Cargo, CargoPaymentStatus, CargoStatus, RouteSubscri
 from src.core.schemas.sync import BotInternalEvent, InternalNotifyUserRequest, SharedSyncEvent
 
 
+def _cargo_bot_link(cargo_id: int) -> str:
+    """Deeplink на карточку груза в боте."""
+    username = (settings.bot_username or "").lstrip("@").strip()
+    if username:
+        return f"https://t.me/{username}?start=cargo_{cargo_id}"
+    return ""
+
+
+
 router = APIRouter(tags=["internal"])
 
 
@@ -34,6 +43,33 @@ def _require_internal_token(x_internal_token: str | None) -> None:
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
+
+def _build_cargo_notify_kb(
+    cargo_id: int | None,
+    external_url: str | None,
+) -> InlineKeyboardMarkup | None:
+    """Кнопки: [Открыть в боте] [Открыть в PWA] [Источник]"""
+    rows: list[list[InlineKeyboardButton]] = []
+
+    if cargo_id:
+        bot_link = _cargo_bot_link(cargo_id)
+        if bot_link:
+            rows.append([InlineKeyboardButton(text="📦 Открыть в боте", url=bot_link)])
+
+        site_url = (settings.gruzpotok_public_url or "").rstrip("/")
+        if site_url:
+            rows.append([InlineKeyboardButton(
+                text="🌐 Открыть на сайте",
+                url=f"{site_url}/?cargo_id={cargo_id}",
+            )])
+
+    if external_url:
+        rows.append([InlineKeyboardButton(text="🔗 Источник", url=external_url)])
+
+    if not rows:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
 def _default_event_message(event: SharedSyncEvent) -> str:
     order = event.order
     vehicle = event.vehicle
@@ -42,8 +78,26 @@ def _default_event_message(event: SharedSyncEvent) -> str:
         return event.message
 
     if event.event_type in {"cargo.created", "order.created"} and order:
-        route = " -> ".join([x for x in [order.from_city, order.to_city] if x])
-        return f"📦 Новый груз #{order.id} на сайте.\nМаршрут: {route or 'не указан'}"
+        route = " → ".join([x for x in [order.from_city, order.to_city] if x])
+        parts = [f"📦 <b>Новый груз #{order.id}</b>"]
+        parts.append(f"📍 {route or 'маршрут не указан'}")
+        details = []
+        if order.cargo_type or order.body_type:
+            details.append(str(order.cargo_type or order.body_type))
+        if order.weight_t and float(order.weight_t) > 0:
+            details.append(f"{order.weight_t} т")
+        if details:
+            parts.append("🚛 " + " | ".join(details))
+        if order.price_rub and int(order.price_rub) > 0:
+            parts.append(f"💰 {int(order.price_rub):,} ₽")
+        if order.load_date:
+            parts.append(f"📅 {order.load_date}")
+        meta = event.metadata or {}
+        phone = str(meta.get("phone") or "").strip()
+        if phone:
+            masked = phone[:-4] + "****" if len(phone) > 4 else "****"
+            parts.append(f"🔒 📞 {masked}")
+        return "\n".join(parts)
 
     if event.event_type in {"vehicle.match_found", "order.match_found"}:
         match_count = event.metadata.get("match_count")
@@ -107,8 +161,6 @@ async def _create_cargo_from_sync_event(event: SharedSyncEvent) -> int | None:
         return None
 
     source_platform = _normalize_source_platform(event)
-    if source_platform == "gruzpotok-api":
-        return None
 
     owner_id = _event_user_id(event) or settings.parser_default_user_id
     if owner_id is None:
@@ -150,6 +202,9 @@ async def _create_cargo_from_sync_event(event: SharedSyncEvent) -> int | None:
             if existing:
                 return int(existing.id)
 
+        raw_phone = str((order.meta or {}).get("phone") or "").strip() or None
+        if not raw_phone and isinstance(event.metadata, dict):
+            raw_phone = str(event.metadata.get("phone") or "").strip() or None
         cargo = Cargo(
             owner_id=int(owner_id),
             from_city=from_city,
@@ -159,6 +214,7 @@ async def _create_cargo_from_sync_event(event: SharedSyncEvent) -> int | None:
             price=price,
             load_date=_parse_load_date(order.load_date),
             comment=(raw_preview or "")[:500] or None,
+            phone=raw_phone,
             external_url=external_url,
             source_platform=source_platform,
             status=CargoStatus.NEW,
@@ -463,20 +519,25 @@ async def internal_sync_data(
                         "location_city": vehicle.location_city,
                     }
 
+    if cargo_id and body.order:
+        body.order.id = str(cargo_id)
     user_id = _event_user_id(body)
     notified = False
     message_id = None
 
     if user_id:
-        notify_payload = InternalNotifyUserRequest(
-            user_id=user_id,
-            message=_default_event_message(body),
-            action_link=body.action_link,
-        )
+        msg_text = _default_event_message(body)
+        kb = _build_cargo_notify_kb(cargo_id=cargo_id, external_url=body.action_link)
         try:
-            result = await _send_user_message(notify_payload)
+            sent = await bot.send_message(
+                user_id,
+                msg_text,
+                parse_mode="HTML",
+                reply_markup=kb,
+                disable_web_page_preview=True,
+            )
             notified = True
-            message_id = result.get("message_id")
+            message_id = sent.message_id
         except Exception as exc:
             logger.warning(
                 "internal.sync_data.notify_failed event_id=%s user_id=%s error=%s",

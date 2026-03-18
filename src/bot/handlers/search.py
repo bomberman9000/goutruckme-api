@@ -6,7 +6,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy import select, or_
 from src.bot.states import SearchCargo, SubscribeRoute
-from src.bot.keyboards import cargos_menu, subscriptions_menu, city_kb, main_menu
+from src.bot.keyboards import cargos_menu, subscriptions_menu, city_kb, main_menu, cancel_kb
 from src.bot.utils import cargo_deeplink
 from src.bot.utils.cities import city_suggest
 from src.core.ai import parse_city, parse_cargo_search
@@ -252,7 +252,7 @@ async def smart_find(message: Message):
         to_city=params.get("to_city"),
         query_text=text,
     )
-    await message.answer(text, reply_markup=cargos_menu())
+    await message.answer(text, reply_markup=search_result_kb(params.get("from_city"), params.get("to_city")))
     await _send_web_open_button(
         message=message,
         user_id=message.from_user.id,
@@ -270,10 +270,10 @@ def _looks_like_city(text: str) -> bool:
 @router.callback_query(F.data == "search_cargo")
 async def start_search(cb: CallbackQuery, state: FSMContext):
     await cb.message.edit_text(
-        "🔍 Найдём груз\n\n"
-        "Откуда? Начни вводить город (например: «самар», «мос», «спб»)"
-        + CANCEL_HINT,
-        reply_markup=city_kb([], "from"),
+        "🔍 <b>Поиск грузов</b>\n\n"
+        "Шаг 1 из 2 — <b>Откуда?</b>\n\n"
+        "Начни вводить город (например: «самар», «мос», «спб»)",
+        reply_markup=cancel_kb(),
     )
     await state.set_state(SearchCargo.from_city)
     await cb.answer()
@@ -294,8 +294,9 @@ async def search_from(message: Message, state: FSMContext):
     await state.update_data(from_city=city)
     await message.answer(
         f"✅ Откуда: <b>{city}</b>\n\n"
-        "Куда? (или 'любой')\n\n"
-        "<i>Отмена — напиши 'отмена'</i>"
+        "Шаг 2 из 2 — <b>Куда?</b>\n\n"
+        "Введи город назначения (или напиши <i>«любой»</i>):",
+        reply_markup=cancel_kb(),
     )
     await state.set_state(SearchCargo.to_city)
 
@@ -321,9 +322,8 @@ async def search_from_select(cb: CallbackQuery, state: FSMContext):
     await state.set_state(SearchCargo.to_city)
     await cb.message.edit_text(
         f"✅ Выбрано: {city}\n\n"
-        "Куда доставить? Начни вводить город (например: «самар», «мос», «спб»)"
-        + CANCEL_HINT,
-        reply_markup=city_kb([], "to"),
+        "Шаг 2 из 2 — <b>Куда?</b>\n\nВведи город назначения (или напиши <i>«любой»</i>):",
+        reply_markup=cancel_kb(),
     )
     await cb.answer()
 
@@ -370,7 +370,11 @@ async def do_search(message: Message, state: FSMContext):
             to_city=to_city,
             query_text=f"{from_city or ''}->{to_city or ''}",
         )
-        await message.answer("📭 Ничего не нашли. Попробуй другие параметры.", reply_markup=cargos_menu())
+        b_menu = __import__('aiogram.utils.keyboard', fromlist=['InlineKeyboardBuilder']).InlineKeyboardBuilder()
+        from aiogram.types import InlineKeyboardButton as _IKB
+        b_menu.row(_IKB(text="🔍 Новый поиск", callback_data="search_cargo"))
+        b_menu.row(_IKB(text="◀️ Меню", callback_data="menu"))
+        await message.answer("📭 Ничего не нашли. Попробуй другие параметры.", reply_markup=b_menu.as_markup())
         await _send_web_open_button(
             message=message,
             user_id=message.from_user.id,
@@ -390,7 +394,7 @@ async def do_search(message: Message, state: FSMContext):
         to_city=to_city,
         query_text=f"{from_city or ''}->{to_city or ''}",
     )
-    await message.answer(text, reply_markup=cargos_menu())
+    await message.answer(text, reply_markup=search_result_kb(from_city, to_city))
     await _send_web_open_button(
         message=message,
         user_id=message.from_user.id,
@@ -404,6 +408,49 @@ async def subscriptions_handler(cb: CallbackQuery):
     except TelegramBadRequest:
         pass
     await cb.answer()
+
+
+@router.callback_query(F.data.startswith("qsub:"))
+async def quick_subscribe(cb: CallbackQuery):
+    """1-tap subscribe right from search results."""
+    payload = cb.data[5:]
+    parts = payload.split("|", 1)
+    from_city = parts[0].strip() or None
+    to_city = parts[1].strip() if len(parts) > 1 else None
+
+    async with async_session() as session:
+        existing = await session.scalar(
+            select(RouteSubscription).where(
+                RouteSubscription.user_id == cb.from_user.id,
+                RouteSubscription.from_city == from_city,
+                RouteSubscription.to_city == to_city,
+                RouteSubscription.is_active.is_(True),
+            )
+        )
+        if existing:
+            await cb.answer("Уже подписан на этот маршрут 👍", show_alert=False)
+            return
+        session.add(RouteSubscription(
+            user_id=cb.from_user.id,
+            from_city=from_city,
+            to_city=to_city,
+        ))
+        await session.commit()
+
+    route = f"{from_city or '?'} → {to_city or '?'}"
+    await cb.answer(f"✅ Подписан: {route}", show_alert=False)
+    try:
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton as _IKB
+        await cb.message.edit_reply_markup(
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [_IKB(text=f"🔔 Подписан: {route}", callback_data="my_subscriptions")],
+                [_IKB(text="🔍 Новый поиск", callback_data="search_cargo")],
+                [_IKB(text="◀️ Меню", callback_data="menu")],
+            ])
+        )
+    except Exception:
+        pass
+
 
 @router.callback_query(F.data == "add_subscription")
 async def add_subscription(cb: CallbackQuery, state: FSMContext):

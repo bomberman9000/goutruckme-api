@@ -64,10 +64,21 @@ async def collect_matching_available_vehicle_user_ids(session, cargo: Cargo) -> 
     return matches
 
 
+def _mask_phone(phone: str) -> str:
+    """Скрывает последние 4 цифры: +7 900 *** **67 → +7 900 *** **XX"""
+    digits = [c for c in phone if c.isdigit()]
+    if len(digits) < 5:
+        return "📞 Скрыт"
+    masked = phone[:-4] + "XXXX"
+    return masked
+
+
 def _build_cargo_notification_text(
     cargo: Cargo,
     owner_company: CompanyDetails | None,
     owner: User | None,
+    *,
+    show_phone: bool = False,
 ) -> str:
     text = "🔔 <b>Новый груз по вашему маршруту!</b>\n\n"
     text += f"📍 {cargo.from_city} → {cargo.to_city}\n"
@@ -85,6 +96,14 @@ def _build_cargo_notification_text(
         text += f"\n🏢 {name} | {stars} ({rating}/10)\n"
     elif owner:
         text += f"\n👤 {owner.full_name}\n"
+
+    phone = cargo.phone or (owner.phone if owner else None)
+    if phone:
+        if show_phone:
+            text += f"\n📞 {phone}"
+        else:
+            text += f"\n📞 {_mask_phone(phone)}"
+            text += "  🔒 <i>Откройте подпиской</i>"
     return text
 
 
@@ -100,14 +119,30 @@ async def dispatch_cargo_notification(cargo: Cargo, user_ids: list[int]) -> int:
             select(CompanyDetails).where(CompanyDetails.user_id == cargo.owner_id)
         )
         owner = await session.scalar(select(User).where(User.id == cargo.owner_id))
+        users = (
+            await session.execute(select(User).where(User.id.in_(user_ids)))
+        ).scalars().all()
+    users_map = {u.id: u for u in users}
 
-    text = _build_cargo_notification_text(cargo, owner_company, owner)
-    kb = notification_kb(cargo.id)
+    has_phone = bool(cargo.phone or (owner and owner.phone))
 
     sent = 0
     for user_id in user_ids:
         try:
-            await bot.send_message(user_id, text, reply_markup=kb)
+            recipient = users_map.get(user_id)
+            is_premium = bool(
+                recipient
+                and recipient.is_premium
+                and (
+                    recipient.premium_until is None
+                    or recipient.premium_until >= datetime.utcnow()
+                )
+            )
+            text = _build_cargo_notification_text(
+                cargo, owner_company, owner, show_phone=is_premium or not has_phone
+            )
+            kb = notification_kb(cargo.id, is_premium=is_premium, has_phone=has_phone)
+            await bot.send_message(user_id, text, reply_markup=kb, parse_mode="HTML")
             sent += 1
         except Exception:
             pass

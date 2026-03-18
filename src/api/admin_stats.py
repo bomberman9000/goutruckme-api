@@ -26,6 +26,7 @@ class PlatformStats(BaseModel):
     synced_events: int = 0
     spam_filtered: int = 0
     hot_deals: int = 0
+    rejected_incomplete: int = 0
     unique_phones: int = 0
     unique_routes: int = 0
     total_users: int = 0
@@ -82,6 +83,19 @@ async def get_admin_stats():
             select(func.count()).select_from(ParserIngestEvent)
             .where(ParserIngestEvent.is_hot_deal.is_(True))
         ) or 0
+        rejected_incomplete = await session.scalar(
+            select(func.count()).select_from(ParserIngestEvent)
+            .where(
+                ParserIngestEvent.status == "ignored",
+                ParserIngestEvent.error.in_(
+                    (
+                        "missing_weight_or_volume",
+                        "missing_contact",
+                        "missing_weight_or_volume_and_contact",
+                    )
+                ),
+            )
+        ) or 0
         dupes = await session.scalar(
             select(func.count()).select_from(ParserIngestEvent)
             .where(ParserIngestEvent.status == "duplicate")
@@ -137,7 +151,8 @@ async def get_admin_stats():
     return AdminDashboardResponse(
         stats=PlatformStats(
             total_events=total, synced_events=synced, spam_filtered=spam,
-            hot_deals=hot, unique_phones=phones, unique_routes=routes,
+            hot_deals=hot, rejected_incomplete=rejected_incomplete,
+            unique_phones=phones, unique_routes=routes,
             total_users=users, total_vehicles=vehicles_total,
             available_vehicles=vehicles_avail, total_favorites=favs,
             total_complaints=complaints, blacklisted_phones=blacklisted,

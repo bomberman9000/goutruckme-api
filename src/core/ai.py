@@ -33,6 +33,16 @@ _CARGO_TYPE_HINTS: tuple[tuple[str, tuple[str, ...], str], ...] = (
     ("Стройматериалы", ("строймат", "кирпич", "цемент", "плитка"), "тент"),
 )
 
+
+def _normalize_free_text_boundaries(text: str) -> str:
+    text = re.sub(
+        r"([A-Za-zА-Яа-яЁё]{3,})(\d+\s*(?:кг|kg|т\b|t\b|тн\b|тонн(?:а|ы)?))",
+        r"\1 \2",
+        text,
+        flags=re.I,
+    )
+    return re.sub(r"\s+", " ", text).strip()
+
 CITY_ALIASES = {
     "мск": "Москва", "москва": "Москва",
     "спб": "Санкт-Петербург", "питер": "Санкт-Петербург", "петербург": "Санкт-Петербург",
@@ -51,6 +61,8 @@ CITY_ALIASES = {
     "челябинск": "Челябинск", "челяба": "Челябинск",
     "омск": "Омск",
     "тюмень": "Тюмень",
+    "пенза": "Пенза",
+    "астрахань": "Астрахань", "астрахан": "Астрахань",
 }
 
 async def parse_city(text: str) -> str | None:
@@ -251,7 +263,7 @@ async def parse_cargo_nlp(text: str) -> dict | None:
         body_type, load_date?, load_time?, is_urgent
       }
     """
-    raw_text = (text or "").strip()
+    raw_text = _normalize_free_text_boundaries((text or "").strip())
     if not raw_text:
         return None
     text_lower = raw_text.lower()
@@ -306,6 +318,38 @@ async def parse_cargo_nlp(text: str) -> dict | None:
     if weight is None and volume_m3 is None:
         return None
 
+    result: dict = {
+        "cargo_type": cargo_type,
+        "body_type": body_type,
+        "is_urgent": bool(re.search(r"\bсрочно?\b", text_lower)),
+    }
+    if from_city:
+        result["from_city"] = from_city
+    if to_city:
+        result["to_city"] = to_city
+    if weight is not None:
+        result["weight"] = weight
+    if volume_m3:
+        result["volume_m3"] = volume_m3
+    if price:
+        result["price"] = price
+    if load_date:
+        result["load_date"] = load_date
+    if load_time:
+        result["load_time"] = load_time
+
+    fast_offer_hints = (
+        "завтра", "послезавтра", "сегодня", "тнп", "паллет", "паллеты", "короб",
+        "доски", "металл", "кирпич", "цемент", "ставка", "нал", "безнал", "₽", "руб",
+    )
+    has_fast_path = bool(
+        (weight is not None or volume_m3 is not None)
+        and (from_city or to_city)
+        and (load_date or load_time or price is not None or any(hint in text_lower for hint in fast_offer_hints))
+    )
+    if has_fast_path:
+        return result
+
     if client:
         try:
             response = client.chat.completions.create(
@@ -345,7 +389,7 @@ async def parse_cargo_nlp(text: str) -> dict | None:
         except Exception as exc:
             logger.warning("parse_cargo_nlp AI error: %s", exc)
 
-    result: dict = {
+    result = {
         "cargo_type": cargo_type,
         "body_type": body_type,
         "is_urgent": bool(re.search(r"\bсрочно?\b", text_lower)),
@@ -1055,3 +1099,20 @@ async def chat_response(user_message: str, context: str = "") -> str:
     except Exception as e:
         logger.error(f"AI chat error: {e}")
         return "Произошла ошибка. Попробуйте позже."
+
+async def transcribe_voice(file_bytes: bytes, mime: str = "audio/ogg") -> str | None:
+    """Транскрибация голосового через Groq Whisper."""
+    if not client:
+        return None
+    import io
+    try:
+        transcription = client.audio.transcriptions.create(
+            file=("voice.ogg", io.BytesIO(file_bytes), mime),
+            model="whisper-large-v3-turbo",
+            language="ru",
+            response_format="text",
+        )
+        return transcription.strip() if transcription else None
+    except Exception as exc:
+        logger.warning("transcribe_voice error: %s", exc)
+        return None

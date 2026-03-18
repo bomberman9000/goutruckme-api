@@ -251,6 +251,7 @@ class BotWatchdog:
         except Exception:
             results["checks"]["parser"] = "⚠️ Unable to check"
 
+
         return results
 
     def build_operator_view(self, health: dict) -> dict:
@@ -268,6 +269,7 @@ class BotWatchdog:
             order = {"healthy": 0, "warning": 1, "critical": 2}
             if order[level] > order[severity]:
                 severity = level
+
 
         for name in ("redis", "postgres", "telegram"):
             status = str(checks.get(name, ""))
@@ -471,6 +473,7 @@ async def watchdog_loop():
                     "Проверь /admin/manual-review и /admin/parser",
                     alert_key="manual_review_backlog",
                 )
+
 
         except Exception as e:
             logger.error("Watchdog loop error: %s", e)

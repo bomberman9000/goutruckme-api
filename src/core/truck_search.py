@@ -102,14 +102,20 @@ def looks_like_truck_search_text(text: str | None) -> bool:
     t = normalize_truck_text(text)
     if not t or t.startswith("/"):
         return False
+    has_search_verb = any(token in t for token in ("ищу", "нуж", "подбер"))
+    has_truck_word = any(word in t for word in _TRUCK_WORDS)
     if any(hint in t for hint in _TRUCK_SEARCH_HINTS):
         return True
-    if "ищу" in t and any(word in t for word in _TRUCK_WORDS):
+    if "ищу" in t and has_truck_word:
         return True
-    if ("нуж" in t or "подбер" in t) and any(word in t for word in _TRUCK_WORDS):
+    if ("нуж" in t or "подбер" in t) and has_truck_word:
         return True
     city_hits = _extract_city_hits(t)
-    if len(city_hits) >= 2 and (parse_tonnage_hint(t) is not None or parse_truck_type(t) is not None):
+    if (
+        len(city_hits) >= 2
+        and (parse_tonnage_hint(t) is not None or parse_truck_type(t) is not None)
+        and (has_search_verb or has_truck_word)
+    ):
         return True
     return False
 

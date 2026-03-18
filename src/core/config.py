@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379"
     database_url: str
     admin_id: int | None = None
+    admin_chat_id: int | None = None
     debug: bool = False
 
     # Admin panel
@@ -120,6 +121,7 @@ class Settings(BaseSettings):
     parser_rate_recheck_with_llm: bool = False
 
     # Parser scoring
+    parser_russia_only: bool = False
     parser_score_min_trust: int = 40
     parser_scoring_enable_ai: bool = False
     parser_scoring_ai_model: str = ""
@@ -131,6 +133,7 @@ class Settings(BaseSettings):
     premium_stars_7d: int = 700
     premium_stars_30d: int = 2400
     truck_contact_unlock_stars: int = 190
+    cargo_contact_unlock_stars: int = 99
     referral_reward_days: int = 7
     referral_invited_reward_days: int = 3
     referral_ambassador_threshold: int = 10

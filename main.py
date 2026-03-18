@@ -111,6 +111,12 @@ async def lifespan(app: FastAPI):
     dp.include_router(reminder_router)
     dp.include_router(payments_router)
     dp.include_router(referral_router)
+    from src.bot.handlers.moderator import router as moderator_router
+    dp.include_router(moderator_router)  # group auto-moderation
+    from src.bot.handlers.add_truck import router as add_truck_router
+    dp.include_router(add_truck_router)
+    from src.bot.handlers.ai_nlu import router as ai_nlu_router
+    dp.include_router(ai_nlu_router)  # LAST — catch-all NLU
 
     polling_task = None
     if BOT_POLLING_ENABLED:
@@ -158,6 +164,7 @@ from src.api.feed import router as feed_router
 from src.api.antifraud import router as antifraud_api_router
 from src.api.antifraud_admin import router as antifraud_admin_api_router
 from src.api.internal import router as internal_api_router
+from src.api.live_tracking import router as live_tracking_router
 from src.api.export import router as export_router
 from src.api.analytics import router as analytics_router
 from src.api.ws_feed import router as ws_feed_router
@@ -202,6 +209,7 @@ app.include_router(match_router)
 app.include_router(antifraud_api_router)
 app.include_router(antifraud_admin_api_router)
 app.include_router(internal_api_router)
+app.include_router(live_tracking_router)
 
 
 @app.get("/health")

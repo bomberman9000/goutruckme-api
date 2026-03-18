@@ -6,6 +6,7 @@ import {
   createEscrow,
   createSubscription,
   createManualCargo,
+  deleteVehicle,
   deleteSubscription,
   fetchFavorites,
   fetchMyCargos,
@@ -490,6 +491,7 @@ export function App() {
     capacityTons: number;
     locationCity?: string;
     plateNumber?: string;
+    trailerNumber?: string;
     markAvailable: boolean;
   }) {
     setAddingVehicle(true);
@@ -501,6 +503,7 @@ export function App() {
         payload.capacityTons,
         payload.locationCity,
         payload.plateNumber,
+        payload.trailerNumber,
       );
 
       if (payload.markAvailable && payload.locationCity) {
@@ -519,7 +522,7 @@ export function App() {
           payload.markAvailable && payload.locationCity
             ? "Проверь блок “🎯 Совпадения” — подбор уже выполнен."
             : "Если машина готова к рейсу, отметь её как свободную.",
-          "Открой вкладку “🚛” и проверь подходящие грузы.",
+          "Открой вкладку “🚛 Мой парк” и проверь подходящие грузы.",
           "Если маршрутов мало, включи подписки на нужные направления.",
         ],
         "success",
@@ -549,6 +552,36 @@ export function App() {
       await loadProfileSummary();
     } catch (err) {
       setMyCargosError(err instanceof Error ? err.message : "Не удалось загрузить совпадения");
+    }
+  }
+
+  async function handleDeleteVehicle(vehicleId: number) {
+    if (!window.confirm("Удалить машину из парка?")) {
+      return;
+    }
+    try {
+      setFleetError(null);
+      await deleteVehicle(vehicleId);
+      setVehicles((prev) => prev.filter((item) => item.id !== vehicleId));
+      setVehicleMatchMap((prev) => {
+        const next = { ...prev };
+        delete next[vehicleId];
+        return next;
+      });
+      if (matchResult?.vehicle_id === vehicleId) {
+        setMatchResult(null);
+      }
+      await loadProfileSummary();
+      showActionGuide(
+        "🗑 Машина удалена",
+        [
+          "Карточка убрана из раздела “🚛 Мой парк”.",
+          "При необходимости добавь машину заново с актуальными данными.",
+        ],
+        "info",
+      );
+    } catch (err) {
+      setFleetError(err instanceof Error ? err.message : "Не удалось удалить машину");
     }
   }
 
@@ -1081,12 +1114,13 @@ export function App() {
 
   function renderCard(item: FeedItem) {
     const isHot = item.is_hot_deal;
+    const cargoNumber = item.id ?? item.stream_entry_id?.split("-")[0] ?? "—";
     return (
       <article className={`cargo-card${isHot ? " hot" : ""}${item.verified_payment ? " verified" : ""}`} key={item.id}>
         <div className="card-top">
           <div className="card-route">
             {isHot && <span className="hot-badge">🔥</span>}
-            <span className="route-text">{item.from_city ?? "?"} → {item.to_city ?? "?"}</span>
+            <span className="route-text">№{cargoNumber} · {item.from_city ?? "?"} → {item.to_city ?? "?"}</span>
             {item.distance_km != null && <span className="distance">{item.distance_km} км</span>}
           </div>
           <div className="card-freshness">{item.freshness}</div>
@@ -1477,7 +1511,7 @@ export function App() {
                 <div className={`my-cargo-card${cargo.is_published ? " published" : ""}`} key={cargo.id}>
                   <div className="my-cargo-head">
                     <div>
-                      <div className="my-cargo-route">{cargo.from_city} → {cargo.to_city}</div>
+                      <div className="my-cargo-route">№{cargo.id} · {cargo.from_city} → {cargo.to_city}</div>
                       <div className="my-cargo-meta">
                         {cargo.body_type} • {cargo.weight}т{cargo.volume ? ` • ${cargo.volume}м³` : ""} • {cargo.price.toLocaleString("ru")} ₽
                       </div>
@@ -1797,6 +1831,85 @@ export function App() {
               ))}
             </div>
           )}
+        </section>
+
+        {/* Тарифы */}
+        <section className="wallet-history">
+          <div className="fleet-header">
+            <h2>⭐ Тарифы ГрузПоток</h2>
+          </div>
+          <div className="wallet-stat-card" style={{padding: "16px"}}>
+            {profileSummary?.user.is_premium ? (
+              <>
+                <div className="cabinet-title">Ваш план</div>
+                <div className="cabinet-user" style={{color: "#2563eb", fontWeight: 700}}>⭐ Pro</div>
+                {profileSummary.user.premium_until && (
+                  <div className="cabinet-meta">
+                    Активен до {new Date(profileSummary.user.premium_until).toLocaleDateString("ru")}
+                  </div>
+                )}
+                <div className="cabinet-meta" style={{marginTop: 8}}>
+                  Приоритет в поиске · AI-подбор · Светофор Pro
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="cabinet-title">Текущий план</div>
+                <div className="cabinet-user">🆓 Free</div>
+                <div className="cabinet-meta">До 5 грузов · До 3 машин · Базовый поиск</div>
+                <div style={{marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap"}}>
+                  <div style={{flex: 1, minWidth: 120, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "10px 12px"}}>
+                    <div style={{fontWeight: 700, color: "#1d4ed8"}}>⭐ Pro</div>
+                    <div style={{fontSize: "1.1rem", fontWeight: 800, color: "#2563eb"}}>990 ₽/мес</div>
+                    <div style={{fontSize: ".75rem", color: "#4b5563", marginTop: 4}}>
+                      Неограниченные грузы · AI-подбор · Приоритет · Светофор Pro
+                    </div>
+                  </div>
+                  <div style={{flex: 1, minWidth: 120, background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 10, padding: "10px 12px"}}>
+                    <div style={{fontWeight: 700, color: "#6d28d9"}}>💼 Business</div>
+                    <div style={{fontSize: "1.1rem", fontWeight: 800, color: "#7c3aed"}}>2 990 ₽/мес</div>
+                    <div style={{fontSize: ".75rem", color: "#4b5563", marginTop: 4}}>
+                      Всё из Pro · API · Выделенная поддержка
+                    </div>
+                  </div>
+                </div>
+                <button
+                  className="action-btn primary"
+                  style={{marginTop: 12, width: "100%"}}
+                  onClick={() => {
+                    const tg = (window as Window & {Telegram?: {WebApp?: {openLink?: (u: string) => void}}}).Telegram?.WebApp;
+                    const url = "https://miniapp.144.31.64.130.sslip.io/#billing";
+                    if (tg?.openLink) tg.openLink(url); else window.open(url, "_blank");
+                  }}
+                >
+                  Подключить Pro →
+                </button>
+              </>
+            )}
+          </div>
+        </section>
+
+        {/* Реквизиты */}
+        <section className="wallet-history">
+          <div className="fleet-header"><h2>📄 О компании</h2></div>
+          <div className="wallet-stat-card" style={{padding: "16px"}}>
+            <div className="cabinet-title">Оператор платформы</div>
+            <div className="cabinet-user">ООО «ИНТЕЛЛЕКТПРО»</div>
+            <div className="cabinet-meta">ИНН 6318240460 · КПП 631801001</div>
+            <div className="cabinet-meta">Банк Точка · р/с 40702810720000287623</div>
+            <div className="cabinet-meta">БИК 044525104 · к/с 30101810745374525104</div>
+            <button
+              className="action-btn"
+              style={{marginTop: 10}}
+              onClick={() => {
+                const tg = (window as Window & {Telegram?: {WebApp?: {openLink?: (u: string) => void}}}).Telegram?.WebApp;
+                const url = "https://miniapp.144.31.64.130.sslip.io/requisites";
+                if (tg?.openLink) tg.openLink(url); else window.open(url, "_blank");
+              }}
+            >
+              Полные реквизиты →
+            </button>
+          </div>
         </section>
       </div>
     );
@@ -2141,8 +2254,22 @@ export function App() {
                 </div>
 
                 {truckSearchResult.items.length === 0 ? (
-                  <div className="muted" style={{ textAlign: "center", padding: "12px 0" }}>
-                    По этому запросу машины не найдены. Попробуйте смягчить маршрут или убрать тип кузова.
+                  <div className="truck-search-empty">
+                    <div className="muted" style={{ textAlign: "center", padding: "12px 0" }}>
+                      По этому запросу машины не найдены. Попробуйте смягчить маршрут или убрать тип кузова.
+                    </div>
+                    <div className="truck-form-actions" style={{ justifyContent: "center" }}>
+                      <button
+                        className="action-btn primary"
+                        type="button"
+                        onClick={() => {
+                          setShowAddCargo(true);
+                          setTab("cargos");
+                        }}
+                      >
+                        📦 Разместить груз
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="vehicle-list">
@@ -2183,7 +2310,7 @@ export function App() {
           </section>
 
           <div className="fleet-header">
-            <h2>🚛 Мой флот</h2>
+            <h2>🚛 Мой парк</h2>
             <button
               className="action-btn primary"
               onClick={() => {
@@ -2218,6 +2345,7 @@ export function App() {
                   <div className="vehicle-info">
                     <strong>{v.body_type} • {v.capacity_tons}т</strong>
                     {v.plate_number && <span className="plate">{v.plate_number}</span>}
+                    {v.trailer_number && <span className="muted">🧷 Прицеп: {v.trailer_number}</span>}
                     {v.location_city && <span className="muted">📍 {v.location_city}</span>}
                     {v.sts_verified && <span className="verified">✅ СТС</span>}
                   </div>
@@ -2228,16 +2356,24 @@ export function App() {
                         <button className="action-btn" onClick={() => void showVehicleMatches(v.id)}>
                           🎯 Совпадения
                         </button>
+                        <button className="action-btn" onClick={() => void handleDeleteVehicle(v.id)}>
+                          🗑 Удалить
+                        </button>
                       </>
                     ) : (
-                      <button className="action-btn primary" onClick={async () => {
-                        const city = window.prompt("Город, где свободна машина:", v.location_city || "");
-                        if (!city) return;
-                        const result = await setVehicleAvailable(v.id, city);
-                        setMatchResult(result);
-                        setVehicleMatchMap((prev) => ({ ...prev, [v.id]: result }));
-                        setVehicles(await fetchVehicles());
-                      }}>Я свободен!</button>
+                      <>
+                        <button className="action-btn primary" onClick={async () => {
+                          const city = window.prompt("Город, где свободна машина:", v.location_city || "");
+                          if (!city) return;
+                          const result = await setVehicleAvailable(v.id, city);
+                          setMatchResult(result);
+                          setVehicleMatchMap((prev) => ({ ...prev, [v.id]: result }));
+                          setVehicles(await fetchVehicles());
+                        }}>Я свободен!</button>
+                        <button className="action-btn" onClick={() => void handleDeleteVehicle(v.id)}>
+                          🗑 Удалить
+                        </button>
+                      </>
                     )}
                   </div>
                   {renderVehicleMatchCards(v.id)}

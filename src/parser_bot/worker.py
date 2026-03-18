@@ -50,6 +50,13 @@ _CARGO_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_EMAIL_RE = re.compile(r"\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[A-Za-z]{2,}\b")
+_VOLUME_RE = re.compile(
+    r"\b\d{1,4}(?:[.,]\d+)?\s*(?:м3|м³|m3|куб(?:а|ов|ик)?|куб\.)\b",
+    re.IGNORECASE,
+)
+
+
 
 def _join_url(base_url: str, path: str) -> str:
     base = (base_url or "").rstrip("/")
@@ -361,6 +368,50 @@ def _has_min_signal(parsed: ParsedCargo) -> bool:
     return bool(_CARGO_INTENT_RE.search(parsed.raw_text or ""))
 
 
+def _extract_email(text: str | None) -> str | None:
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    match = _EMAIL_RE.search(raw)
+    if not match:
+        return None
+    return match.group(0).strip().lower()
+
+
+def _has_weight_or_volume(parsed: ParsedCargo) -> bool:
+    if parsed.weight_t and parsed.weight_t > 0:
+        return True
+    if parsed.dimensions:
+        return True
+    return bool(_VOLUME_RE.search(parsed.raw_text or ""))
+
+
+def _has_contact_signal(parsed: ParsedCargo) -> bool:
+    return bool(parsed.phone)
+
+
+def _has_cargo_type(parsed: ParsedCargo) -> bool:
+    return bool(parsed.body_type or parsed.cargo_description)
+
+
+def _required_fields_review_reason(parsed: ParsedCargo) -> str | None:
+    has_measurement = _has_weight_or_volume(parsed)
+    has_contact     = _has_contact_signal(parsed)
+    has_type        = _has_cargo_type(parsed)
+
+    reasons = []
+    if not has_contact:
+        reasons.append("missing_phone")
+    if not has_measurement:
+        reasons.append("missing_weight_or_volume")
+    if not has_type:
+        reasons.append("missing_cargo_type")
+
+    if not reasons:
+        return None
+    return ",".join(reasons)
+
+
 def _is_unrealistic_rate(parsed: ParsedCargo) -> bool:
     rate = parsed.rate_rub
     if not isinstance(rate, int) or rate <= 0:
@@ -535,7 +586,7 @@ async def _save_ingest_event(
         to_lat=to_coords[0] if to_coords else None,
         to_lon=to_coords[1] if to_coords else None,
         trust_score=trust.score if trust else None,
-        trust_verdict=trust.verdict if trust else None,
+        trust_verdict=(trust.verdict if trust else ("yellow" if status == "synced" else None)),
         trust_comment=trust.comment if trust else None,
         provider=trust.provider if trust else None,
         is_spam=is_spam,
@@ -684,7 +735,7 @@ async def _process_message(
     *,
     stream: RedisLogisticsStream,
     http_client: httpx.AsyncClient,
-    sync_url: str,
+    sync_targets: list[str],
     keywords: list[str],
     group_name: str,
     dedupe_ttl: int,
@@ -820,6 +871,27 @@ async def _process_message(
         parsed.to_lon = route_geo.destination.lon
         parsed.route_distance_km = route_geo.distance_km
 
+        # Фильтр: хотя бы один город должен быть в России
+        if getattr(settings, 'parser_russia_only', False):
+            from src.core.geo import RUSSIA_CITIES, _normalize_city_key
+            from_ru = _normalize_city_key(parsed.from_city or "") in RUSSIA_CITIES
+            to_ru = _normalize_city_key(parsed.to_city or '') in RUSSIA_CITIES
+            if not from_ru and not to_ru:
+                await _save_ingest_event(
+                    message=message,
+                    parsed=parsed,
+                    trust=None,
+                    is_spam=False,
+                    status='ignored',
+                    parse_method=parse_method,
+                    error='non_russia_route',
+                )
+                logger.info(
+                    'ignored non-russia route id=%s route=%s->%s',
+                    message.entry_id, parsed.from_city, parsed.to_city,
+                )
+                return
+
         if not _has_min_signal(parsed):
             await _save_ingest_event(
                 message=message,
@@ -828,6 +900,31 @@ async def _process_message(
                 is_spam=False,
                 status="ignored",
                 parse_method=parse_method,
+            )
+            return
+
+        required_fields_reason = _required_fields_review_reason(parsed)
+        if required_fields_reason:
+            await _save_ingest_event(
+                message=message,
+                parsed=parsed,
+                trust=None,
+                is_spam=False,
+                status="ignored",
+                parse_method=parse_method,
+                error=required_fields_reason,
+                extra_details={
+                    "has_weight_or_volume": _has_weight_or_volume(parsed),
+                    "has_contact": _has_contact_signal(parsed),
+                    "email": _extract_email(parsed.raw_text),
+                },
+            )
+            logger.info(
+                "ignored incomplete cargo id=%s route=%s->%s reason=%s",
+                message.entry_id,
+                parsed.from_city,
+                parsed.to_city,
+                required_fields_reason,
             )
             return
 
@@ -979,14 +1076,22 @@ async def _process_message(
                 parsed.from_city,
                 parsed.to_city,
                 trust.score if trust else "n/a",
+                ",".join(sync_targets),
             )
             return
 
         sync_payload = _build_sync_payload(parsed, message, trust=trust)
 
         try:
-            sync_result = await _push_to_api(http_client, sync_url, sync_payload)
-            cargo_id = _extract_cargo_id(sync_result)
+            sync_result = None
+            cargo_id = None
+            for target_url in sync_targets:
+                current_result = await _push_to_api(http_client, target_url, sync_payload)
+                if sync_result is None:
+                    sync_result = current_result
+                current_cargo_id = _extract_cargo_id(current_result)
+                if current_cargo_id and not cargo_id:
+                    cargo_id = current_cargo_id
             await _save_ingest_event(
                 message=message,
                 parsed=parsed,
@@ -997,7 +1102,7 @@ async def _process_message(
                 extra_details={"cargo_id": cargo_id} if cargo_id else None,
             )
             logger.info(
-                "synced id=%s route=%s->%s cargo_id=%s inn=%s score=%s",
+                "synced id=%s route=%s->%s cargo_id=%s inn=%s score=%s targets=%s",
                 message.entry_id,
                 parsed.from_city,
                 parsed.to_city,
@@ -1071,7 +1176,11 @@ async def run() -> None:
     max_retries = max(0, int(settings.parser_worker_max_retries))
 
     redis_client, stream = await _connect_stream(block_ms=block_ms, group_name=group_name)
-    sync_url = _join_url(settings.gruzpotok_api_internal_url, settings.gruzpotok_sync_path)
+    sync_targets: list[str] = []
+    for base_url in [settings.tg_bot_internal_url, settings.gruzpotok_api_internal_url]:
+        target = _join_url(base_url, settings.gruzpotok_sync_path)
+        if target and target not in sync_targets:
+            sync_targets.append(target)
     http_client = httpx.AsyncClient(timeout=max(3, int(settings.parser_http_timeout)))
 
     logger.info(
@@ -1109,7 +1218,7 @@ async def run() -> None:
                     await _process_message(
                         stream=stream,
                         http_client=http_client,
-                        sync_url=sync_url,
+                        sync_targets=sync_targets,
                         keywords=keywords,
                         group_name=group_name,
                         dedupe_ttl=dedupe_ttl,

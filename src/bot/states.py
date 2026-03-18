@@ -13,6 +13,7 @@ class CargoForm(StatesGroup):
     load_date = State()
     load_time = State()
     comment = State()
+    photo = State()
     confirm = State()
 
 class CarrierRegister(StatesGroup):
@@ -55,10 +56,12 @@ class EditCargo(StatesGroup):
 
 
 class Onboarding(StatesGroup):
+    business_type = State()
     role = State()
     contact = State()
     legal_type = State()
     inn = State()
+    company_confirm = State()
     company = State()
 
 class LegalVerification(StatesGroup):
@@ -81,3 +84,26 @@ class CargoNLPConfirm(StatesGroup):
 
 class LegalCheck(StatesGroup):
     inn = State()
+
+
+class DriverVerification(StatesGroup):
+    license_photo = State()   # фото прав
+    sts_photo = State()       # фото СТС
+
+
+
+class AddTruckForm(StatesGroup):
+    body_type    = State()   # тип кузова
+    capacity     = State()   # тоннаж
+    from_city    = State()   # откуда
+    routes       = State()   # куда (маршруты)
+    phone        = State()   # телефон для связи
+    confirm      = State()   # подтверждение
+
+
+class AddTruck(StatesGroup):
+    body_type     = State()
+    capacity_tons = State()
+    location_city = State()
+    plate_number  = State()
+    confirm       = State()

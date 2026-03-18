@@ -226,3 +226,46 @@ async def get_score(inn: str | None) -> ScoreResult:
     if settings.parser_scoring_enable_ai:
         return await _ai_adjust_score(base)
     return base
+
+
+async def lookup_company_by_inn(inn: str) -> dict | None:
+    """Возвращает {'name': str, 'ogrn': str|None, 'status': str} или None.
+    
+    Работает только если DADATA_API_TOKEN задан. Иначе возвращает None.
+    Используется в онбординге для автозаполнения названия компании.
+    """
+    token = (settings.dadata_api_token or "").strip()
+    if not token:
+        return None
+
+    headers = {
+        "Authorization": f"Token {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.post(
+                settings.dadata_api_url,
+                headers=headers,
+                json={"query": inn},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception:
+        return None
+
+    suggestions = data.get("suggestions") if isinstance(data, dict) else None
+    if not suggestions:
+        return None
+
+    item = suggestions[0] if isinstance(suggestions, list) else {}
+    item_data = item.get("data") if isinstance(item, dict) else {}
+    state_info = item_data.get("state") if isinstance(item_data, dict) else {}
+    status = (state_info.get("status") or "").upper()
+
+    return {
+        "name": item.get("value") or None,
+        "ogrn": item_data.get("ogrn") or None,
+        "status": status,  # ACTIVE, LIQUIDATING, LIQUIDATED, REORGANIZING
+    }

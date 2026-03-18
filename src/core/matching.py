@@ -48,6 +48,7 @@ async def find_trucks(
     capacity_tons: float | None = None,
     limit: int = 20,
     allow_unknown_capacity: bool = False,
+    allow_lower_capacity: bool = False,
     allow_unknown_type: bool = False,
     allow_unknown_geo: bool = False,
     require_route_match: bool = False,
@@ -60,6 +61,11 @@ async def find_trucks(
 
     if capacity_tons is not None and capacity_tons > 0:
         capacity_filters = [AvailableTruck.capacity_tons >= capacity_tons]
+        if allow_lower_capacity:
+            min_supported_capacity = max(capacity_tons * 0.5, capacity_tons - 10.0)
+            capacity_filters.append(
+                AvailableTruck.capacity_tons.between(min_supported_capacity, capacity_tons)
+            )
         if allow_unknown_capacity:
             capacity_filters.append(AvailableTruck.capacity_tons.is_(None))
         stmt = stmt.where(or_(*capacity_filters))
@@ -91,6 +97,15 @@ async def find_trucks(
 
     stmt = stmt.limit(limit)
     rows = (await session.execute(stmt)).scalars().all()
+    if allow_lower_capacity and capacity_tons is not None and capacity_tons > 0:
+        rows = sorted(
+            rows,
+            key=lambda row: (
+                row.capacity_tons is None,
+                abs((row.capacity_tons or 0.0) - capacity_tons),
+                -float(row.capacity_tons or 0.0),
+            ),
+        )
     return [
         TruckMatch(
             id=row.id,
@@ -221,10 +236,32 @@ async def match_trucks(
     if not candidates:
         candidates = await find_trucks(
             session,
+            from_city=from_city,
+            to_city=to_city,
+            truck_type=truck_type,
+            capacity_tons=capacity_tons,
+            limit=30,
+            allow_lower_capacity=True,
+            allow_unknown_type=True,
+        )
+
+    if not candidates:
+        candidates = await find_trucks(
+            session,
             truck_type=truck_type,
             capacity_tons=capacity_tons,
             limit=30,
             allow_unknown_capacity=True,
+            allow_unknown_type=True,
+        )
+
+    if not candidates:
+        candidates = await find_trucks(
+            session,
+            truck_type=truck_type,
+            capacity_tons=capacity_tons,
+            limit=30,
+            allow_lower_capacity=True,
             allow_unknown_type=True,
         )
 
