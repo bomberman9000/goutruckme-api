@@ -957,7 +957,30 @@ async def estimate_price_smart(
     body_type: str | None = None,
     volume_m3: float | None = None,
 ) -> dict:
-    """Умная оценка цены: сначала рынок, потом расчёт"""
+    """Умная оценка цены: ATI (живой рынок) → справочник → расчёт"""
+    # 1. Пробуем ATI.SU — живые данные с биржи
+    try:
+        from src.services.ati_service import get_route_rate_cached
+        ati = await get_route_rate_cached(from_city, to_city, timeout=8.0)
+        if ati and ati.price_rub:
+            km_info = f"\n• Расстояние: ~{ati.distance_km} км" if ati.distance_km else ""
+            per_km = f"\n• Ставка: ~{ati.price_per_km} ₽/км" if ati.price_per_km else ""
+            rng = ""
+            if ati.raw_prices:
+                rng = f"\n• Диапазон: {min(ati.raw_prices):,} — {max(ati.raw_prices):,} ₽"
+            return {
+                "price": ati.price_rub,
+                "source": "ati.su",
+                "distance": ati.distance_km,
+                "details": (
+                    f"📊 Рынок ATI.SU ({ati.loads_count} грузов)"
+                    f"{km_info}{per_km}{rng}"
+                ),
+            }
+    except Exception as _e:
+        logger.debug("ATI rate skipped in estimate_price_smart: %s", _e)
+
+    # 2. Справочник рыночных цен (база данных)
     market = await get_market_price(from_city, to_city, weight, cargo_type, body_type=body_type)
     if market:
         rate_line = (

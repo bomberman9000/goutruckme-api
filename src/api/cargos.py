@@ -743,10 +743,14 @@ async def get_my_cargos(
     tma_user: TelegramTMAUser = Depends(get_required_tma_user),
 ) -> MyCargoResponse:
     async with async_session() as session:
+        _manual_sources = {"tg-bot", "manual_web", "manual"}
         cargo_rows = (
             await session.execute(
                 select(Cargo)
-                .where(Cargo.owner_id == tma_user.user_id)
+                .where(
+                    Cargo.owner_id == tma_user.user_id,
+                    Cargo.source_platform.in_(_manual_sources),
+                )
                 .order_by(Cargo.created_at.desc())
                 .limit(limit)
             )

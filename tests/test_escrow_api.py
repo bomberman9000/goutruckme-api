@@ -268,3 +268,112 @@ def test_user_can_open_dispute_and_request_refund(monkeypatch):
     refund_payload = json.loads(fake_session.events[-1].payload_json or "{}")
     assert fake_session.events[-1].event_type == "refund_requested"
     assert refund_payload["reason"] == "Нужно вернуть деньги"
+
+
+def test_create_escrow_forbidden_for_wrong_owner(monkeypatch):
+    """Чужой пользователь не может создать эскроу для груза другого owner."""
+    fake_session = _FakeSession()
+    fake_session.cargos[1] = Cargo(
+        id=1, owner_id=555,
+        from_city="Москва", to_city="Казань", cargo_type="тент",
+        weight=10, price=50000,
+        load_date=datetime(2026, 3, 1, tzinfo=UTC),
+        status=CargoStatus.NEW,
+        payment_status=CargoPaymentStatus.UNSECURED,
+    )
+    client = _build_client(fake_session)
+    async def _noop(_): pass
+    monkeypatch.setattr(escrow_api, "clear_cached", _noop)
+
+    resp = client.post("/api/v1/escrow/1/create", headers=_build_tma_header(999), json={})
+    assert resp.status_code == 404
+    assert len(fake_session.deals) == 0
+
+
+def test_create_escrow_returns_existing_if_already_pending(monkeypatch):
+    """Повторный запрос на создание возвращает существующую сделку, не создаёт новую."""
+    fake_session = _FakeSession()
+    fake_session.cargos[1] = Cargo(
+        id=1, owner_id=555,
+        from_city="Москва", to_city="Казань", cargo_type="тент",
+        weight=10, price=80000,
+        load_date=datetime(2026, 3, 1, tzinfo=UTC),
+        status=CargoStatus.NEW,
+        payment_status=CargoPaymentStatus.UNSECURED,
+    )
+    client = _build_client(fake_session)
+    async def _noop(_): pass
+    monkeypatch.setattr(escrow_api, "clear_cached", _noop)
+
+    r1 = client.post("/api/v1/escrow/1/create", headers=_build_tma_header(555), json={})
+    assert r1.status_code == 200
+    r2 = client.post("/api/v1/escrow/1/create", headers=_build_tma_header(555), json={})
+    assert r2.status_code == 200
+    assert len(fake_session.deals) == 1
+    assert r1.json()["escrow_id"] == r2.json()["escrow_id"]
+
+
+def test_release_fails_if_not_delivery_marked(monkeypatch):
+    """Release невозможен если статус не DELIVERY_MARKED."""
+    fake_session = _FakeSession()
+    fake_session.cargos[1] = Cargo(
+        id=1, owner_id=555, carrier_id=777,
+        from_city="Москва", to_city="Казань", cargo_type="тент",
+        weight=10, price=60000,
+        load_date=datetime(2026, 3, 1, tzinfo=UTC),
+        status=CargoStatus.NEW,
+        payment_status=CargoPaymentStatus.UNSECURED,
+    )
+    client = _build_client(fake_session)
+    async def _noop(_): pass
+    monkeypatch.setattr(escrow_api, "clear_cached", _noop)
+
+    client.post("/api/v1/escrow/1/create", headers=_build_tma_header(555), json={})
+    # Не платим, статус PAYMENT_PENDING → release должен вернуть 409
+    resp = client.post("/api/v1/escrow/1/release", headers=_build_tma_header(555))
+    assert resp.status_code == 409
+
+
+def test_fee_calculation_is_correct(monkeypatch):
+    """Комиссия платформы и сумма перевозчика считаются правильно."""
+    fake_session = _FakeSession()
+    fake_session.cargos[1] = Cargo(
+        id=1, owner_id=555, carrier_id=777,
+        from_city="Москва", to_city="Казань", cargo_type="тент",
+        weight=10, price=100000,
+        load_date=datetime(2026, 3, 1, tzinfo=UTC),
+        status=CargoStatus.NEW,
+        payment_status=CargoPaymentStatus.UNSECURED,
+    )
+    client = _build_client(fake_session)
+    async def _noop(_): pass
+    monkeypatch.setattr(escrow_api, "clear_cached", _noop)
+
+    resp = client.post("/api/v1/escrow/1/create", headers=_build_tma_header(555), json={})
+    assert resp.status_code == 200
+    body = resp.json()
+    fee_pct = settings.escrow_platform_fee_percent
+    expected_fee = int(round(100000 * fee_pct / 100))
+    assert body["platform_fee_rub"] == expected_fee
+    assert body["carrier_amount_rub"] == 100000 - expected_fee
+    assert body["platform_fee_rub"] + body["carrier_amount_rub"] == body["amount_rub"]
+
+
+def test_dispute_forbidden_for_third_party(monkeypatch):
+    """Третья сторона не может открыть спор."""
+    fake_session = _FakeSession()
+    fake_session.cargos[1] = Cargo(
+        id=1, owner_id=555, carrier_id=777,
+        from_city="Москва", to_city="Казань", cargo_type="тент",
+        weight=10, price=50000,
+        load_date=datetime(2026, 3, 1, tzinfo=UTC),
+        status=CargoStatus.NEW,
+        payment_status=CargoPaymentStatus.UNSECURED,
+    )
+    client = _build_client(fake_session)
+    async def _noop(_): pass
+    monkeypatch.setattr(escrow_api, "clear_cached", _noop)
+
+    client.post("/api/v1/escrow/1/create", headers=_build_tma_header(555), json={})
+    resp = client.post("/api/v1/escrow/1/dispute", headers=_build_tma_header(999), json={})
+    assert resp.status_code == 403

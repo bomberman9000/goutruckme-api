@@ -66,57 +66,57 @@ async def cmd_errors(message: Message):
 async def admin_stats(message: Message):
     if not is_admin(message.from_user.id):
         return
-    
+
     redis = await get_redis()
     async with async_session() as session:
         users = await session.scalar(select(func.count()).select_from(User))
         cargos = await session.scalar(select(func.count()).select_from(Cargo))
         feedback = await session.scalar(select(func.count()).select_from(Feedback))
-    
+
     messages_count = await redis.get("stats:messages") or 0
     callbacks_count = await redis.get("stats:callbacks") or 0
-    
-    text = f"📊 <b>Статистика</b>\n\n"
+
+    text = "📊 <b>Статистика</b>\n\n"
     text += f"👥 Пользователей: {users}\n"
     text += f"📦 Грузов: {cargos}\n"
     text += f"💬 Сообщений: {messages_count}\n"
     text += f"🔘 Callbacks: {callbacks_count}\n"
     text += f"📝 Отзывов: {feedback}"
-    
+
     await message.answer(text)
 
 @router.message(Command("users"))
 async def admin_users(message: Message):
     if not is_admin(message.from_user.id):
         return
-    
+
     async with async_session() as session:
         result = await session.execute(select(User).limit(20))
         users = result.scalars().all()
-    
+
     text = "👥 <b>Пользователи:</b>\n\n"
     for u in users:
         status = "🚫" if u.is_banned else "✅" if u.is_verified else "👤"
         text += f"{status} {u.id} | {u.full_name[:20]}\n"
-    
+
     await message.answer(text)
 
 @router.message(Command("ban"))
 async def ban_user(message: Message):
     if not is_admin(message.from_user.id):
         return
-    
+
     args = message.text.split()
     if len(args) < 2:
         await message.answer("Использование: /ban USER_ID")
         return
-    
+
     try:
         user_id = int(args[1])
     except:
         await message.answer("❌ Неверный ID")
         return
-    
+
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
@@ -131,18 +131,18 @@ async def ban_user(message: Message):
 async def unban_user(message: Message):
     if not is_admin(message.from_user.id):
         return
-    
+
     args = message.text.split()
     if len(args) < 2:
         await message.answer("Использование: /unban USER_ID")
         return
-    
+
     try:
         user_id = int(args[1])
     except:
         await message.answer("❌ Неверный ID")
         return
-    
+
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
@@ -157,15 +157,15 @@ async def unban_user(message: Message):
 async def broadcast(message: Message):
     if not is_admin(message.from_user.id):
         return
-    
+
     if not message.reply_to_message:
         await message.answer("Ответь на сообщение которое нужно разослать")
         return
-    
+
     async with async_session() as session:
         result = await session.execute(select(User).where(User.is_banned == False))
         users = result.scalars().all()
-    
+
     sent = 0
     for user in users:
         try:
@@ -173,26 +173,26 @@ async def broadcast(message: Message):
             sent += 1
         except:
             pass
-    
+
     await message.answer(f"✅ Отправлено {sent}/{len(users)} пользователям")
 
 @router.message(Command("feedback_list"))
 async def feedback_list(message: Message):
     if not is_admin(message.from_user.id):
         return
-    
+
     async with async_session() as session:
         result = await session.execute(
             select(Feedback).order_by(Feedback.created_at.desc()).limit(10)
         )
         feedbacks = result.scalars().all()
-    
+
     if not feedbacks:
         await message.answer("📭 Нет отзывов")
         return
-    
+
     text = "📝 <b>Последние отзывы:</b>\n\n"
     for fb in feedbacks:
         text += f"👤 {fb.user_id}\n{fb.message[:100]}\n\n"
-    
+
     await message.answer(text)

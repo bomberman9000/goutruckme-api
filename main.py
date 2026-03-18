@@ -1,5 +1,6 @@
 from pathlib import Path
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
@@ -9,6 +10,8 @@ from src.core.logger import logger
 from src.core.redis import get_redis, close_redis
 from src.core.database import init_db
 from src.core.scheduler import setup_scheduler, scheduler
+
+BOT_POLLING_ENABLED = os.getenv("BOT_POLLING_ENABLED", "true").lower() == "true"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -38,7 +41,7 @@ async def lifespan(app: FastAPI):
     from src.core.services.watchdog import watchdog_loop
 
     logger.info("Starting bot...")
-    
+
     await init_db()
     logger.info("Database initialized")
 
@@ -56,7 +59,7 @@ async def lifespan(app: FastAPI):
         await archive_old_cargos_job()
     except Exception as e:
         logger.warning("Archive old cargos failed: %s", e)
-    
+
     redis = await get_redis()
     await redis.ping()
     logger.info("Redis connected")
@@ -69,15 +72,19 @@ async def lifespan(app: FastAPI):
 
     setup_scheduler()
 
+    import logging as _logging
+    _logging.getLogger("aiogram").setLevel(_logging.DEBUG)
+
     async def debug_updates(handler, event, data):
         kind = type(event).__name__
         uid = getattr(event, "message_id", None) or getattr(event, "id", None)
+        print(f"[DEBUG] RAW UPDATE: {kind} (id={uid})", flush=True)
         logger.info("RAW UPDATE: %s (id=%s)", kind, uid)
         return await handler(event, data)
 
-    dp.message.middleware(debug_updates)
-    dp.callback_query.middleware(debug_updates)
-    dp.inline_query.middleware(debug_updates)
+    dp.message.outer_middleware(debug_updates)
+    dp.callback_query.outer_middleware(debug_updates)
+    dp.inline_query.outer_middleware(debug_updates)
 
     dp.message.middleware(WatchdogMiddleware())
     dp.callback_query.middleware(WatchdogMiddleware())
@@ -87,7 +94,6 @@ async def lifespan(app: FastAPI):
     dp.include_router(admin_router)
     dp.include_router(start_router)
     dp.include_router(feed_commands_router)
-    dp.include_router(trucks_router)
     dp.include_router(cargo_router)
     dp.include_router(search_router)
     dp.include_router(inline_router)
@@ -106,20 +112,32 @@ async def lifespan(app: FastAPI):
     dp.include_router(payments_router)
     dp.include_router(referral_router)
 
-    async def _run_polling():
-        try:
-            await dp.start_polling(bot)
-        except Exception as e:
-            logger.error("Polling crashed: %s", e, exc_info=True)
+    polling_task = None
+    if BOT_POLLING_ENABLED:
+        async def _run_polling():
+            try:
+                await bot.delete_webhook(drop_pending_updates=True)
+                logger.info("Webhook deleted, starting polling...")
+                await dp.start_polling(
+                    bot,
+                    allowed_updates=["message", "callback_query", "inline_query", "pre_checkout_query"],
+                    handle_signals=False,
+                )
+            except BaseException as e:
+                logger.error("Polling crashed: %s", e, exc_info=True)
 
-    polling_task = asyncio.create_task(_run_polling())
+        polling_task = asyncio.create_task(_run_polling())
+        logger.info("Bot polling started")
+    else:
+        logger.info("Bot polling DISABLED (BOT_POLLING_ENABLED=false) — API-only mode")
+
     asyncio.create_task(watchdog_loop())
-    logger.info("Bot polling started")
     logger.info("Watchdog started")
     yield
     logger.info("Shutting down...")
     scheduler.shutdown()
-    polling_task.cancel()
+    if polling_task:
+        polling_task.cancel()
     await bot.session.close()
     await close_redis()
 
@@ -154,10 +172,10 @@ from src.api.finance import router as finance_router
 from src.api.teams import router as teams_router
 from src.api.currency import router as currency_router
 from src.api.subscriptions import router as subscriptions_router
-from src.api.trucks import router as trucks_api_router
 from src.api.escrow import router as escrow_router
 from src.api.geo import router as geo_router
 from src.api.match import router as match_router
+from src.core.ai_diag import explain_health
 from src.core.services.watchdog import watchdog
 
 app.include_router(admin_panel_router)
@@ -178,7 +196,6 @@ app.include_router(finance_router)
 app.include_router(teams_router)
 app.include_router(currency_router)
 app.include_router(subscriptions_router)
-app.include_router(trucks_api_router)
 app.include_router(escrow_router)
 app.include_router(geo_router)
 app.include_router(match_router)
@@ -208,12 +225,17 @@ async def health_detailed():
     return await watchdog.check_health()
 
 
-@app.get("/health/overview")
+@app.get("/health/ai")
 @app.get("/health_ai")
-async def health_overview():
-    """Человеческая сводка по всей цепи без чтения логов."""
+async def health_ai():
+    """Health check with human-readable diagnosis."""
     health = await watchdog.check_health()
-    return watchdog.build_operator_view(health)
+    return {
+        "status": "ok",
+        "timestamp": health["timestamp"],
+        "diagnosis": explain_health(health),
+        "health": health,
+    }
 
 
 @app.get("/api/health")
@@ -226,12 +248,12 @@ async def api_stats():
     from src.core.database import async_session
     from src.core.models import User, Cargo, Report
     from sqlalchemy import select, func
-    
+
     async with async_session() as session:
         users = await session.scalar(select(func.count()).select_from(User))
         cargos = await session.scalar(select(func.count()).select_from(Cargo))
         reports = await session.scalar(select(func.count()).select_from(Report))
-    
+
     return {"users": users, "cargos": cargos, "reports": reports}
 
 @app.get("/api/cargos")
@@ -239,7 +261,7 @@ async def api_cargos(from_city: str = None, to_city: str = None):
     from src.core.database import async_session
     from src.core.models import Cargo, CargoStatus
     from sqlalchemy import select
-    
+
     async with async_session() as session:
         query = select(Cargo).where(Cargo.status == CargoStatus.NEW)
         if from_city:
@@ -248,7 +270,7 @@ async def api_cargos(from_city: str = None, to_city: str = None):
             query = query.where(Cargo.to_city.ilike(f"%{to_city}%"))
         result = await session.execute(query.limit(50))
         cargos = result.scalars().all()
-    
+
     return [{"id": c.id, "from": c.from_city, "to": c.to_city, "weight": c.weight, "price": c.price} for c in cargos]
 
 @app.get("/")

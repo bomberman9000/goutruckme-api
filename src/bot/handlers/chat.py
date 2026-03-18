@@ -27,7 +27,7 @@ async def show_messages(cb: CallbackQuery):
             .limit(20)
         )
         messages = result.scalars().all()
-    
+
     if not messages:
         try:
             await cb.message.edit_text("💬 Нет сообщений", reply_markup=back_menu())
@@ -35,7 +35,7 @@ async def show_messages(cb: CallbackQuery):
             pass
         await cb.answer()
         return
-    
+
     chats = {}
     for m in messages:
         other_id = m.to_user_id if m.from_user_id == cb.from_user.id else m.from_user_id
@@ -43,18 +43,18 @@ async def show_messages(cb: CallbackQuery):
             chats[other_id] = {"cargo_id": m.cargo_id, "last": m, "unread": 0}
         if m.to_user_id == cb.from_user.id and not m.is_read:
             chats[other_id]["unread"] += 1
-    
+
     text = "💬 <b>Сообщения:</b>\n\n"
     for user_id, data in list(chats.items())[:10]:
         async with async_session() as session:
             user_result = await session.execute(select(User).where(User.id == user_id))
             user = user_result.scalar_one_or_none()
-        
+
         name = user.full_name if user else f"ID:{user_id}"
         unread = f" 🔴{data['unread']}" if data['unread'] > 0 else ""
         text += f"👤 {name}{unread}\n"
         text += f"   Груз #{data['cargo_id']} — /chat_{data['cargo_id']}_{user_id}\n\n"
-    
+
     try:
         await cb.message.edit_text(text, reply_markup=back_menu())
     except TelegramBadRequest:
@@ -65,11 +65,11 @@ async def show_messages(cb: CallbackQuery):
 async def start_chat(cb: CallbackQuery, state: FSMContext):
     parts = cb.data.split("_")
     cargo_id = int(parts[1])
-    
+
     async with async_session() as session:
         result = await session.execute(select(Cargo).where(Cargo.id == cargo_id))
         cargo = result.scalar_one_or_none()
-        
+
         if not cargo:
             await cb.answer("❌ Груз не найден", show_alert=True)
             return
@@ -83,16 +83,16 @@ async def start_chat(cb: CallbackQuery, state: FSMContext):
         if cargo.status not in (CargoStatus.IN_PROGRESS, CargoStatus.COMPLETED):
             await cb.answer("🔒 Чат доступен после выбора перевозчика", show_alert=True)
             return
-        
+
         if is_owner:
             to_user_id = cargo.carrier_id
         else:
             to_user_id = cargo.owner_id
-        
+
         if not to_user_id:
             await cb.answer("❌ Некому писать", show_alert=True)
             return
-    
+
     await state.update_data(cargo_id=cargo_id, to_user_id=to_user_id)
     await cb.message.edit_text(f"✏️ Напиши сообщение по грузу #{cargo_id}:")
     await state.set_state(ChatForm.message)
@@ -145,12 +145,12 @@ async def start_chat_cmd(message: Message, state: FSMContext):
             .limit(10)
         )
         messages = result.scalars().all()
-        
+
         for m in messages:
             if m.to_user_id == message.from_user.id:
                 m.is_read = True
         await session.commit()
-    
+
     if messages:
         text = f"💬 <b>Чат по грузу #{cargo_id}:</b>\n\n"
         for m in reversed(messages):
@@ -159,7 +159,7 @@ async def start_chat_cmd(message: Message, state: FSMContext):
         text += "\n✏️ Напиши ответ:"
     else:
         text = f"💬 Чат по грузу #{cargo_id}\n\n✏️ Напиши сообщение:"
-    
+
     await message.answer(text)
     await state.set_state(ChatForm.message)
 
@@ -168,7 +168,7 @@ async def send_chat_message(message: Message, state: FSMContext):
     data = await state.get_data()
     cargo_id = data['cargo_id']
     to_user_id = data['to_user_id']
-    
+
     async with async_session() as session:
         chat_msg = ChatMessage(
             cargo_id=cargo_id,
@@ -178,7 +178,7 @@ async def send_chat_message(message: Message, state: FSMContext):
         )
         session.add(chat_msg)
         await session.commit()
-    
+
     try:
         await bot.send_message(
             to_user_id,
@@ -188,7 +188,7 @@ async def send_chat_message(message: Message, state: FSMContext):
         )
     except:
         pass
-    
+
     await state.clear()
     await message.answer("✅ Сообщение отправлено!", reply_markup=main_menu())
     logger.info(f"Chat message from {message.from_user.id} to {to_user_id} for cargo {cargo_id}")
@@ -198,7 +198,7 @@ async def reply_chat(cb: CallbackQuery, state: FSMContext):
     parts = cb.data.split("_")
     cargo_id = int(parts[1])
     to_user_id = int(parts[2])
-    
+
     await state.update_data(cargo_id=cargo_id, to_user_id=to_user_id)
     await cb.message.answer("✏️ Напиши ответ:")
     await state.set_state(ChatForm.message)

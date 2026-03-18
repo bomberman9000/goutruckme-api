@@ -5,18 +5,27 @@ from datetime import datetime
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import case, func, select
 
 from src.antifraud.learning import recompute_route_stats
 from src.antifraud.rates import route_rate_cache
 from src.antifraud.service import get_average_review_duration_ms
+from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
+from src.core.config import settings
 from src.core.database import async_session
 from src.core.models import ClosedDealStat, CounterpartyList, CounterpartyRiskHistory, RouteRateStats
 
 
-router = APIRouter(tags=["antifraud-admin"])
+async def require_admin(user: TelegramTMAUser = Depends(get_required_tma_user)) -> TelegramTMAUser:
+    from fastapi import HTTPException
+    if settings.admin_id and user.user_id != settings.admin_id:
+        raise HTTPException(status_code=403, detail="Admin only")
+    return user
+
+
+router = APIRouter(tags=["antifraud-admin"], dependencies=[Depends(require_admin)])
 logger = logging.getLogger(__name__)
 
 _recompute_task: asyncio.Task[None] | None = None

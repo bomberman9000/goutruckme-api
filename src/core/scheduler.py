@@ -14,16 +14,16 @@ async def daily_stats_job():
     from src.core.database import async_session
     from src.core.models import User
     from sqlalchemy import func
-    
+
     if not settings.admin_id:
         return
-    
+
     redis = await get_redis()
     async with async_session() as session:
         users_count = await session.scalar(select(func.count()).select_from(User))
-    
+
     messages = await redis.get("stats:messages") or 0
-    
+
     await bot.send_message(
         settings.admin_id,
         f"📊 Ежедневный отчёт:\n\n👥 Пользователей: {users_count}\n💬 Сообщений: {messages}"
@@ -34,7 +34,7 @@ async def check_reminders_job():
     from src.bot.bot import bot
     from src.core.database import async_session
     from src.core.models import Reminder
-    
+
     async with async_session() as session:
         result = await session.execute(
             select(Reminder)
@@ -42,7 +42,7 @@ async def check_reminders_job():
             .where(Reminder.remind_at <= datetime.utcnow())
         )
         reminders = result.scalars().all()
-        
+
         for r in reminders:
             try:
                 await bot.send_message(r.user_id, f"⏰ Напоминание:\n\n{r.text}")
@@ -50,7 +50,7 @@ async def check_reminders_job():
                 logger.info(f"Reminder sent to {r.user_id}")
             except Exception as e:
                 logger.error(f"Failed to send reminder: {e}")
-        
+
         await session.commit()
 
 async def archive_old_cargos_job():

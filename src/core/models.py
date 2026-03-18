@@ -19,7 +19,7 @@ def _string_enum(enum_cls: type[enum.Enum]) -> Enum:
 
 class User(Base):
     __tablename__ = "users"
-    
+
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     full_name: Mapped[str] = mapped_column(String(255))
@@ -83,7 +83,7 @@ class CargoPaymentStatus(enum.Enum):
 
 class Cargo(Base):
     __tablename__ = "cargos"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_id: Mapped[int] = mapped_column(BigInteger)
     carrier_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
@@ -92,11 +92,11 @@ class Cargo(Base):
 
     from_city: Mapped[str] = mapped_column(String(100))
     to_city: Mapped[str] = mapped_column(String(100))
-    
+
     cargo_type: Mapped[str] = mapped_column(String(100))
     weight: Mapped[float] = mapped_column(Float)
     volume: Mapped[float | None] = mapped_column(Float, nullable=True)
-    
+
     price: Mapped[int] = mapped_column(Integer)
     actual_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
     load_date: Mapped[datetime] = mapped_column(DateTime)
@@ -271,7 +271,7 @@ class AuditEvent(Base):
 
 class CargoResponse(Base):
     __tablename__ = "cargo_responses"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True)
     cargo_id: Mapped[int] = mapped_column(Integer)
     carrier_id: Mapped[int] = mapped_column(BigInteger)
@@ -298,7 +298,7 @@ class MarketPrice(Base):
 
 class Feedback(Base):
     __tablename__ = "feedback"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger)
     message: Mapped[str] = mapped_column(Text)
@@ -306,7 +306,7 @@ class Feedback(Base):
 
 class Reminder(Base):
     __tablename__ = "reminders"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger)
     text: Mapped[str] = mapped_column(Text)
@@ -316,7 +316,7 @@ class Reminder(Base):
 
 class RouteSubscription(Base):
     __tablename__ = "route_subscriptions"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger)
     from_city: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -330,7 +330,7 @@ class RouteSubscription(Base):
 
 class Rating(Base):
     __tablename__ = "ratings"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True)
     cargo_id: Mapped[int] = mapped_column(Integer)
     from_user_id: Mapped[int] = mapped_column(BigInteger)
@@ -341,7 +341,7 @@ class Rating(Base):
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True)
     cargo_id: Mapped[int] = mapped_column(Integer)
     from_user_id: Mapped[int] = mapped_column(BigInteger)
@@ -359,7 +359,7 @@ class ReportType(enum.Enum):
 
 class Report(Base):
     __tablename__ = "reports"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True)
     from_user_id: Mapped[int] = mapped_column(BigInteger)
     to_user_id: Mapped[int] = mapped_column(BigInteger)
@@ -371,7 +371,7 @@ class Report(Base):
 
 class CargoLocation(Base):
     __tablename__ = "cargo_locations"
-    
+
     id: Mapped[int] = mapped_column(primary_key=True)
     cargo_id: Mapped[int] = mapped_column(Integer)
     user_id: Mapped[int] = mapped_column(BigInteger)
@@ -831,4 +831,22 @@ class AvailableTruck(Base):
         Index("ix_available_trucks_base_city", "base_city"),
         Index("ix_available_trucks_last_seen", "last_seen_at"),
         Index("ix_available_trucks_active", "is_active"),
+    )
+
+
+class AdminAction(Base):
+    __tablename__ = "admin_actions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    actor_tg_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    action: Mapped[str] = mapped_column(String(64))
+    target_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    result: Mapped[str] = mapped_column(String(16))  # ok | error | blocked
+    metadata_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_admin_actions_action", "action"),
+        Index("ix_admin_actions_ts", "timestamp"),
     )

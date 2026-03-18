@@ -6,11 +6,12 @@ class Settings(BaseSettings):
 
     bot_token: str
     bot_username: str | None = None
+    bot_polling_enabled: bool = False
     redis_url: str = "redis://localhost:6379"
     database_url: str
     admin_id: int | None = None
     debug: bool = False
-    
+
     # Admin panel
     admin_username: str = "admin"
     admin_password: str = "admin123"

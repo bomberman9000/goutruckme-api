@@ -13,6 +13,7 @@ from src.admin.auth import (
     ADMIN_PASSWORD_HASH
 )
 from src.core.cache import clear_cached
+from src.core.rate_limit import check_login_rate_limit
 from src.core.config import settings
 from src.core.database import async_session
 from src.core.audit import log_audit_event
@@ -235,12 +236,13 @@ async def login_page(request: Request):
 
 @router.post("/login")
 async def login(request: Request, username: str = Form(...), password: str = Form(...)):
+    await check_login_rate_limit(request, username=username)
     if username != settings.admin_username or not verify_password(password, ADMIN_PASSWORD_HASH):
         return templates.TemplateResponse("login.html", {
             **_ctx(request),
             "error": "Неверный логин или пароль"
         })
-    
+
     token = create_access_token({"sub": username})
     response = RedirectResponse(url="/admin", status_code=302)
     response.set_cookie("admin_token", token, httponly=True, max_age=86400)
@@ -288,7 +290,7 @@ async def dashboard(request: Request, admin: dict = Depends(get_current_admin)):
         manual_review_count = await session.scalar(
             select(func.count()).select_from(ParserIngestEvent).where(ParserIngestEvent.status == "manual_review")
         )
-        
+
         # Recent activity
         week_ago = datetime.utcnow() - timedelta(days=7)
         new_users = await session.scalar(
@@ -297,7 +299,7 @@ async def dashboard(request: Request, admin: dict = Depends(get_current_admin)):
         new_cargos = await session.scalar(
             select(func.count()).select_from(Cargo).where(Cargo.created_at >= week_ago)
         )
-        
+
         # Revenue (completed cargos)
         revenue_result = await session.execute(
             select(func.sum(Cargo.price))
@@ -353,13 +355,13 @@ async def dashboard(request: Request, admin: dict = Depends(get_current_admin)):
                 .limit(8)
             )
         ).all()
-        
+
         # Recent cargos
         recent_cargos = await session.execute(
             select(Cargo).order_by(desc(Cargo.created_at)).limit(5)
         )
         recent_cargos = recent_cargos.scalars().all()
-    
+
     return templates.TemplateResponse("dashboard.html", {
         **_ctx(request),
         "admin": admin,
@@ -394,14 +396,14 @@ async def dashboard(request: Request, admin: dict = Depends(get_current_admin)):
 async def users_list(request: Request, admin: dict = Depends(get_current_admin), page: int = 1):
     limit = 20
     offset = (page - 1) * limit
-    
+
     async with async_session() as session:
         total = await session.scalar(select(func.count()).select_from(User))
         result = await session.execute(
             select(User).order_by(desc(User.created_at)).offset(offset).limit(limit)
         )
         users = result.scalars().all()
-    
+
     return templates.TemplateResponse("users.html", {
         **_ctx(request),
         "admin": admin,
@@ -416,27 +418,27 @@ async def user_detail(request: Request, user_id: int, admin: dict = Depends(get_
     async with async_session() as session:
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
-        
+
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        
+
         # User's cargos
         cargos = await session.execute(
             select(Cargo).where(Cargo.owner_id == user_id).order_by(desc(Cargo.created_at)).limit(10)
         )
         cargos = cargos.scalars().all()
-        
+
         # User's ratings
         avg_rating = await session.scalar(
             select(func.avg(Rating.score)).where(Rating.to_user_id == user_id)
         )
-        
+
         # Reports against user
         reports = await session.execute(
             select(Report).where(Report.to_user_id == user_id).order_by(desc(Report.created_at))
         )
         reports = reports.scalars().all()
-    
+
     return templates.TemplateResponse("user_detail.html", {
         **_ctx(request),
         "admin": admin,
@@ -470,22 +472,22 @@ async def unban_user(user_id: int, admin: dict = Depends(get_current_admin)):
 async def cargos_list(request: Request, admin: dict = Depends(get_current_admin), page: int = 1, status: str = None):
     limit = 20
     offset = (page - 1) * limit
-    
+
     async with async_session() as session:
         query = select(Cargo)
         count_query = select(func.count()).select_from(Cargo)
-        
+
         if status:
             status_enum = CargoStatus(status)
             query = query.where(Cargo.status == status_enum)
             count_query = count_query.where(Cargo.status == status_enum)
-        
+
         total = await session.scalar(count_query)
         result = await session.execute(
             query.order_by(desc(Cargo.created_at)).offset(offset).limit(limit)
         )
         cargos = result.scalars().all()
-    
+
     return templates.TemplateResponse("cargos.html", {
         **_ctx(request),
         "admin": admin,
@@ -504,18 +506,18 @@ async def reports_list(request: Request, admin: dict = Depends(get_current_admin
             select(Report).order_by(Report.is_reviewed, desc(Report.created_at)).limit(50)
         )
         reports = result.scalars().all()
-        
+
         # Get user names
         user_ids = set()
         for r in reports:
             user_ids.add(r.from_user_id)
             user_ids.add(r.to_user_id)
-        
+
         users_result = await session.execute(
             select(User).where(User.id.in_(user_ids))
         )
         users = {u.id: u for u in users_result.scalars().all()}
-    
+
     return templates.TemplateResponse("reports.html", {
         **_ctx(request),
         "admin": admin,
@@ -1177,7 +1179,7 @@ async def feedback_list(request: Request, admin: dict = Depends(get_current_admi
             select(Feedback).order_by(desc(Feedback.created_at)).limit(50)
         )
         feedbacks = result.scalars().all()
-    
+
     return templates.TemplateResponse("feedback.html", {
         **_ctx(request),
         "admin": admin,
