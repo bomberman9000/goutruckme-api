@@ -39,6 +39,7 @@ def init_db():
     _ensure_vehicle_registry_columns()
     _ensure_consolidation_columns()
     _ensure_cities_catalog()
+    _ensure_referral_columns()
 
 
 def _ensure_user_profile_columns() -> None:
@@ -326,5 +327,21 @@ def _ensure_cities_catalog() -> None:
     db = SessionLocal()
     try:
         seed_default_cities(db)
+    finally:
+        db.close()
+
+def _ensure_referral_columns() -> None:
+    from sqlalchemy import text
+    db = SessionLocal()
+    try:
+        db.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(20) UNIQUE'))
+        db.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by INTEGER REFERENCES users(id) ON DELETE SET NULL'))
+        db.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_count INTEGER NOT NULL DEFAULT 0'))
+        db.execute(text('ALTER TABLE users ADD COLUMN IF NOT EXISTS pro_until TIMESTAMP'))
+        db.execute(text('CREATE INDEX IF NOT EXISTS ix_users_referral_code ON users(referral_code)'))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f'_ensure_referral_columns error: {e}')
     finally:
         db.close()
