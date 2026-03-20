@@ -1,3 +1,4 @@
+import asyncio
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from threading import Lock
@@ -47,6 +48,17 @@ from app.api.routes import (
     profile,
     trust,
     internal,
+    inn_lookup,
+    employees,
+    public_stats,
+    traffic_light,
+    blacklist,
+    verification,
+    seo_pages,
+    email_digest,
+    referral,
+    matching,
+    billing,
 )
 from app.api import ai as ai_hybrid_router
 from app.api import antifraud as antifraud_review_router
@@ -60,7 +72,9 @@ from app.api.routes.health import router as health_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    scheduler_task = asyncio.create_task(email_digest.daily_digest_scheduler())
     yield
+    scheduler_task.cancel()
 
 
 app = FastAPI(
@@ -215,6 +229,17 @@ app.include_router(shipments.router, prefix="/api", tags=["📒 Shipments Regist
 app.include_router(geo.router, prefix="/api", tags=["🌍 Geo"])
 app.include_router(route_calc.router, prefix="/api", tags=["🧭 Route"])
 app.include_router(ai_scoring_routes.router, prefix="/api", tags=["⚡ AI Loads"])
+app.include_router(inn_lookup.router, prefix="/api", tags=["🏢 INN Lookup"])
+app.include_router(employees.router, prefix="/api", tags=["👥 Employees"])
+app.include_router(public_stats.router, prefix="/api", tags=["📊 Public Stats"])
+app.include_router(traffic_light.router, prefix="/api", tags=["🚦 Traffic Light"])
+app.include_router(blacklist.router, prefix="/api", tags=["🚫 Blacklist"])
+app.include_router(verification.router, prefix="/api", tags=["✅ Verification"])
+app.include_router(seo_pages.router, tags=["🔍 SEO Pages"])
+app.include_router(email_digest.router, prefix="/api", tags=["📧 Email Digest"])
+app.include_router(referral.router, prefix="/api", tags=["🎁 Referral"])
+app.include_router(matching.router, prefix="/api", tags=["🚛 Matching"])
+app.include_router(billing.router, prefix="/api", tags=["💳 Billing"])
 
 
 # CORS: в debug разрешаем все, в остальных режимах только явный allowlist
@@ -231,9 +256,32 @@ app.add_middleware(
 # Путь к статическим файлам
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 
+# SW и manifest с корня — правильный scope + no-cache
+@app.get("/sw.js", include_in_schema=False)
+def serve_sw():
+    import os as _os
+    return FileResponse(_os.path.join(STATIC_DIR, "sw.js"),
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-store"})
+
+@app.get("/requisites", include_in_schema=False)
+def serve_requisites():
+    import os as _os
+    return FileResponse(_os.path.join(STATIC_DIR, "requisites.html"),
+        media_type="text/html",
+        headers={"Cache-Control": "public, max-age=3600"})
+
+@app.get("/manifest.json", include_in_schema=False)
+def serve_manifest():
+    import os as _os
+    return FileResponse(_os.path.join(STATIC_DIR, "manifest.json"),
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "public, max-age=86400"})
+
 # Монтируем статику
 if os.path.exists(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
 
 
 @app.get("/")

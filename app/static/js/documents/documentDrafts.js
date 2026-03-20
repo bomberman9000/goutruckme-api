@@ -1,6 +1,6 @@
 // Черновики документов (draft поля)
 
-const STORAGE_KEY = 'gotruckme_document_drafts_v1';
+const DOCUMENT_DRAFTS_STORAGE_KEY = 'gotruckme_document_drafts_v1';
 
 /**
  * Получить все черновики
@@ -8,7 +8,7 @@ const STORAGE_KEY = 'gotruckme_document_drafts_v1';
  */
 function getDocumentDrafts() {
     try {
-        const stored = localStorage.getItem(STORAGE_KEY);
+        const stored = localStorage.getItem(DOCUMENT_DRAFTS_STORAGE_KEY);
         if (!stored) return {};
         return JSON.parse(stored);
     } catch (e) {
@@ -31,7 +31,7 @@ function saveDocumentDraft(dealId, docType, draftFields) {
         updatedAt: new Date().toISOString()
     };
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts));
+        localStorage.setItem(DOCUMENT_DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
     } catch (e) {
         console.error('Failed to save document draft:', e);
     }
@@ -59,7 +59,7 @@ function deleteDocumentDraft(dealId, docType) {
     const key = `${dealId}:${docType}`;
     delete drafts[key];
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts));
+        localStorage.setItem(DOCUMENT_DRAFTS_STORAGE_KEY, JSON.stringify(drafts));
     } catch (e) {
         console.error('Failed to delete document draft:', e);
     }
@@ -74,5 +74,4 @@ if (typeof window !== 'undefined') {
         deleteDocumentDraft
     };
 }
-
 

@@ -1,6 +1,6 @@
 // Хранилище клиентов (localStorage)
 
-const STORAGE_KEY = 'gotruckme_clients_v1';
+const CLIENTS_STORAGE_KEY = 'gotruckme_clients_v1';
 
 // Режим приложения (PRIVATE_TEST или ORG)
 const APP_MODE = 'PRIVATE_TEST';
@@ -13,7 +13,7 @@ const CURRENT_VISIBILITY = 'PRIVATE';
  */
 function getClients() {
     try {
-        const stored = localStorage.getItem(STORAGE_KEY);
+        const stored = localStorage.getItem(CLIENTS_STORAGE_KEY);
         if (!stored) return [];
         const parsed = JSON.parse(stored);
         return Array.isArray(parsed) ? parsed : [];
@@ -29,7 +29,7 @@ function getClients() {
  */
 function saveClients(clients) {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(clients));
+        localStorage.setItem(CLIENTS_STORAGE_KEY, JSON.stringify(clients));
     } catch (e) {
         console.error('Failed to save clients:', e);
     }
@@ -318,5 +318,4 @@ if (typeof window !== 'undefined') {
         importClients
     };
 }
-
 

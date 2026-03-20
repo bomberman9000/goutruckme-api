@@ -1,6 +1,6 @@
 // Профиль компании (заказчик/экспедитор по умолчанию)
 
-const STORAGE_KEY = 'gotruckme_company_profile';
+const COMPANY_PROFILE_STORAGE_KEY = 'gotruckme_company_profile';
 
 /**
  * Получить профиль компании
@@ -8,7 +8,7 @@ const STORAGE_KEY = 'gotruckme_company_profile';
  */
 function getCompanyProfile() {
     try {
-        const stored = localStorage.getItem(STORAGE_KEY);
+        const stored = localStorage.getItem(COMPANY_PROFILE_STORAGE_KEY);
         if (!stored) return null;
         return JSON.parse(stored);
     } catch (e) {
@@ -23,7 +23,7 @@ function getCompanyProfile() {
  */
 function saveCompanyProfile(profile) {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+        localStorage.setItem(COMPANY_PROFILE_STORAGE_KEY, JSON.stringify(profile));
     } catch (e) {
         console.error('Failed to save company profile:', e);
     }
@@ -45,5 +45,4 @@ if (typeof window !== 'undefined') {
         hasCompanyProfile
     };
 }
-
 

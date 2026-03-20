@@ -1,6 +1,6 @@
 // Хранилище сделок (localStorage)
 
-const STORAGE_KEY = 'gotruckme_deals_v1';
+const DEALS_STORAGE_KEY = 'gotruckme_deals_v1';
 
 /**
  * Получить все сделки из localStorage
@@ -8,7 +8,7 @@ const STORAGE_KEY = 'gotruckme_deals_v1';
  */
 function getDeals() {
     try {
-        const stored = localStorage.getItem(STORAGE_KEY);
+        const stored = localStorage.getItem(DEALS_STORAGE_KEY);
         if (!stored) return [];
         const parsed = JSON.parse(stored);
         return Array.isArray(parsed) ? parsed : [];
@@ -24,7 +24,7 @@ function getDeals() {
  */
 function saveDeals(deals) {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(deals));
+        localStorage.setItem(DEALS_STORAGE_KEY, JSON.stringify(deals));
     } catch (e) {
         console.error('Failed to save deals:', e);
     }
@@ -368,4 +368,3 @@ if (typeof window !== 'undefined') {
         formatCargoSource
     };
 }
-

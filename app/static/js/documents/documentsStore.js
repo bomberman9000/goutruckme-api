@@ -1,6 +1,6 @@
 // Хранилище документов (localStorage)
 
-const STORAGE_KEY = 'gotruckme_documents_v1';
+const DOCUMENTS_STORAGE_KEY = 'gotruckme_documents_v1';
 
 /**
  * Получить все документы из localStorage
@@ -8,7 +8,7 @@ const STORAGE_KEY = 'gotruckme_documents_v1';
  */
 function getDocuments() {
     try {
-        const stored = localStorage.getItem(STORAGE_KEY);
+        const stored = localStorage.getItem(DOCUMENTS_STORAGE_KEY);
         if (!stored) return [];
         const parsed = JSON.parse(stored);
         return Array.isArray(parsed) ? parsed : [];
@@ -24,7 +24,7 @@ function getDocuments() {
  */
 function saveDocuments(documents) {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(documents));
+        localStorage.setItem(DOCUMENTS_STORAGE_KEY, JSON.stringify(documents));
     } catch (e) {
         console.error('Failed to save documents:', e);
     }
@@ -95,5 +95,4 @@ if (typeof window !== 'undefined') {
         hasDocument
     };
 }
-
 

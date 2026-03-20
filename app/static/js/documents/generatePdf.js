@@ -638,18 +638,18 @@ function generateUPDPDF(deal, cargo, companyProfile = null, draftFields = null) 
     doc.setFont(undefined, 'normal');
     y += 7;
     
-    const counterparty = deal.counterpartyId && window.clientsStore ? 
+    const buyerCounterparty = deal.counterpartyId && window.clientsStore ? 
         window.clientsStore.getClientById(deal.counterpartyId) : null;
     
-    if (counterparty) {
-        doc.text(`Организация: ${counterparty.name}`, 20, y);
+    if (buyerCounterparty) {
+        doc.text(`Организация: ${buyerCounterparty.name}`, 20, y);
         y += 6;
-        if (counterparty.inn) {
-            doc.text(`ИНН: ${counterparty.inn}`, 20, y);
+        if (buyerCounterparty.inn) {
+            doc.text(`ИНН: ${buyerCounterparty.inn}`, 20, y);
             y += 6;
         }
-        if (counterparty.phone) {
-            doc.text(`Телефон: ${counterparty.phone}`, 20, y);
+        if (buyerCounterparty.phone) {
+            doc.text(`Телефон: ${buyerCounterparty.phone}`, 20, y);
             y += 6;
         }
     } else {
@@ -761,4 +761,3 @@ if (typeof window !== 'undefined') {
         formatDocumentDate
     };
 }
-

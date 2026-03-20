@@ -1,6 +1,6 @@
 // Хранилище перевозчиков (localStorage)
 
-const STORAGE_KEY = 'gotruckme_carriers_v1';
+const CARRIERS_STORAGE_KEY = 'gotruckme_carriers_v1';
 
 /**
  * Получить всех перевозчиков
@@ -10,7 +10,7 @@ const STORAGE_KEY = 'gotruckme_carriers_v1';
  */
 function getCarriers(ownerId = 'me', visibility = 'PRIVATE') {
     try {
-        const stored = localStorage.getItem(STORAGE_KEY);
+        const stored = localStorage.getItem(CARRIERS_STORAGE_KEY);
         if (!stored) return [];
         const parsed = JSON.parse(stored);
         const all = Array.isArray(parsed) ? parsed : [];
@@ -32,7 +32,7 @@ function getCarriers(ownerId = 'me', visibility = 'PRIVATE') {
  */
 function saveCarriers(carriers) {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(carriers));
+        localStorage.setItem(CARRIERS_STORAGE_KEY, JSON.stringify(carriers));
     } catch (e) {
         console.error('Failed to save carriers:', e);
     }
@@ -75,7 +75,7 @@ function addCarrier(carrierData) {
  */
 function getAllCarriers() {
     try {
-        const stored = localStorage.getItem(STORAGE_KEY);
+        const stored = localStorage.getItem(CARRIERS_STORAGE_KEY);
         if (!stored) return [];
         const parsed = JSON.parse(stored);
         return Array.isArray(parsed) ? parsed : [];
@@ -457,7 +457,7 @@ function extractPhone(text) {
  * Очистить тестовую базу перевозчиков
  */
 function clearCarriersDatabase() {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(CARRIERS_STORAGE_KEY);
 }
 
 // Экспорт
@@ -473,5 +473,3 @@ if (typeof window !== 'undefined') {
         clearCarriersDatabase
     };
 }
-
-
