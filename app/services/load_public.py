@@ -50,6 +50,7 @@ def build_public_load_base(load: Load, ai_payload: Optional[dict[str, Any]] = No
         "status": normalize_cargo_status(load.status),
         "loading_date": loading_date.isoformat() if loading_date else None,
         "loading_time": load.loading_time,
+        "is_priority": bool(getattr(load, "is_priority", False)),
     }
 
 

@@ -92,3 +92,109 @@ def search_cities(
     ][:limit]
     _cache_set(cache_key, payload)
     return payload
+
+
+# ── /api/map/data ─────────────────────────────────────────────────────────────
+
+@router.get("/map/data")
+def get_map_data(
+    limit: int = Query(300, ge=1, le=1000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Public map endpoint — cargos + vehicles with coordinates."""
+    from app.models.models import Load, Vehicle, City
+    from sqlalchemy.orm import aliased
+    from sqlalchemy import and_, or_, func
+
+    # ── Cargos — use pickup_lat/lon directly, fallback to City join ──
+    FromCity = aliased(City)
+    ToCity   = aliased(City)
+
+    loads = (
+        db.query(
+            Load.id,
+            Load.from_city,
+            Load.to_city,
+            Load.weight_t,
+            Load.total_price,
+            Load.required_body_type,
+            Load.status,
+            Load.pickup_lat,
+            Load.pickup_lon,
+            Load.delivery_lat,
+            Load.delivery_lon,
+            FromCity.lat.label("city_from_lat"),
+            FromCity.lon.label("city_from_lon"),
+            ToCity.lat.label("city_to_lat"),
+            ToCity.lon.label("city_to_lon"),
+        )
+        .outerjoin(FromCity, Load.from_city_id == FromCity.id)
+        .outerjoin(ToCity,   Load.to_city_id   == ToCity.id)
+        .filter(Load.status.in_(["new", "active", "pending"]))
+        .filter(
+            or_(
+                Load.pickup_lat.isnot(None),
+                FromCity.lat.isnot(None),
+            )
+        )
+        .order_by(Load.id.desc())
+        .limit(limit)
+        .all()
+    )
+
+    cargos = []
+    for row in loads:
+        from_lat = row.pickup_lat or row.city_from_lat
+        from_lon = row.pickup_lon or row.city_from_lon
+        if not from_lat or not from_lon:
+            continue
+        to_lat = row.delivery_lat or row.city_to_lat
+        to_lon = row.delivery_lon or row.city_to_lon
+        cargos.append({
+            "id": row.id,
+            "from_city": row.from_city or "",
+            "to_city":   row.to_city   or "",
+            "weight_t":  row.weight_t,
+            "price":     row.total_price,
+            "body_type": row.required_body_type or "",
+            "status":    str(row.status or ""),
+            "from_lat":  from_lat,
+            "from_lon":  from_lon,
+            "to_lat":    to_lat,
+            "to_lon":    to_lon,
+        })
+
+    # ── Vehicles ──
+    VCity = aliased(City)
+    vehicles_q = (
+        db.query(
+            Vehicle.id,
+            Vehicle.body_type,
+            Vehicle.capacity_tons,
+            Vehicle.location_city,
+            Vehicle.status,
+            VCity.lat.label("lat"),
+            VCity.lon.label("lon"),
+        )
+        .outerjoin(VCity, Vehicle.city_id == VCity.id)
+        .filter(Vehicle.status.in_(["active", "available", "free"]))
+        .order_by(Vehicle.id.desc())
+        .limit(500)
+        .all()
+    )
+
+    vehicles = []
+    for v in vehicles_q:
+        if v.lat is None or v.lon is None:
+            continue
+        vehicles.append({
+            "id":            v.id,
+            "body_type":     v.body_type or "",
+            "capacity_tons": v.capacity_tons,
+            "city":          v.location_city or "",
+            "available":     v.status in ("active", "available", "free"),
+            "lat":           v.lat,
+            "lon":           v.lon,
+        })
+
+    return {"cargos": cargos, "vehicles": vehicles}
