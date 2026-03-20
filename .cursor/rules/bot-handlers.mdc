@@ -1,0 +1,51 @@
+---
+description: Правила для aiogram handlers
+globs: ["src/bot/handlers/**/*.py", "src/bot/keyboards.py", "src/bot/states.py"]
+alwaysApply: false
+---
+
+# aiogram Handler Rules
+
+## Структура хендлера
+```python
+from aiogram import Router, F
+from aiogram.filters import Command, StateFilter
+from aiogram.types import Message, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from src.core.database import async_session
+from src.core.logger import logger
+
+router = Router()
+```
+
+## Паттерны
+- Каждый handler-файл = один `router = Router()`
+- Роутеры регистрируются в `src/bot/__init__.py` или `main.py`
+- FSM состояния — в `src/bot/states.py` как `StatesGroup`
+- Клавиатуры — функции в `src/bot/keyboards.py`, возвращают `.as_markup()`
+- Callback data — строки вида `"action_name"` или `"action:id"`
+- Всегда `await callback.answer()` после обработки CallbackQuery
+- `await message.answer(...)` — не `reply`, если не нужна цитата
+- Длинные сообщения разбивать на части если > 4096 символов
+
+## DB в хендлерах
+```python
+async with async_session() as session:
+    result = await session.execute(select(Model).where(...))
+    obj = result.scalar_one_or_none()
+```
+
+## Keyboards
+```python
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+def my_kb() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="...", callback_data="..."))
+    return b.as_markup()
+```
+
+## Не делать
+- Не писать бизнес-логику в хендлерах — выносить в `src/core/services/`
+- Не делать прямые HTTP-запросы в хендлерах
+- Не использовать `Bot` инстанс напрямую в хендлерах — только `message.bot` или импорт `from src.bot.bot import bot`

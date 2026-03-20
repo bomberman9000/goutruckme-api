@@ -1,0 +1,242 @@
+[
+    {
+        "name": "_ym_d",
+        "value": "1772561981",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "_ym_isad",
+        "value": "2",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "_ym_uid",
+        "value": "1772561981685631070",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "sid",
+        "value": "63e767af26fe4f909b15b38def65e6d8",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "_ymab_param",
+        "value": "LUhC_0JRYulSS2CrsYD8okahFVinRCFp79Nl1uS0coLmIG7ivz1GIcG8QQzcWSeFqBf3lAg7qECnEX6QuDxtUX9ndV8",
+        "domain": "ati.su",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "did",
+        "value": "y9vpDEGD4Ueo3SGI3KEVd3wLPREnOsLhBpf23e9Yaso%3D",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "_dc_gtm_UA-224067-1",
+        "value": "1",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "domain_sid",
+        "value": "GxaiQoe3krih22HLjECuH%3A1772564822463",
+        "domain": "loads.ati.su",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "itemsPerPage",
+        "value": "10",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "uicult2",
+        "value": "ru",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "ati_theme",
+        "value": "default-theme",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": 1803669129,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "_gcl_au",
+        "value": "1.1.699649469.1772564820",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": 1780340820,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "startpage",
+        "value": "loadsatisu",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": 1772566930,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "lastpage",
+        "value": "loadsatisu",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": 1772651530,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "wasCookieAccepted",
+        "value": "true",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": 1804101130,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "_ga_14VPSGD0HN",
+        "value": "GS2.1.s1772564820$o1$g1$t1772565130$j60$l0$h0",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": 1807125130.391,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "_ga",
+        "value": "GA1.2.746564411.1772564820",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": 1807125130.485,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "_gid",
+        "value": "GA1.2.99371594.1772564820",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": 1772651530,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "tmr_lvid",
+        "value": "1e7f460e091433432bb9ab53ce67ec1e",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": 1801336330,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "tmr_lvidTS",
+        "value": "1772564820737",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": 1801336330,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "_ga_Z6YM1FRK5D",
+        "value": "GS2.2.s1772564820$o1$g1$t1772565130$j60$l0$h0",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": 1807125130.75,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "_ymab_param",
+        "value": "lRpwx2-4rxmH8I-9KZRWIxncZSIpRCeP3f3Lzw-hGGNnASK4vik97dmSlC0SM9C0-OqfDuoVeUR9r3DI_AmOspsMjrw",
+        "domain": "loads.ati.su",
+        "path": "/",
+        "expires": 1804101130.825,
+        "httpOnly": false,
+        "secure": true,
+        "sameSite": "None"
+    },
+    {
+        "name": "_ym_visorc",
+        "value": "b",
+        "domain": ".ati.su",
+        "path": "/",
+        "expires": 1772566931,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    },
+    {
+        "name": "tmr_detect",
+        "value": "0%7C1772565132942",
+        "domain": "loads.ati.su",
+        "path": "/",
+        "expires": 1772651532,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "None"
+    }
+]

@@ -1,0 +1,50 @@
+---
+description: Общие правила проекта GruzPotok / GoTruck
+alwaysApply: true
+---
+
+# GruzPotok — Logistics Telegram Bot Platform
+
+## Стек
+- Python 3.12+, полностью async
+- **Bot**: aiogram 3.x, FSM через `aiogram.fsm`
+- **API**: FastAPI + uvicorn
+- **DB**: SQLAlchemy 2.0 async + asyncpg, PostgreSQL 16
+- **Cache**: Redis (`src/core/redis.py`, `src/core/cache.py`)
+- **Config**: pydantic-settings (`src/core/config.py` → `settings`)
+- **Package manager**: uv (не pip, не poetry)
+- **Linter**: ruff | **Formatter**: black
+
+## Структура
+```
+src/
+  bot/
+    handlers/   — aiogram роутеры, по одному файлу на домен
+    keyboards.py — все InlineKeyboardBuilder клавиатуры
+    states.py   — все StatesGroup
+    middlewares/ — aiogram middleware
+    utils/      — утилиты бота
+  api/          — FastAPI роутеры (один файл = один домен)
+  core/
+    models.py   — все SQLAlchemy модели
+    database.py — async_session, Base
+    config.py   — Settings (pydantic-settings)
+    ai.py       — AI-вызовы (Groq/OpenAI)
+    schemas/    — Pydantic схемы
+    services/   — бизнес-логика без HTTP/bot зависимостей
+  admin/        — Starlette admin panel
+  antifraud/    — антифрод логика
+  webapp/       — FastAPI роуты для TWA
+frontend/
+  twa/          — React + Vite (Telegram Mini App)
+```
+
+## Правила
+- Сессия БД: всегда `async with async_session() as session`
+- Логгер: `from src.core.logger import logger`
+- Настройки: `from src.core.config import settings`
+- Bot instance: `from src.bot.bot import bot`
+- Не импортировать циклически — сервисы не зависят от bot/api слоёв
+- Новые модели — в `src/core/models.py`, новая миграция — в `migrations/`
+- Telegram сообщения — на русском языке
+- Не трогать код вне задачи, не рефакторить без просьбы

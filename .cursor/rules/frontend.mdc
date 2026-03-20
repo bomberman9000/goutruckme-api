@@ -1,0 +1,49 @@
+---
+description: Правила для React/Vite Telegram Mini App (TWA)
+globs: ["frontend/**/*.tsx", "frontend/**/*.ts", "frontend/**/*.css"]
+alwaysApply: false
+---
+
+# Frontend — Telegram Mini App (TWA)
+
+## Стек
+- React 18 + TypeScript + Vite
+- Yandex Maps: `@pbe/react-yandex-maps`
+- Telegram WebApp API: `window.Telegram.WebApp`
+- API calls: нативный `fetch` к бэку (см. `src/api.ts`)
+
+## Структура
+```
+frontend/twa/src/
+  App.tsx         — главный компонент, роутинг по состоянию
+  api.ts          — все fetch-запросы к бэку
+  main.tsx        — точка входа
+  *.tsx           — компоненты форм и экранов
+  styles.css      — глобальные стили
+```
+
+## Правила
+- Telegram init data берётся из `window.Telegram.WebApp.initData`
+- Все запросы к API — через функции в `api.ts`, не инлайн fetch в компонентах
+- Стили — в `styles.css` или инлайн, без CSS-модулей и styled-components
+- Компоненты — функциональные, hooks only
+- `window.Telegram.WebApp.ready()` вызывать в `main.tsx` при старте
+- `window.Telegram.WebApp.expand()` для полноэкранного режима
+- Не использовать react-router — навигация через состояние App
+
+## API calls (паттерн из api.ts)
+```typescript
+const API_BASE = import.meta.env.VITE_API_URL || "";
+
+export async function fetchCargos(initData: string) {
+    const res = await fetch(`${API_BASE}/api/v1/cargos`, {
+        headers: { "X-Telegram-Init-Data": initData }
+    });
+    return res.json();
+}
+```
+
+## Запуск
+```bash
+cd frontend/twa && npm run dev  # http://localhost:5173
+```

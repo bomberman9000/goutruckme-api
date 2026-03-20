@@ -1,0 +1,35 @@
+---
+description: Правила для FastAPI роутов
+globs: ["src/api/**/*.py", "src/webapp/**/*.py", "main.py"]
+alwaysApply: false
+---
+
+# FastAPI Rules
+
+## Структура роута
+```python
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from src.core.database import get_session  # если есть dependency
+from src.core.schemas import MyRequest, MyResponse
+
+router = APIRouter(prefix="/resource", tags=["resource"])
+
+@router.get("/{id}", response_model=MyResponse)
+async def get_resource(id: int):
+    async with async_session() as session:
+        ...
+```
+
+## Правила
+- Один файл = один домен (cargos, users, teams, ...)
+- Pydantic схемы запросов/ответов — в `src/core/schemas/`
+- HTTP ошибки — `raise HTTPException(status_code=..., detail="...")`
+- Internal API (между сервисами) — проверять `internal_token` из `settings`
+- Эндпоинты возвращают dict или Pydantic модель — не SQLAlchemy объекты напрямую
+- Префиксы: `/api/v1/...` для публичного API, `/internal/...` для межсервисного
+
+## Auth
+- JWT токены — `python-jose`, секрет из `settings.secret_key`
+- Admin panel — Basic auth через `settings.admin_username/admin_password`
+- Internal запросы — Bearer token `settings.internal_token`

@@ -1,0 +1,53 @@
+---
+description: Правила для SQLAlchemy моделей и миграций
+globs: ["src/core/models.py", "migrations/**/*.sql"]
+alwaysApply: false
+---
+
+# SQLAlchemy Models Rules
+
+## Стиль моделей
+```python
+from sqlalchemy import BigInteger, String, DateTime, Boolean, Integer, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column
+from src.core.database import Base
+from datetime import datetime
+
+class MyModel(Base):
+    __tablename__ = "my_models"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    name: Mapped[str] = mapped_column(String(255))
+    value: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+```
+
+## Правила
+- Telegram user_id → `BigInteger` (не Integer)
+- Nullable поля → `Mapped[T | None]` + `nullable=True`
+- Enum классы — `python enum.Enum`, передавать через `Enum(MyEnum)`
+- Все модели — в одном файле `src/core/models.py`
+- Новые таблицы → новый файл миграции в `migrations/NNNN_name.sql`
+- Миграции — raw SQL, применяются через psql после `init_db()`
+- Не использовать `relationship()` — загружать связанные объекты явно через join/select
+
+## Запросы (в сервисах и хендлерах)
+```python
+from sqlalchemy import select, update, delete
+from src.core.database import async_session
+
+async with async_session() as session:
+    # выбрать один
+    result = await session.execute(select(Model).where(Model.id == id))
+    obj = result.scalar_one_or_none()
+
+    # создать
+    obj = Model(field=value)
+    session.add(obj)
+    await session.commit()
+
+    # обновить
+    await session.execute(update(Model).where(Model.id == id).values(field=value))
+    await session.commit()
+```
