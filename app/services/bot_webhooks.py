@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any, Dict
 
 import httpx
@@ -28,6 +29,13 @@ def _resolve_event_url() -> str:
     return f"{base}{path}"
 
 
+def _resolve_sync_url() -> str:
+    base = (settings.TG_BOT_URL or settings.TG_BOT_INTERNAL_URL or "").rstrip("/")
+    if not base:
+        return ""
+    return f"{base}/internal/sync"
+
+
 def _build_headers() -> Dict[str, str]:
     token = _resolve_internal_token()
     return {"X-Internal-Token": token} if token else {}
@@ -38,6 +46,27 @@ def _build_payload(event_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
         "event_type": event_type,
         "source": "gruzpotok-api",
         "data": data,
+    }
+
+
+def _build_sync_payload(
+    *,
+    event_type: str,
+    search_id: str | None = None,
+    user_id: int | None = None,
+    vehicle: Dict[str, Any] | None = None,
+    order: Dict[str, Any] | None = None,
+    metadata: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    return {
+        "event_id": uuid.uuid4().hex,
+        "event_type": event_type,
+        "source": "gruzpotok-api",
+        "search_id": search_id,
+        "user_id": user_id,
+        "vehicle": vehicle,
+        "order": order,
+        "metadata": metadata or {},
     }
 
 
@@ -82,6 +111,43 @@ def send_event_to_bot_sync(event_type: str, data: Dict[str, Any]) -> bool:
         return True
     except Exception as exc:
         logger.error("Failed to send webhook sync (%s): %s", event_type, exc)
+        return False
+
+
+def send_sync_to_bot_sync(
+    *,
+    event_type: str,
+    search_id: str | None = None,
+    user_id: int | None = None,
+    vehicle: Dict[str, Any] | None = None,
+    order: Dict[str, Any] | None = None,
+    metadata: Dict[str, Any] | None = None,
+) -> bool:
+    """Синхронная отправка SharedSyncEvent в tg-bot /internal/sync."""
+    sync_url = _resolve_sync_url()
+    if not sync_url:
+        logger.warning("TG_BOT_INTERNAL_URL is empty, skip sync event=%s", event_type)
+        return False
+
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(
+                sync_url,
+                json=_build_sync_payload(
+                    event_type=event_type,
+                    search_id=search_id,
+                    user_id=user_id,
+                    vehicle=vehicle,
+                    order=order,
+                    metadata=metadata,
+                ),
+                headers=_build_headers(),
+            )
+            response.raise_for_status()
+        logger.info("Sync webhook sent(sync): %s", event_type)
+        return True
+    except Exception as exc:
+        logger.error("Failed to send sync webhook (%s): %s", event_type, exc)
         return False
 
 
