@@ -3810,6 +3810,15 @@
         </div>
     </div>
 
+    <!-- Floating AI Assistant Button -->
+    <button onclick="toggleChat()" id="floatingAiBtn" class="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-2xl flex items-center justify-center z-[1001] transition-all hover:scale-110 active:scale-95 group" title="Задать вопрос AI">
+        <svg class="w-7 h-7 transition-transform group-hover:rotate-12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 3L13.9 8.1L19 10L13.9 11.9L12 17L10.1 11.9L5 10L10.1 8.1L12 3Z" fill="currentColor"/>
+            <path d="M18.5 16L19.4 18.1L21.5 19L19.4 19.9L18.5 22L17.6 19.9L15.5 19L17.6 18.1L18.5 16Z" fill="currentColor"/>
+        </svg>
+        <div class="absolute -top-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
+    </button>
+
     <!-- ChatGPT Widget -->
     <div id="chatWidget" class="fixed bottom-4 right-4 w-96 bg-dark-card border border-dark-border rounded-xl shadow-2xl hidden flex flex-col" style="height: 600px; z-index: 1000;">
         <!-- Chat Header -->
@@ -10874,13 +10883,16 @@
         
         function toggleChat() {
             const chatWidget = document.getElementById('chatWidget');
+            const floatingAiBtn = document.getElementById('floatingAiBtn');
             if (chatWidget.classList.contains('hidden')) {
                 chatWidget.classList.remove('hidden');
                 chatWidget.classList.add('flex');
+                if (floatingAiBtn) floatingAiBtn.classList.add('hidden');
                 document.getElementById('chatInput').focus();
             } else {
                 chatWidget.classList.add('hidden');
                 chatWidget.classList.remove('flex');
+                if (floatingAiBtn) floatingAiBtn.classList.remove('hidden');
             }
         }
         
