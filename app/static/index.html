@@ -4583,7 +4583,8 @@
                 
                 <!-- Контакт: телефон или email + OTP -->
                 <div class="p-4 bg-dark rounded-xl border border-dark-border space-y-3">
-                    <p class="text-sm font-semibold text-gray-300">Подтверждение контакта *</p>
+                    <p class="text-sm font-semibold text-gray-300">Контакт для связи *</p>
+                    <p class="text-xs text-gray-500">OTP можно пропустить, если код не приходит.</p>
                     <div class="flex gap-1 bg-dark-card rounded-lg p-1">
                         <button type="button" onclick="switchRegContact('phone')" id="regContactTabPhone"
                             class="flex-1 py-1.5 text-xs rounded-md font-medium transition-all bg-dark-border text-white">
@@ -7377,6 +7378,10 @@
         }
 
         function switchRegContact(type) {
+            if (type === 'email') {
+                alert('❌ Регистрация по email временно недоступна. Используйте телефон.');
+                return;
+            }
             _regContactType = type;
             _regOtpVerified = false;
             const phoneWrap = document.getElementById('regContactPhoneWrap');
@@ -7417,8 +7422,25 @@
                 });
                 const d = await r.json();
                 if (r.ok) {
-                    document.getElementById('regOtpCodeWrap').classList.remove('hidden');
-                    btn.textContent = 'Отправить ещё раз';
+                    const statusEl = document.getElementById('regOtpStatus');
+                    if (d.otp_optional || d.delivery_mode === 'stub') {
+                        _regOtpVerified = true;
+                        document.getElementById('regOtpCodeWrap').classList.add('hidden');
+                        if (statusEl) {
+                            statusEl.textContent = '✓ OTP не требуется';
+                            statusEl.classList.remove('hidden');
+                            statusEl.classList.add('flex');
+                        }
+                        btn.textContent = 'OTP не нужен';
+                        alert('ℹ️ Код сейчас не обязателен. Можно продолжить регистрацию.');
+                    } else {
+                        document.getElementById('regOtpCodeWrap').classList.remove('hidden');
+                        if (statusEl) {
+                            statusEl.textContent = '✓ Подтверждено';
+                            statusEl.classList.add('hidden');
+                        }
+                        btn.textContent = 'Отправить ещё раз';
+                    }
                 } else { alert('❌ ' + (d.detail || 'Ошибка')); }
             } catch(e) { alert('❌ Ошибка сети'); }
             btn.disabled = false;
@@ -7515,12 +7537,6 @@
             const bankBik = document.getElementById('reg-bank-bik').value.trim();
             const bankKs = document.getElementById('reg-bank-ks').value.trim();
 
-            // Валидация OTP
-            if (!_regOtpVerified) {
-                alert('❌ Сначала подтвердите телефон или email через OTP');
-                return;
-            }
-
             // Валидация
             if (!organizationType || !inn || !organizationName || !phone || !password) {
                 alert('❌ Заполните все обязательные поля');
@@ -7571,7 +7587,7 @@
 
                 const data = await response.json();
                 if (response.ok) {
-                    alert('✅ Регистрация успешна! Подтвердите аккаунт оплатой для полного доступа.');
+                    alert('✅ ' + (data.message || 'Регистрация успешна!'));
                     // Очищаем форму
                     document.getElementById('reg-organization-type').value = '';
                     document.getElementById('reg-inn').value = '';
