@@ -40,6 +40,7 @@ def init_db():
     _ensure_consolidation_columns()
     _ensure_cities_catalog()
     _ensure_referral_columns()
+    _ensure_billing()
 
 
 def _ensure_user_profile_columns() -> None:
@@ -345,3 +346,23 @@ def _ensure_referral_columns() -> None:
         print(f'_ensure_referral_columns error: {e}')
     finally:
         db.close()
+
+def _ensure_billing() -> None:
+    """Add billing_plan to users, create platform_payments table."""
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_plan VARCHAR(20) DEFAULT 'free'"))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS platform_payments (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                plan VARCHAR(20) NOT NULL,
+                amount_rub INTEGER NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                external_id VARCHAR(100),
+                idempotency_key VARCHAR(100) UNIQUE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_platform_payments_user_id ON platform_payments(user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_platform_payments_status ON platform_payments(status)"))
+        conn.commit()

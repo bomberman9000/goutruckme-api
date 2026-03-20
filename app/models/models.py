@@ -876,3 +876,17 @@ class ConsolidationPlanItem(Base):
     plan = relationship("ConsolidationPlan", back_populates="items")
     cargo = relationship("Load")
 
+
+class PlatformPayment(Base):
+    __tablename__ = "platform_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    plan = Column(String(20), nullable=False)
+    amount_rub = Column(Integer, nullable=False)
+    status = Column(String(20), nullable=False, default='pending', index=True)
+    external_id = Column(String(100), nullable=True, index=True)
+    idempotency_key = Column(String(100), nullable=True, unique=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    user = relationship('User', foreign_keys=[user_id])
