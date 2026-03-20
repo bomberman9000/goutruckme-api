@@ -2350,8 +2350,8 @@
                                     <h2 class='text-xl font-bold text-slate-900'>Грузы</h2>
                                     <span id='loadsResultCount' class='bg-slate-100 px-2 py-0.5 rounded-full text-xs font-bold text-slate-600'></span>
                                     <div class='flex items-center gap-1.5 ml-2'>
-                                        <span id='loadsAiModeBadge' class='loads-mode-badge hidden px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md border border-blue-500/30 bg-blue-500/10 text-blue-400'>AI режим</span>
-                                        <span id='loadsCompactBadge' class='loads-mode-badge hidden px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md border border-yellow-500/30 bg-yellow-500/10 text-yellow-500'>Компактный</span>
+                                        <button id='loadsAiModeBadge' onclick='applyColumnsPreset("expanded")' title='Режим AI: показываются только AI-колонки. Нажмите, чтобы показать все колонки.' class='loads-mode-badge hidden px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md border border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all cursor-pointer'>AI режим</button>
+                                        <button id='loadsCompactBadge' onclick='applyColumnsPreset("expanded")' title='Компактный режим: часть колонок скрыта. Нажмите, чтобы показать все колонки.' class='loads-mode-badge hidden px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md border border-yellow-500/30 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20 transition-all cursor-pointer'>Компактный</button>
                                     </div>
                                 </div>
                                 <div class='flex items-center gap-2'>
@@ -3751,7 +3751,7 @@
     </footer>
 
     <!-- Modal: Best Loads -->
-    <div id="modal-bestLoads" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+    <div id="modal-bestLoads" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-3xl w-full mx-4">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-xl font-bold">⚡ Лучшие 3 рейса сегодня</h3>
@@ -3769,7 +3769,7 @@
     </div>
 
     <!-- Modal: Column Settings -->
-    <div id="modal-columnSettings" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+    <div id="modal-columnSettings" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-xl font-bold">Настройка колонок</h3>
@@ -3860,14 +3860,14 @@
 
     <!-- Modals -->
     <!-- Modal: Create Load -->
-    <div id="modal-createLoad" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
-        <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+    <div id="modal-createLoad" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
+        <div class="bg-dark-card border border-dark-border rounded-2xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col shadow-2xl transition-all">
+            <div class="flex items-center justify-between p-5 border-b border-dark-border bg-dark-card z-20 rounded-t-2xl flex-shrink-0 shadow-sm">
                 <h3 class="text-xl font-bold">📦 Добавить груз</h3>
-                <button onclick="closeModal('createLoad')" class="text-gray-400 hover:text-white transition-colors">✕</button>
+                <button onclick="closeModal('createLoad')" class="text-gray-400 hover:text-white transition-all p-2 hover:bg-white/10 rounded-full text-2xl leading-none flex items-center justify-center w-10 h-10" title="Закрыть (Esc)">✕</button>
             </div>
             
-            <form id="createLoadForm" novalidate onsubmit="event.preventDefault(); createLoad();" class="space-y-6">
+            <form id="createLoadForm" style="padding: 24px; overflow-y: auto; flex: 1;" novalidate onsubmit="event.preventDefault(); createLoad();" class="space-y-6">
                 <!-- Priority promo -->
                 <div id="createLoad-priority-banner" class="hidden items-center gap-3 px-4 py-3 rounded-xl border border-yellow-500/30 bg-yellow-500/8">
                     <span class="text-xl">⭐</span>
@@ -4032,11 +4032,11 @@
                 <div id="load-form-errors" class="hidden text-red-400 text-sm space-y-1"></div>
                 
                 <!-- Кнопки -->
-                <div class="flex gap-3 pt-4 border-t border-dark-border">
-                    <button type="button" onclick="closeModal('createLoad')" class="flex-1 px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg transition-all">
+                <div class="flex gap-3 pt-4 border-t border-dark-border sticky bottom-0 bg-dark-card/95 backdrop-blur mt-auto flex-shrink-0">
+                    <button type="button" onclick="closeModal('createLoad')" class="flex-1 px-4 py-3 bg-dark-border hover:bg-dark-border/80 text-gray-300 rounded-xl font-semibold transition-all">
                         Отмена
                     </button>
-                    <button type="submit" class="flex-1 px-4 py-2 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark rounded-lg font-semibold transition-all transform hover:scale-[1.02] active:scale-[0.98]">
+                    <button type="submit" class="flex-[2] px-4 py-3 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-purple/20">
                         Создать груз
                     </button>
                 </div>
@@ -4045,9 +4045,9 @@
     </div>
 
     <!-- Modal: Take Cargo (Подтверждение взятия груза) -->
-    <div id="modal-takeCargo" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+    <div id="modal-takeCargo" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-lg w-full mx-4">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-xl font-bold">Взять груз?</h3>
                 <button onclick="closeModal('takeCargo')" class="text-gray-400 hover:text-white transition-colors">✕</button>
             </div>
@@ -4119,7 +4119,7 @@
     </div>
 
     <!-- Modal: Deal Details (Детали сделки) -->
-    <div id="modal-dealDetails" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 p-4">
+    <div id="modal-dealDetails" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 p-4" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl max-w-2xl w-full flex flex-col max-h-[90vh]">
             <div class="flex items-center justify-between px-6 py-4 border-b border-dark-border flex-shrink-0">
                 <h3 class="text-xl font-bold">Детали сделки</h3>
@@ -4132,9 +4132,9 @@
     </div>
 
     <!-- Modal: Document Parameters (Параметры документа) -->
-    <div id="modal-documentParams" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-documentParams" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-xl font-bold" id="documentParamsTitle">Параметры документа</h3>
                 <button onclick="closeModal('documentParams')" class="text-gray-400 hover:text-white transition-colors">✕</button>
             </div>
@@ -4228,9 +4228,9 @@
     </div>
 
     <!-- Modal: Company Profile (Настройки компании) -->
-    <div id="modal-companyProfile" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-companyProfile" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-xl font-bold">Настройки компании</h3>
                 <button onclick="closeModal('companyProfile')" class="text-gray-400 hover:text-white transition-colors">✕</button>
             </div>
@@ -4315,9 +4315,9 @@
     </div>
 
     <!-- Modal: Import Clients (Импорт клиентов) -->
-    <div id="modal-importClients" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-importClients" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-4xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-xl font-bold">📥 Импорт клиентов</h3>
                 <button onclick="closeModal('importClients')" class="text-gray-400 hover:text-white transition-colors">✕</button>
             </div>
@@ -4370,9 +4370,9 @@
     </div>
 
     <!-- Modal: Import Carriers (Импорт перевозчиков) -->
-    <div id="modal-importCarriers" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-importCarriers" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-4xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-xl font-bold">📥 Импорт перевозчиков</h3>
                 <button onclick="closeModal('importCarriers')" class="text-gray-400 hover:text-white transition-colors">✕</button>
             </div>
@@ -4427,9 +4427,9 @@
     </div>
 
     <!-- Modal: Add/Edit Client (Добавить/Редактировать клиента) -->
-    <div id="modal-clientForm" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-clientForm" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-xl font-bold" id="client-form-title">Добавить клиента</h3>
                 <button onclick="closeModal('clientForm')" class="text-gray-400 hover:text-white transition-colors">✕</button>
             </div>
@@ -4569,9 +4569,9 @@
 
 
     <!-- Modal: Add/Edit Carrier (Добавить/Редактировать перевозчика) -->
-    <div id="modal-carrierForm" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-carrierForm" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-xl font-bold" id="carrier-form-title">Добавить перевозчика</h3>
                 <button onclick="closeModal('carrierForm')" class="text-gray-400 hover:text-white transition-colors">✕</button>
             </div>
@@ -4671,9 +4671,9 @@
     </div>
 
     <!-- Modal: Role Selection (Step 1) -->
-    <div id="modal-role-selection" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-role-selection" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-8 max-w-5xl w-full mx-4 my-8">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-2xl font-bold">Регистрация на ГрузПоток</h3>
                 <button onclick="closeModal('role-selection')" class="text-gray-400 hover:text-white">✕</button>
             </div>
@@ -4733,7 +4733,7 @@
     </div>
 
     <!-- Modal: Register -->
-    <div id="modal-register" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-register" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-2xl w-full mx-4 my-8">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-xl font-bold">Регистрация ИП/ООО</h3>
@@ -4872,7 +4872,7 @@
     <!-- Modal: Login -->
 
     <!-- Deal Picker Modal (for createDocument) -->
-    <div id="modal-dealPicker" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-dealPicker" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-lg w-full mx-4 my-6">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-xl font-bold" id="dealPickerTitle">Выберите сделку</h3>
@@ -4890,7 +4890,7 @@
 
 
     <!-- ── Balance / Plan Modal ── -->
-    <div id="modal-balance" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+    <div id="modal-balance" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-sm w-full mx-4">
             <div class="flex items-center justify-between mb-5">
                 <h3 class="text-lg font-bold">Ваш план</h3>
@@ -4906,7 +4906,7 @@
         </div>
     </div>
 
-    <div id="modal-login" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+    <div id="modal-login" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-md w-full mx-4">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-xl font-bold">Вход</h3>
@@ -5723,6 +5723,17 @@
 
         window.addEventListener('hashchange', handleProfileHashRoute);
 
+        // Global Modal Keyboard Shortcuts (Esc)
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const openModals = document.querySelectorAll('[id^="modal-"]:not(.hidden)');
+                openModals.forEach(modal => {
+                    const modalId = modal.id.replace('modal-', '');
+                    closeModal(modalId);
+                });
+            }
+        });
+
         function goHome(event) {
             if (event) {
                 event.preventDefault();
@@ -5849,6 +5860,8 @@
         }
 
         function closeModal(modalId) {
+            const modal = document.getElementById();
+            if (!modal) return;
             const modal = document.getElementById(`modal-${modalId}`);
             if (modal) {
                 modal.classList.add('hidden');
