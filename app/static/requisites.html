@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Реквизиты — ГрузПоток</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #111; margin: 0; padding: 24px 16px; }
+  .wrap { max-width: 680px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: 4px; }
+  .sub { color: #5c6675; font-size: .9rem; margin-bottom: 32px; }
+  .card { background: #fff; border: 1px solid #d7deea; border-radius: 16px; padding: 28px; margin-bottom: 20px; }
+  .card h2 { font-size: 1rem; font-weight: 700; color: #2563eb; margin: 0 0 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  td { padding: 8px 0; vertical-align: top; }
+  td:first-child { color: #5c6675; width: 46%; }
+  td:last-child { font-weight: 600; }
+  .plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 4px; }
+  .plan { border: 1px solid #d7deea; border-radius: 12px; padding: 16px; }
+  .plan-name { font-weight: 800; font-size: 1.1rem; }
+  .plan-price { font-size: 1.4rem; font-weight: 800; color: #2563eb; margin: 4px 0 8px; }
+  .plan-price.free { color: #6b7280; font-size: 1rem; }
+  .plan-price.business { color: #7c3aed; }
+  .plan-feat { font-size: .8rem; color: #5c6675; line-height: 1.6; }
+  .back { display: inline-block; margin-bottom: 24px; color: #2563eb; text-decoration: none; font-size: .9rem; }
+  .back:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a href="/" class="back">← На главную</a>
+  <h1>Реквизиты ГрузПоток</h1>
+  <p class="sub">Платформа для грузовых перевозок — ООО «ИНТЕЛЛЕКТПРО»</p>
+
+  <div class="card">
+    <h2>Юридическое лицо</h2>
+    <table>
+      <tr><td>Наименование</td><td>ООО «ИНТЕЛЛЕКТПРО»</td></tr>
+      <tr><td>ИНН</td><td>6318240460</td></tr>
+      <tr><td>КПП</td><td>631801001</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Банковские реквизиты</h2>
+    <table>
+      <tr><td>Банк</td><td>ООО «Банк Точка»</td></tr>
+      <tr><td>Расчётный счёт</td><td>40702810720000287623</td></tr>
+      <tr><td>БИК</td><td>044525104</td></tr>
+      <tr><td>Корр. счёт</td><td>30101810745374525104</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Услуги и стоимость</h2>
+    <p style="font-size:.85rem;color:#5c6675;margin:0 0 16px">Платформа предоставляет доступ к сервисам логистики и грузоперевозок.</p>
+    <div class="plan-grid">
+      <div class="plan">
+        <div class="plan-name">🆓 Free</div>
+        <div class="plan-price free">Бесплатно</div>
+        <div class="plan-feat">До 5 грузов в месяц<br>До 3 машин<br>Базовый поиск<br>Публичный профиль</div>
+      </div>
+      <div class="plan">
+        <div class="plan-name">⭐ Pro</div>
+        <div class="plan-price">990 ₽/мес</div>
+        <div class="plan-feat">Неограниченные грузы и машины<br>AI-подбор перевозчиков<br>Приоритет в поиске<br>Email-уведомления</div>
+      </div>
+      <div class="plan">
+        <div class="plan-name">💼 Business</div>
+        <div class="plan-price business">2 990 ₽/мес</div>
+        <div class="plan-feat">Всё из Pro<br>API-доступ<br>Светофор Pro<br>Выделенная поддержка</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Контактная информация</h2>
+    <table>
+      <tr><td>Сайт</td><td><a href="https://miniapp.144.31.64.130.sslip.io" style="color:#2563eb">miniapp.144.31.64.130.sslip.io</a></td></tr>
+      <tr><td>Email</td><td>support@gruzpotok.ru</td></tr>
+    </table>
+  </div>
+</div>
+</body>
+</html>
