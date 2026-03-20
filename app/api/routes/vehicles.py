@@ -18,6 +18,7 @@ from app.core.security import get_current_user
 from app.db.database import get_db
 from app.dicts.vehicles import (
     ADR_CLASSES,
+    BODY_COMPATIBILITY,
     BODY_TYPE_ALIASES,
     LEGACY_BODY_KIND,
     LOADING_TYPE_ALIASES,
@@ -29,7 +30,7 @@ from app.dicts.vehicles import (
 from app.matching.compat import check_compat
 from app.models.models import City, Load, User, UserRole, Vehicle
 from app.services.cargo_status import apply_cargo_status_filter
-from app.services.geo import canonicalize_city_name
+from app.services.geo import canonicalize_city_name, is_city_like_name, is_supported_city, normalize_city_name
 from app.services.vehicle_ai import analyze_vehicle_submission, count_matching_loads
 from app.trust.service import get_company_trust_snapshot
 
@@ -55,6 +56,56 @@ _DEFAULT_LIST_PAGE_SIZE = 50
 
 ADR_CLASS_RE = re.compile(r"^[1-9](?:\.[0-9])?$")
 ALLOWED_ADR_CLASSES = set(ADR_CLASSES)
+_TRUCK_SEARCH_KG_RE = re.compile(r"(?<!\d)(\d+(?:[.,]\d+)?)\s*кг\b", flags=re.IGNORECASE)
+_TRUCK_SEARCH_TONS_RE = re.compile(
+    r"(?<!\d)(\d+(?:[.,]\d+)?)\s*(?:[-–—]?\s*ти\b|т\b|тон\b|тонн(?:а|ы)?\b|тонник\b)",
+    flags=re.IGNORECASE,
+)
+_TRUCK_SEARCH_ROUTE_RE = re.compile(
+    r"\bиз\s+([a-zа-яё\-\s]{2,40}?)\s+(?:в|до|на)\s+([a-zа-яё\-\s]{2,40})",
+    flags=re.IGNORECASE,
+)
+_TRUCK_SEARCH_SPLIT_RE = re.compile(r"[,\.;:!?\(\)\[\]\{\}/\\|]+")
+_TRUCK_SEARCH_WORD_RE = re.compile(r"[a-zа-яё\-]+", flags=re.IGNORECASE)
+_TRUCK_SEARCH_FILLER_WORDS = {
+    "ищу",
+    "нужен",
+    "нужна",
+    "нужно",
+    "машина",
+    "машину",
+    "машины",
+    "грузовик",
+    "грузовика",
+    "грузовикa",
+    "свободен",
+    "свободна",
+    "свободно",
+    "рейс",
+    "маршрут",
+    "сегодня",
+    "завтра",
+}
+_TRUCK_SEARCH_KIND_HINTS: tuple[tuple[str, dict[str, str]], ...] = (
+    ("манипулятор", {"vehicle_kind": "MANIPULATOR", "body_type": "манипулятор"}),
+    ("низкорамник", {"vehicle_kind": "LOWBOY_TRAL", "body_type": "трал"}),
+    ("трал", {"vehicle_kind": "LOWBOY_TRAL", "body_type": "трал"}),
+    ("рефрижератор", {"vehicle_kind": "REFRIGERATOR", "body_type": "реф"}),
+    ("реф", {"vehicle_kind": "REFRIGERATOR", "body_type": "реф"}),
+    ("изотерм", {"vehicle_kind": "ISOTHERM", "body_type": "изотерм"}),
+    ("самосвал", {"vehicle_kind": "DUMP_TRUCK", "body_type": "самосвал"}),
+    ("цистерна", {"vehicle_kind": "TANKER", "body_type": "цистерна"}),
+    ("контейнеровоз", {"vehicle_kind": "CONTAINER_CARRIER", "body_type": "контейнеровоз"}),
+    ("лесовоз", {"vehicle_kind": "TIMBER_TRUCK", "body_type": "лесовоз"}),
+    ("автовоз", {"vehicle_kind": "CAR_CARRIER", "body_type": "автовоз"}),
+    ("газель", {"vehicle_kind": "VAN_UP_TO_3_5T", "body_type": "фургон"}),
+    ("фургон", {"vehicle_kind": "VAN_UP_TO_3_5T", "body_type": "фургон"}),
+    ("еврофура", {"vehicle_kind": "EUROFURA_TENT_20T", "body_type": "тент"}),
+    ("фура", {"vehicle_kind": "EUROFURA_TENT_20T", "body_type": "тент"}),
+    ("тент", {"vehicle_kind": "EUROFURA_TENT_20T", "body_type": "тент"}),
+    ("борт", {"vehicle_kind": "FLATBED", "body_type": "платформа"}),
+    ("площадка", {"vehicle_kind": "FLATBED", "body_type": "платформа"}),
+)
 
 
 class VehicleCreateRequest(BaseModel):
@@ -218,6 +269,18 @@ class VehicleStatusUpdateRequest(BaseModel):
             allowed = ", ".join(sorted(_ALLOWED_STATUSES))
             raise ValueError(f"status должен быть одним из: {allowed}")
         return status
+
+
+class VehicleMarketSearchRequest(BaseModel):
+    query: Optional[str] = Field(default=None, max_length=300)
+    from_city: Optional[str] = Field(default=None, max_length=120)
+    to_city: Optional[str] = Field(default=None, max_length=120)
+    weight_tons: Optional[float] = Field(default=None, gt=0)
+    body_type: Optional[str] = Field(default=None, max_length=32)
+    vehicle_kind: Optional[str] = Field(default=None, max_length=40)
+    available_date: Optional[date] = None
+    recent_only: bool = False
+    limit: int = Field(default=8, ge=1, le=30)
 
 
 def _norm(value: Optional[str]) -> str:
@@ -453,6 +516,10 @@ def _resolve_city_fields(
 
     return selected_city_id, selected_city, selected_region, lat, lon
 
+
+def _is_pro_user(user: User) -> bool:
+    from datetime import datetime as _dt
+    return bool(user.pro_until and user.pro_until > _dt.utcnow())
 
 def _is_admin(user: User) -> bool:
     return user.role == UserRole.admin
@@ -759,6 +826,100 @@ def _vehicle_to_dict(vehicle: Vehicle, db: Session, *, matching_loads: Optional[
     }
 
 
+def _vehicle_market_teaser(vehicle: Vehicle, db: Session, *, score: Optional[float] = None, reasons: Optional[list[str]] = None) -> dict[str, Any]:
+    carrier = vehicle.carrier
+    kind_meta = VEHICLE_KIND_META.get(str(vehicle.vehicle_kind or ""), {})
+    trust = get_company_trust_snapshot(db, int(vehicle.owner_user_id or vehicle.carrier_id))
+    return {
+        "id": int(vehicle.id),
+        "name": vehicle.name,
+        "vehicle_kind": vehicle.vehicle_kind,
+        "vehicle_kind_label": kind_meta.get("label") or vehicle.vehicle_kind or vehicle.body_type,
+        "body_type": vehicle.body_type,
+        "payload_tons": float(vehicle.payload_tons or vehicle.capacity_tons or 0.0),
+        "capacity_tons": float(vehicle.capacity_tons or vehicle.payload_tons or 0.0),
+        "volume_m3": float(vehicle.volume_m3 or 0.0),
+        "location_city": canonicalize_city_name(vehicle.location_city),
+        "location_region": vehicle.location_region,
+        "radius_km": int(vehicle.radius_km or 0),
+        "available_from": vehicle.available_from.isoformat() if vehicle.available_from else None,
+        "available_to": vehicle.available_to.isoformat() if vehicle.available_to else None,
+        "available_today": bool(
+            vehicle.available_from
+            and vehicle.available_from <= date.today()
+            and (not vehicle.available_to or vehicle.available_to >= date.today())
+        ),
+        "rate_per_km": float(vehicle.rate_per_km) if vehicle.rate_per_km is not None else None,
+        "carrier": {
+            "id": int(carrier.id) if carrier else int(vehicle.carrier_id),
+            "organization_name": (carrier.organization_name if carrier else None) or (carrier.company if carrier else None),
+            "rating": float(carrier.rating) if carrier and carrier.rating is not None else None,
+            "verified": bool(carrier.verified) if carrier else False,
+        },
+        "trust": trust,
+        "ai": {
+            "risk_level": vehicle.ai_risk_level or "low",
+            "score": int(vehicle.ai_score or 0),
+        },
+        "score": round(float(score or 0.0), 1),
+        "reasons": reasons or [],
+    }
+
+
+def _is_mini_app_vehicle(vehicle: Vehicle) -> bool:
+    try:
+        return int(vehicle.id or 0) >= 900_000_000
+    except (TypeError, ValueError):
+        return False
+
+
+def _sync_vehicle_to_tg_bot(vehicle: Vehicle, owner: User | None) -> bool:
+    if not _is_mini_app_vehicle(vehicle):
+        return False
+
+    external_vehicle_id = int(vehicle.id) - 900_000_000
+    is_available = bool(
+        vehicle.status == "active"
+        and vehicle.available_from
+        and vehicle.available_from <= date.today()
+        and (not vehicle.available_to or vehicle.available_to >= date.today())
+    )
+
+    vehicle_payload = {
+        "id": str(external_vehicle_id),
+        "search_id": f"vehicle_{external_vehicle_id}",
+        "from_city": vehicle.location_city,
+        "location_city": vehicle.location_city,
+        "to_city": vehicle.location_region,
+        "location_region": vehicle.location_region,
+        "body_type": vehicle.body_type,
+        "capacity_t": float(vehicle.payload_tons or vehicle.capacity_tons or 0.0),
+        "capacity_tons": float(vehicle.payload_tons or vehicle.capacity_tons or 0.0),
+        "volume_m3": float(vehicle.volume_m3 or 0.0) if vehicle.volume_m3 is not None else None,
+        "plate_number": vehicle.plate_number,
+        "is_available": is_available,
+        "status": "active",
+        "owner_phone": (owner.phone or "").strip() if owner and owner.phone else None,
+        "owner_company": (owner.company or owner.organization_name or "").strip() if owner else None,
+        "source": "gruzpotok-api",
+        "meta": {
+            "site_vehicle_id": int(vehicle.id),
+            "site_status": vehicle.status,
+            "site_available_today": is_available,
+        },
+    }
+    return send_sync_to_bot_sync(
+        event_type="vehicle_upsert",
+        search_id=f"vehicle_{external_vehicle_id}",
+        vehicle=vehicle_payload,
+        metadata={
+            "origin": "vehicles",
+            "site_vehicle_id": int(vehicle.id),
+            "site_status": vehicle.status,
+        },
+    )
+
+
 def _risk_rank(level: str) -> int:
     normalized = _norm(level)
     if normalized == "high":
@@ -786,6 +947,262 @@ def _calc_load_rate_per_km(load: Load) -> float:
     if distance > 0 and price > 0:
         return round(price / distance, 1)
     return 0.0
+
+
+def _find_supported_city_candidate(db: Session, raw_value: str | None) -> str | None:
+    normalized = normalize_city_name(raw_value)
+    if not normalized or len(normalized) < 2:
+        return None
+
+    exact = (
+        db.query(City)
+        .filter(City.name_norm == normalized)
+        .order_by(City.population.desc().nullslast(), City.name.asc())
+        .first()
+    )
+    if is_supported_city(exact):
+        return exact.name
+
+    startswith = (
+        db.query(City)
+        .filter(City.name_norm.like(f"{normalized}%"))
+        .order_by(City.population.desc().nullslast(), City.name.asc())
+        .first()
+    )
+    if is_supported_city(startswith):
+        return startswith.name
+
+    fallback = canonicalize_city_name(raw_value)
+    return fallback if fallback and is_city_like_name(fallback) else None
+
+
+def _extract_cities_from_truck_search(db: Session, text: str) -> tuple[str | None, str | None]:
+    for match in _TRUCK_SEARCH_ROUTE_RE.finditer(text):
+        from_city = _find_supported_city_candidate(db, match.group(1))
+        to_city = _find_supported_city_candidate(db, match.group(2))
+        if from_city and to_city and _norm(from_city) != _norm(to_city):
+            return from_city, to_city
+
+    words = _TRUCK_SEARCH_WORD_RE.findall(text.lower())
+    if not words:
+        return None, None
+
+    candidates: list[tuple[int, int, str]] = []
+    for size in (3, 2, 1):
+        for idx in range(0, max(0, len(words) - size + 1)):
+            phrase = " ".join(words[idx : idx + size]).strip()
+            if not phrase or phrase in _TRUCK_SEARCH_FILLER_WORDS:
+                continue
+            city_name = _find_supported_city_candidate(db, phrase)
+            if city_name:
+                candidates.append((idx, size, city_name))
+
+    candidates.sort(key=lambda item: (item[0], -item[1]))
+    picked: list[str] = []
+    seen: set[str] = set()
+    for _, _, city_name in candidates:
+        norm_name = _norm(city_name)
+        if norm_name in seen:
+            continue
+        seen.add(norm_name)
+        picked.append(city_name)
+        if len(picked) >= 2:
+            break
+
+    if len(picked) >= 2:
+        return picked[0], picked[1]
+    if len(picked) == 1:
+        return picked[0], None
+    return None, None
+
+
+def _extract_truck_search_weight_tons(text: str) -> float | None:
+    kg_match = _TRUCK_SEARCH_KG_RE.search(text)
+    if kg_match:
+        return round(float(str(kg_match.group(1)).replace(",", ".")) / 1000.0, 3)
+
+    tons_match = _TRUCK_SEARCH_TONS_RE.search(text)
+    if tons_match:
+        return round(float(str(tons_match.group(1)).replace(",", ".")), 3)
+    return None
+
+
+def _extract_truck_search_available_date(text: str) -> date | None:
+    text_norm = _norm(text)
+    today = date.today()
+    if "завтра" in text_norm:
+        return date.fromordinal(today.toordinal() + 1)
+    if "сегодня" in text_norm:
+        return today
+    return None
+
+
+def _extract_truck_search_kind_hints(text: str) -> dict[str, str | None]:
+    text_norm = _norm(text)
+    for keyword, payload in _TRUCK_SEARCH_KIND_HINTS:
+        if keyword in text_norm:
+            return {
+                "vehicle_kind": payload.get("vehicle_kind"),
+                "body_type": payload.get("body_type"),
+            }
+    return {"vehicle_kind": None, "body_type": None}
+
+
+def _parse_vehicle_market_search(db: Session, payload: VehicleMarketSearchRequest) -> dict[str, Any]:
+    raw_query = str(payload.query or "").strip()
+
+    from_city = canonicalize_city_name(payload.from_city) if payload.from_city else None
+    to_city = canonicalize_city_name(payload.to_city) if payload.to_city else None
+    body_type = _canonical_body_type(payload.body_type)
+    vehicle_kind = str(payload.vehicle_kind or "").strip().upper() or None
+    weight_tons = float(payload.weight_tons) if payload.weight_tons is not None else None
+    available_date = payload.available_date
+
+    if raw_query:
+        route_from, route_to = _extract_cities_from_truck_search(db, raw_query)
+        hints = _extract_truck_search_kind_hints(raw_query)
+        from_city = from_city or route_from
+        to_city = to_city or route_to
+        body_type = body_type or _canonical_body_type(hints.get("body_type"))
+        vehicle_kind = vehicle_kind or str(hints.get("vehicle_kind") or "").strip().upper() or None
+        weight_tons = weight_tons if weight_tons is not None else _extract_truck_search_weight_tons(raw_query)
+        available_date = available_date or _extract_truck_search_available_date(raw_query)
+
+    return {
+        "query": raw_query or None,
+        "from_city": from_city,
+        "to_city": to_city,
+        "body_type": body_type or None,
+        "vehicle_kind": vehicle_kind if vehicle_kind in VEHICLE_KIND_META else None,
+        "weight_tons": weight_tons,
+        "available_date": available_date,
+    }
+
+
+def _is_vehicle_body_compatible(requested_body: str | None, vehicle: Vehicle) -> bool:
+    if not requested_body:
+        return True
+    vehicle_body = _canonical_body_type(vehicle.body_type, vehicle_kind=vehicle.vehicle_kind)
+    if not vehicle_body:
+        return False
+    if vehicle_body == requested_body:
+        return True
+    requested_allowed = BODY_COMPATIBILITY.get(requested_body, {requested_body})
+    vehicle_allowed = BODY_COMPATIBILITY.get(vehicle_body, {vehicle_body})
+    return vehicle_body in requested_allowed or requested_body in vehicle_allowed
+
+
+def _score_vehicle_market_match(vehicle: Vehicle, parsed: dict[str, Any]) -> tuple[float, list[str]] | None:
+    requested_city = _norm(parsed.get("from_city"))
+    requested_body = str(parsed.get("body_type") or "")
+    requested_kind = str(parsed.get("vehicle_kind") or "")
+    requested_weight = float(parsed.get("weight_tons") or 0.0)
+    requested_date = parsed.get("available_date")
+
+    reasons: list[str] = []
+    score = 0.0
+
+    if requested_date:
+        if vehicle.available_from and vehicle.available_from > requested_date:
+            return None
+        if vehicle.available_to and vehicle.available_to < requested_date:
+            return None
+        reasons.append(f"Доступен на {requested_date.isoformat()}")
+        score += 12.0
+    elif vehicle.available_from and vehicle.available_from <= date.today() and (not vehicle.available_to or vehicle.available_to >= date.today()):
+        reasons.append("Доступен сегодня")
+        score += 8.0
+
+    if requested_city:
+        vehicle_city = _norm(vehicle.location_city)
+        vehicle_region = _norm(vehicle.location_region)
+        if vehicle_city == requested_city:
+            score += 42.0
+            reasons.append("Стоит в городе подачи")
+        elif requested_city and requested_city in vehicle_region:
+            score += 20.0
+            reasons.append("Совпадает по региону подачи")
+        else:
+            return None
+
+    if requested_kind:
+        vehicle_kind = str(vehicle.vehicle_kind or "").strip().upper()
+        if vehicle_kind == requested_kind:
+            score += 28.0
+            reasons.append("Совпадает по типу ТС")
+        elif requested_body:
+            if not _is_vehicle_body_compatible(requested_body, vehicle):
+                return None
+            score += 14.0
+            reasons.append("Совместим по кузову")
+        else:
+            return None
+    elif requested_body:
+        if not _is_vehicle_body_compatible(requested_body, vehicle):
+            return None
+        score += 24.0
+        reasons.append("Подходит по кузову")
+
+    if requested_weight > 0:
+        capacity = float(vehicle.payload_tons or vehicle.capacity_tons or 0.0)
+        if capacity + 1e-6 < requested_weight:
+            return None
+        spare = max(0.0, capacity - requested_weight)
+        score += max(6.0, 24.0 - spare * 1.8)
+        reasons.append(f"Проходит по весу: {requested_weight:.1f}т из {capacity:.1f}т")
+    else:
+        score += 4.0
+
+    if vehicle.rate_per_km:
+        score += 4.0
+        reasons.append(f"Есть ставка: {float(vehicle.rate_per_km):.0f} ₽/км")
+
+    if int(vehicle.radius_km or 0) > 0:
+        score += min(6.0, max(1.0, 6.0 - (float(vehicle.radius_km) / 120.0)))
+        reasons.append(f"Радиус подачи {int(vehicle.radius_km)} км")
+
+    score += max(0.0, min(8.0, float(vehicle.ai_score or 0) / 15.0))
+    return score, reasons[:4]
+
+
+def _search_market_vehicles(db: Session, parsed: dict[str, Any], *, limit: int, recent_only: bool) -> list[dict[str, Any]]:
+    query = db.query(Vehicle).filter(Vehicle.status == "active")
+
+    reference_date = parsed.get("available_date") if not recent_only else date.today()
+    if reference_date:
+        query = query.filter(Vehicle.available_from <= reference_date)
+        query = query.filter(or_(Vehicle.available_to.is_(None), Vehicle.available_to >= reference_date))
+
+    requested_weight = float(parsed.get("weight_tons") or 0.0)
+    if requested_weight > 0:
+        query = query.filter(func.coalesce(Vehicle.payload_tons, Vehicle.capacity_tons) >= max(0.5, requested_weight))
+
+    if recent_only and not any(parsed.get(key) for key in ("query", "from_city", "to_city", "body_type", "vehicle_kind", "weight_tons")):
+        items = (
+            query.order_by(Vehicle.created_at.desc(), Vehicle.id.desc())
+            .limit(limit)
+            .all()
+        )
+        return [_vehicle_market_teaser(vehicle, db) for vehicle in items]
+
+    candidates = query.order_by(Vehicle.created_at.desc(), Vehicle.id.desc()).limit(250).all()
+    scored: list[tuple[float, Vehicle, list[str]]] = []
+    for vehicle in candidates:
+        score_payload = _score_vehicle_market_match(vehicle, parsed)
+        if not score_payload:
+            continue
+        score, reasons = score_payload
+        scored.append((score, vehicle, reasons))
+
+    scored.sort(
+        key=lambda item: (
+            -item[0],
+            -float(item[1].payload_tons or item[1].capacity_tons or 0.0),
+            -(item[1].created_at.timestamp() if item[1].created_at else 0.0),
+            -int(item[1].id),
+        )
+    )
+    return [_vehicle_market_teaser(vehicle, db, score=score, reasons=reasons) for score, vehicle, reasons in scored[:limit]]
 
 
 def _vehicle_matches_load(
@@ -1161,6 +1578,28 @@ def list_vehicles(
     }
 
 
+@router.post("/vehicles/search")
+def search_market_vehicles(
+    payload: VehicleMarketSearchRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ = current_user
+    parsed = _parse_vehicle_market_search(db, payload)
+    items = _search_market_vehicles(
+        db,
+        parsed,
+        limit=int(payload.limit or 8),
+        recent_only=bool(payload.recent_only),
+    )
+    return {
+        "items": items,
+        "total": len(items),
+        "mode": "recent" if payload.recent_only and not parsed.get("query") else "search",
+        "query": parsed,
+    }
+
+
 @router.get("/vehicles/{vehicle_id}")
 def get_vehicle(
     vehicle_id: int,
@@ -1300,7 +1739,6 @@ def update_vehicle(
     vehicle.status = resolved["status"]
     vehicle.updated_at = datetime.utcnow()
 
-    owner = db.query(User).filter(User.id == owner_id).first()
     if owner:
         ai_report = analyze_vehicle_submission(
             db,
@@ -1344,6 +1782,7 @@ def update_vehicle_status(
     db.commit()
     db.refresh(vehicle)
     _matching_cache_invalidate(vehicle.id)
+    owner = db.query(User).filter(User.id == owner_id).first()
     return _vehicle_to_dict(vehicle, db)
 
 
