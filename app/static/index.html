@@ -14173,11 +14173,25 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
     </div>
 
     <script>
-    // ── Service Worker ──────────────────────────────────────
+    // ── Service Worker / shell cache hygiene ─────────────────
+    window.__GP_SHELL_VERSION = '20260320-shell-v2';
     if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/sw.js', {scope: '/'})
-                .catch(err => console.warn('SW:', err));
+        window.addEventListener('load', async () => {
+            try {
+                const lastVersion = localStorage.getItem('gp-shell-version');
+                if (lastVersion !== window.__GP_SHELL_VERSION) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(regs.map((reg) => reg.unregister()));
+                    if (window.caches && typeof window.caches.keys === 'function') {
+                        const keys = await window.caches.keys();
+                        await Promise.all(keys.filter((key) => key.startsWith('gruzpotok-')).map((key) => window.caches.delete(key)));
+                    }
+                    localStorage.setItem('gp-shell-version', window.__GP_SHELL_VERSION);
+                }
+                await navigator.serviceWorker.register('/sw.js?v=' + encodeURIComponent(window.__GP_SHELL_VERSION), {scope: '/'});
+            } catch (err) {
+                console.warn('SW:', err);
+            }
         });
     }
 
