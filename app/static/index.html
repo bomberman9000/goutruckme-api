@@ -475,6 +475,38 @@
             background: rgba(255, 255, 255, 0.75);
             border-color: rgba(148, 163, 184, 0.4);
         }
+        .loads-date-input-wrap {
+            position: relative;
+        }
+        .loads-date-input-wrap #filter-date-display {
+            position: relative;
+            z-index: 1;
+            padding-right: 2.5rem;
+        }
+        .loads-date-input-wrap svg {
+            position: absolute;
+            right: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 2;
+            pointer-events: auto;
+        }
+        .loads-date-input-wrap #filter-date {
+            position: absolute !important;
+            inset: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            opacity: 0 !important;
+            cursor: pointer !important;
+            z-index: 3;
+            appearance: none;
+            -webkit-appearance: none;
+            border: 0 !important;
+            background: transparent !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
         #filtersPanel .glass-filter-control:focus {
             border-color: rgba(125, 211, 252, 0.75);
             box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.18), 0 10px 25px rgba(59, 130, 246, 0.18);
@@ -1964,7 +1996,7 @@
                             <!-- Loading Date -->
                             <div>
                                 <label class="text-xs text-gray-400 mb-1 block">Дата погрузки</label>
-                                <div class="relative">
+                                <div class="relative loads-date-input-wrap">
                                     <input type="text" id="filter-date-display" readonly
                                         placeholder="ДД / ММ / ГГГГ"
                                         onclick="document.getElementById('filter-date').showPicker ? document.getElementById('filter-date').showPicker() : document.getElementById('filter-date').click()"
