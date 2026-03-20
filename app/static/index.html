@@ -1961,6 +1961,62 @@
         @keyframes skeleton-pulse { 0% { opacity: 0.6; } 50% { opacity: 0.3; } 100% { opacity: 0.6; } }
         .skeleton { background: #E2E8F0; border-radius: 8px; animation: skeleton-pulse 1.5s ease-in-out infinite; }
         :root[data-theme="dark"] .skeleton { background: #2D3748; }
+
+        /* ── AI Assistant Premium UI ── */
+        #floatingAiBtn {
+            box-shadow: 0 12px 40px rgba(37, 99, 235, 0.35) !important;
+            border: 2px solid rgba(255, 255, 255, 0.2) !important;
+        }
+        #chatWidget {
+            width: 400px !important;
+            height: 600px !important;
+            max-height: 85vh !important;
+            bottom: 1.5rem !important;
+            right: 1.5rem !important;
+            border-radius: 24px !important;
+            overflow: hidden !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3) !important;
+            background: #1a1d23 !important;
+        }
+        .chat-header-premium {
+            background: linear-gradient(135deg, #1D4ED8 0%, #06B6D4 100%) !important;
+            padding: 1.25rem !important;
+        }
+        .chat-msg-ai {
+            background: rgba(30, 41, 59, 0.7) !important;
+            border: 1px solid rgba(255, 255, 255, 0.05) !important;
+            border-radius: 18px 18px 18px 4px !important;
+        }
+        .chat-msg-user {
+            background: linear-gradient(135deg, #1D4ED8 0%, #3B82F6 100%) !important;
+            color: white !important;
+            border-radius: 18px 18px 4px 18px !important;
+            margin-left: auto !important;
+            max-width: 85% !important;
+        }
+        
+        /* Toolbar Badge Modernization */
+        #loadsResultCount {
+            background: #EFF6FF !important;
+            color: #1D4ED8 !important;
+            border: 1px solid #DBEAFE !important;
+            padding: 2px 10px !important;
+            font-size: 13px !important;
+            font-weight: 700 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            line-height: 1 !important;
+            height: 24px !important;
+            min-width: 32px !important;
+            border-radius: 20px !important;
+        }
+        :root[data-theme="dark"] #loadsResultCount {
+            background: rgba(29, 78, 216, 0.15) !important;
+            color: #60A5FA !important;
+            border-color: rgba(29, 78, 216, 0.3) !important;
+        }
     
         /* ── Premium SaaS UI Overrides ── */
         .premium-card {
@@ -3820,24 +3876,24 @@
     </button>
 
     <!-- ChatGPT Widget -->
-    <div id="chatWidget" class="fixed bottom-4 right-4 w-96 bg-dark-card border border-dark-border rounded-xl shadow-2xl hidden flex flex-col" style="height: 600px; z-index: 1000;">
+    <div id="chatWidget" class="fixed hidden flex-col z-[1000]">
         <!-- Chat Header -->
-        <div class="p-4 border-b border-dark-border flex items-center justify-between bg-gradient-to-r from-purple to-blue">
-            <div class="flex items-center gap-2">
-                <div class="w-3 h-3 bg-green-400 rounded-full"></div>
-                <h3 class="font-semibold text-white">AI Помощник</h3>
+        <div class="chat-header-premium border-b border-white/10 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-2.5 h-2.5 bg-green-400 rounded-full shadow-[0_0_8px_rgba(74,222,128,0.6)]"></div>
+                <h3 class="font-bold text-white tracking-wide">AI Помощник</h3>
             </div>
-            <button onclick="toggleChat()" class="text-white hover:text-gray-200">✕</button>
+            <button onclick="toggleChat()" class="text-white/80 hover:text-white transition-all p-1 hover:bg-white/10 rounded-lg">✕</button>
         </div>
         
         <!-- Chat Messages -->
-        <div id="chatMessages" class="flex-1 overflow-y-auto p-4 space-y-4" style="max-height: 450px;">
-            <div class="flex items-start gap-2">
-                <div class="w-8 h-8 rounded-full bg-gradient-to-r from-purple to-blue flex items-center justify-center text-white text-sm font-bold">
+        <div id="chatMessages" class="flex-1 overflow-y-auto p-5 space-y-5 bg-[#1a1d23]">
+            <div class="flex items-start gap-3">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-white text-sm font-black shadow-lg">
                     AI
                 </div>
-                <div class="flex-1 bg-dark border border-dark-border rounded-lg p-3">
-                    <p class="text-sm text-gray-300">
+                <div class="chat-msg-ai flex-1 p-4">
+                    <p class="text-[14px] leading-relaxed text-gray-200">
                         Привет! Я AI-помощник ГрузПоток. Могу помочь с вопросами о грузоперевозках, логистике, документах и использовании платформы. Чем могу помочь?
                     </p>
                 </div>
@@ -3845,25 +3901,24 @@
         </div>
         
         <!-- Chat Input -->
-        <div class="p-4 border-t border-dark-border">
-            <div class="flex gap-2">
+        <div class="p-5 border-t border-white/5 bg-[#1a1d23]">
+            <div class="flex gap-2 bg-dark-border/20 p-1.5 rounded-2xl border border-white/5 focus-within:border-blue-500/50 transition-all">
                 <input 
                     type="text" 
                     id="chatInput" 
-                    placeholder="Напишите сообщение..."
-                    class="flex-1 px-3 py-2 bg-dark border border-dark-border rounded-lg focus:outline-none focus:border-purple text-sm"
+                    placeholder="Задайте вопрос..."
+                    class="flex-1 bg-transparent border-none focus:ring-0 text-white text-sm px-3 py-2"
                     onkeypress="if(event.key === 'Enter') sendChatMessage()"
                 >
                 <button 
                     onclick="sendChatMessage()" 
-                    class="px-4 py-2 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark rounded-lg transition-all"
+                    class="w-10 h-10 flex items-center justify-center rounded-xl bg-blue-600 text-white hover:bg-blue-500 transition-all shadow-lg"
                 >
-                    ➤
+                    <svg class="w-5 h-5 rotate-90" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 19L12 5M12 5L19 12M12 5L5 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
                 </button>
             </div>
-            <p class="text-xs text-gray-500 mt-2 text-center">
-                Powered by ChatGPT
-            </p>
         </div>
     </div>
 
