@@ -188,11 +188,32 @@ class CargoManager {
     render() {
         this.renderFilters();
         this.renderActiveFilters();
-        this.renderTable();
-        this.renderPagination();
+        if (this.isLoading) {
+            this.renderSkeleton();
+        } else {
+            this.renderTable();
+            this.renderPagination();
+        }
     }
-    
-    renderFilters() {
+
+    renderSkeleton() {
+        const tbody = document.getElementById('loadsTableBody');
+        const rows = 5;
+        tbody.innerHTML = Array(rows).fill(0).map(() => `
+            <tr class="border-b border-dark-border/50">
+                <td class="px-4 py-4"><div class="skeleton h-10 w-full"></div></td>
+                <td class="px-4 py-4"><div class="skeleton h-10 w-full"></div></td>
+                <td class="px-4 py-4"><div class="skeleton h-10 w-full"></div></td>
+                <td class="px-4 py-4"><div class="skeleton h-10 w-24"></div></td>
+                <td class="px-4 py-4"><div class="skeleton h-10 w-24"></div></td>
+                <td class="px-4 py-4"><div class="skeleton h-10 w-20"></div></td>
+                <td class="px-4 py-4"><div class="skeleton h-10 w-24"></div></td>
+                <td class="px-4 py-4"><div class="skeleton h-10 w-16"></div></td>
+            </tr>
+        `).join('');
+    }
+
+    renderTable() {
         // Обновление значений фильтров в DOM
         document.getElementById('filter-from').value = this.filters.from;
         document.getElementById('filter-to').value = this.filters.to;
