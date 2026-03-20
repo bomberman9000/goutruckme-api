@@ -93,6 +93,12 @@ class User(Base):
     telegram_id = Column(BigInteger, unique=True, nullable=True, index=True)
     telegram_username = Column(String(255), nullable=True)
     telegram_linked_at = Column(DateTime, nullable=True)
+    # Referral & Pro
+    referral_code  = Column(String(20), nullable=True, unique=True, index=True)
+    referred_by    = Column(Integer, ForeignKey("users.id"), nullable=True)
+    referral_count = Column(Integer, default=0, nullable=False)
+    pro_until      = Column(DateTime, nullable=True)
+    billing_plan   = Column(String(20), nullable=True, default="free")
 
     trucks = relationship("Truck", back_populates="owner")
     loads = relationship("Load", back_populates="creator")
@@ -206,6 +212,7 @@ class Vehicle(Base):
     available_to = Column(Date, nullable=True, index=True)
     rate_per_km = Column(Float, nullable=True)
     status = Column(String(20), default="active", index=True)  # active / archived
+    is_priority = Column(Boolean, default=False, nullable=False, index=True)
 
     # AI-слой: сохраняем результат оценки на момент публикации
     ai_risk_level = Column(String(20), default="low", index=True)  # low / medium / high
@@ -289,6 +296,7 @@ class Load(Base):
     suggested_response = Column(Text, nullable=True)
     source = Column(String(64), nullable=True)
     status = Column(String(20), default=CargoStatus.active.value, nullable=False, index=True)  # active / expired / closed / cancelled
+    is_priority = Column(Boolean, default=False, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     creator = relationship("User", back_populates="loads")
@@ -867,3 +875,4 @@ class ConsolidationPlanItem(Base):
 
     plan = relationship("ConsolidationPlan", back_populates="items")
     cargo = relationship("Load")
+
