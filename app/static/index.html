@@ -361,6 +361,89 @@
             min-width: 0;
         }
 
+
+        /* ── Shell layout hardening after static Tailwind build ───────────── */
+        body {
+            margin: 0;
+        }
+        .site-header > .container,
+        main.container {
+            width: min(1536px, calc(100% - 32px));
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .site-header > .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding-left: 16px;
+            padding-right: 16px;
+        }
+        main.container {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 24px;
+            padding-bottom: 24px;
+        }
+        #page-loads > .flex,
+        #page-trucks > .flex {
+            align-items: flex-start;
+        }
+        #mobileDrawerOverlay {
+            position: fixed;
+            inset: 0;
+            z-index: 40;
+            background: rgba(15, 23, 42, 0.56);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+        #mobileDrawer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 18rem;
+            transform: translateX(-100%);
+            z-index: 50;
+        }
+        #hamburgerBtn {
+            display: flex;
+        }
+        .site-header nav {
+            display: none;
+        }
+        @media (min-width: 768px) {
+            #hamburgerBtn {
+                display: none !important;
+            }
+            .site-header nav {
+                display: flex !important;
+            }
+            #mobileDrawer,
+            #mobileDrawerOverlay {
+                display: none !important;
+            }
+        }
+        @media (max-width: 767px) {
+            .site-header nav {
+                display: none !important;
+            }
+            #loginBtn,
+            #registerBtn {
+                display: none !important;
+            }
+            .site-header > .container,
+            main.container {
+                width: min(100%, calc(100% - 24px));
+            }
+            .site-header > .container,
+            main.container {
+                padding-left: 12px;
+                padding-right: 12px;
+            }
+        }
+
         .glass-action-btn {
             background: rgba(255, 255, 255, 0.03);
             border: 1px solid rgba(255, 255, 255, 0.1);
