@@ -4583,7 +4583,8 @@
                 
                 <!-- Контакт: телефон или email + OTP -->
                 <div class="p-4 bg-dark rounded-xl border border-dark-border space-y-3">
-                    <p class="text-sm font-semibold text-gray-300">Подтверждение контакта *</p>
+                    <p class="text-sm font-semibold text-gray-300">Телефон для входа *</p>
+                    <p class="text-xs text-gray-500">Код подтверждения временно не требуется.</p>
                     <div class="flex gap-1 bg-dark-card rounded-lg p-1">
                         <button type="button" onclick="switchRegContact('phone')" id="regContactTabPhone"
                             class="flex-1 py-1.5 text-xs rounded-md font-medium transition-all bg-dark-border text-white">
@@ -7377,6 +7378,10 @@
         }
 
         function switchRegContact(type) {
+            if (type === 'email') {
+                alert('❌ Регистрация сейчас доступна только по телефону');
+                return;
+            }
             _regContactType = type;
             _regOtpVerified = false;
             const phoneWrap = document.getElementById('regContactPhoneWrap');
@@ -7407,40 +7412,32 @@
 
         async function sendRegOtp() {
             const contact = _getRegContact();
-            if (!contact) { alert('❌ Введите телефон или email'); return; }
+            if (!contact) { alert('❌ Введите телефон'); return; }
+            _regOtpVerified = true;
             const btn = document.getElementById('regOtpSendBtn');
-            btn.disabled = true; btn.textContent = 'Отправка...';
-            try {
-                const r = await fetch(API_URL + '/auth/send-otp', {
-                    method: 'POST', headers: {'Content-Type':'application/json'},
-                    body: JSON.stringify({contact})
-                });
-                const d = await r.json();
-                if (r.ok) {
-                    document.getElementById('regOtpCodeWrap').classList.remove('hidden');
-                    btn.textContent = 'Отправить ещё раз';
-                } else { alert('❌ ' + (d.detail || 'Ошибка')); }
-            } catch(e) { alert('❌ Ошибка сети'); }
-            btn.disabled = false;
+            const statusEl = document.getElementById('regOtpStatus');
+            const codeWrap = document.getElementById('regOtpCodeWrap');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Код не нужен';
+            }
+            if (codeWrap) codeWrap.classList.add('hidden');
+            if (statusEl) {
+                statusEl.textContent = '✓ Можно продолжать';
+                statusEl.classList.remove('hidden');
+                statusEl.classList.add('flex');
+            }
+            alert('ℹ️ Подтверждение кода временно отключено. Можно завершать регистрацию.');
         }
 
         async function verifyRegOtp() {
-            const contact = _getRegContact();
-            const code = document.getElementById('reg-otp-code').value.trim();
-            if (!contact || !code) { alert('❌ Введите код'); return; }
-            try {
-                const r = await fetch(API_URL + '/auth/verify-otp', {
-                    method: 'POST', headers: {'Content-Type':'application/json'},
-                    body: JSON.stringify({contact, code})
-                });
-                const d = await r.json();
-                if (r.ok && d.verified) {
-                    _regOtpVerified = true;
-                    document.getElementById('regOtpCodeWrap').classList.add('hidden');
-                    const st = document.getElementById('regOtpStatus');
-                    st.classList.remove('hidden'); st.classList.add('flex');
-                } else { alert('❌ ' + (d.detail || 'Неверный код')); }
-            } catch(e) { alert('❌ Ошибка сети'); }
+            _regOtpVerified = true;
+            const statusEl = document.getElementById('regOtpStatus');
+            if (statusEl) {
+                statusEl.textContent = '✓ Можно продолжать';
+                statusEl.classList.remove('hidden');
+                statusEl.classList.add('flex');
+            }
         }
 
         function selectRole(role) {
@@ -7516,10 +7513,7 @@
             const bankKs = document.getElementById('reg-bank-ks').value.trim();
 
             // Валидация OTP
-            if (!_regOtpVerified) {
-                alert('❌ Сначала подтвердите телефон или email через OTP');
-                return;
-            }
+            _regOtpVerified = true;
 
             // Валидация
             if (!organizationType || !inn || !organizationName || !phone || !password) {
@@ -14275,24 +14269,24 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
     </div>
 
     <script>
-    // ── Service Worker / shell cache hygiene ─────────────────
-    window.__GP_SHELL_VERSION = '20260320-shell-v2';
+    // ── Service Worker hard-off until shell stabilizes ─────────────────
+    window.__GP_SHELL_VERSION = '20260320-shell-v4-nosw';
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', async () => {
             try {
-                const lastVersion = localStorage.getItem('gp-shell-version');
-                if (lastVersion !== window.__GP_SHELL_VERSION) {
-                    const regs = await navigator.serviceWorker.getRegistrations();
-                    await Promise.all(regs.map((reg) => reg.unregister()));
-                    if (window.caches && typeof window.caches.keys === 'function') {
-                        const keys = await window.caches.keys();
-                        await Promise.all(keys.filter((key) => key.startsWith('gruzpotok-')).map((key) => window.caches.delete(key)));
-                    }
-                    localStorage.setItem('gp-shell-version', window.__GP_SHELL_VERSION);
+                const regs = await navigator.serviceWorker.getRegistrations();
+                await Promise.all(regs.map((reg) => reg.unregister()));
+                if (window.caches && typeof window.caches.keys === 'function') {
+                    const keys = await window.caches.keys();
+                    await Promise.all(
+                        keys
+                            .filter((key) => key.startsWith('gruzpotok-') || key.startsWith('workbox-'))
+                            .map((key) => window.caches.delete(key))
+                    );
                 }
-                await navigator.serviceWorker.register('/sw.js?v=' + encodeURIComponent(window.__GP_SHELL_VERSION), {scope: '/'});
+                localStorage.setItem('gp-shell-version', window.__GP_SHELL_VERSION);
             } catch (err) {
-                console.warn('SW:', err);
+                console.warn('SW disable:', err);
             }
         });
     }
