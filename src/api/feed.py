@@ -247,7 +247,7 @@ async def get_feed(
         "body_type": body_type, "load_date": load_date,
         "uid": tma_user.user_id if tma_user else None,
     }
-    cached = await get_cached("feed", cache_params)
+    cached = None
     if cached:
         return Response(content=cached, media_type="application/json")
 
@@ -297,12 +297,48 @@ async def get_feed(
     if from_coords or to_coords:
         stmt = stmt.where(ParserIngestEvent.from_lat.isnot(None))
 
-    stmt = stmt.order_by(ParserIngestEvent.id.desc()).limit((limit + 1) * (3 if from_coords or to_coords else 1))
+    stmt = stmt.order_by(
+        ParserIngestEvent.is_hot_deal.desc(),
+        ParserIngestEvent.id.desc(),
+    ).limit((limit + 1) * (3 if from_coords or to_coords else 1))
 
     async with async_session() as session:
         current_user = await session.get(User, tma_user.user_id) if tma_user else None
         can_view_contact = _is_premium_active(current_user)
         rows = (await session.execute(stmt)).scalars().all()
+        manual_stmt = select(ParserIngestEvent).where(
+            ParserIngestEvent.source == "manual_client",
+            ParserIngestEvent.is_spam.is_(False),
+            ParserIngestEvent.status == "synced",
+        )
+        if verdicts:
+            manual_stmt = manual_stmt.where(ParserIngestEvent.trust_verdict.in_(verdicts))
+        if min_score is not None:
+            manual_stmt = manual_stmt.where(ParserIngestEvent.trust_score >= min_score)
+        if max_score is not None:
+            manual_stmt = manual_stmt.where(ParserIngestEvent.trust_score <= max_score)
+        if min_weight is not None:
+            manual_stmt = manual_stmt.where(ParserIngestEvent.weight_t >= min_weight)
+        if max_weight is not None:
+            manual_stmt = manual_stmt.where(ParserIngestEvent.weight_t <= max_weight)
+        if body_type:
+            manual_stmt = manual_stmt.where(ParserIngestEvent.body_type.ilike(f"%{body_type.strip()}%"))
+        if load_date:
+            manual_stmt = manual_stmt.where(ParserIngestEvent.load_date == load_date.strip())
+        if from_city and not from_coords:
+            manual_stmt = manual_stmt.where(ParserIngestEvent.from_city.ilike(f"%{from_city.strip()}%"))
+        if to_city and not to_coords:
+            manual_stmt = manual_stmt.where(ParserIngestEvent.to_city.ilike(f"%{to_city.strip()}%"))
+        manual_rows = (
+            await session.execute(
+                manual_stmt.order_by(ParserIngestEvent.id.desc()).limit(limit + 5)
+            )
+        ).scalars().all()
+        if manual_rows:
+            deduped = {int(row.id): row for row in rows}
+            for row in manual_rows:
+                deduped[int(row.id)] = row
+            rows = sorted(deduped.values(), key=lambda row: int(row.id), reverse=True)
         manual_ids = {
             cargo_id
             for cargo_id in (_extract_manual_cargo_id(getattr(row, "details_json", None)) for row in rows)
@@ -406,7 +442,6 @@ async def get_feed(
     )
 
     serialized = response.model_dump_json()
-    await set_cached("feed", cache_params, serialized)
     return Response(content=serialized, media_type="application/json")
 
 

@@ -21,6 +21,13 @@ def _webapp_url(path: str = "") -> str:
     return ""
 
 
+def _site_url(path: str = "") -> str:
+    base = (settings.gruzpotok_public_url or "").rstrip("/")
+    if base:
+        return f"{base}{path}"
+    return ""
+
+
 def main_menu():
     b = InlineKeyboardBuilder()
     b.row(InlineKeyboardButton(text="🔵 Найти груз (я водитель)", callback_data="search_cargo"))
@@ -44,6 +51,9 @@ def main_menu():
             text="📱 Открыть Mini App",
             web_app=WebAppInfo(url=url),
         ))
+    site_url = _site_url()
+    if site_url:
+        b.row(InlineKeyboardButton(text="🌐 Открыть сайт", url=site_url))
     return b.as_markup()
 
 
@@ -57,6 +67,9 @@ def webapp_entry_kb(path: str = ""):
                 web_app=WebAppInfo(url=url),
             )
         )
+    site_url = _site_url()
+    if site_url:
+        b.row(InlineKeyboardButton(text="🌐 Открыть сайт", url=site_url))
     b.row(InlineKeyboardButton(text="◀️ Меню", callback_data="menu"))
     return b.as_markup()
 
@@ -74,6 +87,7 @@ def cargo_actions(
     status: CargoStatus,
     owner_company_id: int | None = None,
     show_unlock: bool = False,
+    can_bump: bool = False,
 ):
     b = InlineKeyboardBuilder()
     if is_owner:
@@ -84,6 +98,8 @@ def cargo_actions(
         if status == CargoStatus.NEW:
             b.row(InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_cargo_{cargo_id}"))
             b.row(InlineKeyboardButton(text="🗑 Удалить", callback_data=f"delete_{cargo_id}"))
+        if can_bump and status in {CargoStatus.NEW, CargoStatus.ACTIVE}:
+            b.row(InlineKeyboardButton(text="⬆️ Поднять", callback_data=f"bump_cargo_{cargo_id}"))
         if status == CargoStatus.ARCHIVED:
             b.row(InlineKeyboardButton(text="♻️ Восстановить", callback_data=f"restore_cargo_{cargo_id}"))
     else:
@@ -361,18 +377,43 @@ def webapp_cargo_button(cargo_id: int):
     )
 
 
-def notification_kb(cargo_id: int):
-    """Keyboard for push-notification messages about new cargos."""
+def site_cargo_button(cargo_id: int, site_action_link: str | None = None):
+    resolved = (site_action_link or "").strip()
+    if not resolved:
+        resolved = _site_url(f"/?cargo_id={cargo_id}")
+    if not resolved:
+        return None
+    return InlineKeyboardButton(
+        text="🌐 Открыть на сайте",
+        url=resolved[:500],
+    )
+
+
+def cargo_open_rows(cargo_id: int, site_action_link: str | None = None) -> list[list[InlineKeyboardButton]]:
     from src.bot.utils import cargo_deeplink
-    b = InlineKeyboardBuilder()
-    b.row(InlineKeyboardButton(
-        text="📦 Открыть в боте",
-        url=cargo_deeplink(cargo_id),
-    ))
+
+    rows: list[list[InlineKeyboardButton]] = [[
+        InlineKeyboardButton(
+            text="📦 Открыть в боте",
+            url=cargo_deeplink(cargo_id),
+        )
+    ]]
+
+    site_btn = site_cargo_button(cargo_id, site_action_link=site_action_link)
+    if site_btn:
+        rows.append([site_btn])
+
     wa_btn = webapp_cargo_button(cargo_id)
     if wa_btn:
-        b.row(wa_btn)
-    return b.as_markup()
+        rows.append([wa_btn])
+    return rows
+
+
+def notification_kb(cargo_id: int, site_action_link: str | None = None):
+    """Keyboard for push-notification messages about new cargos."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=cargo_open_rows(cargo_id, site_action_link=site_action_link)
+    )
 
 
 def cancel_kb():
