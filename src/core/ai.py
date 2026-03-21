@@ -1002,6 +1002,26 @@ async def _call_gemini_vision(image_bytes: bytes, prompt: str) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
+async def _call_gemini(prompt: str) -> str:
+    """Вспомогательная функция для вызова Gemini 2.0 Flash с текстовым промптом."""
+    import httpx
+    api_key = settings.gemini_api_key
+    if not api_key:
+        raise ValueError("Gemini API key is not set in settings.")
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.1}
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client_http:
+        resp = await client_http.post(url, json=payload)
+        resp.raise_for_status()
+        data_raw = resp.json()
+        return data_raw['candidates'][0]['content']['parts'][0]['text'].strip()
+
+
 async def moderate_content_ai(text: str | None = None, image_bytes: bytes | None = None) -> dict:
     """Модерация текста или фото через Gemini."""
     if image_bytes:
@@ -1010,9 +1030,12 @@ async def moderate_content_ai(text: str | None = None, image_bytes: bytes | None
     
     if text:
         prompt = f"Проверь текст на мат и спам: \"{text}\". Верни JSON: {{\"is_safe\": bool, \"reason\": \"string\"}}"
-        res = await _call_gemini(prompt)
-        try: return json.loads(res)
-        except: return {"is_safe": True}
+        try:
+            res = await _call_gemini(prompt)
+            return json.loads(res)
+        except Exception as e:
+            logger.error(f"Gemini moderate_content_ai text parse error: {e}")
+            return {"is_safe": True}
     return {"is_safe": True}
 
 async def verify_document_ai(image_bytes: bytes, doc_type: str = "СТС") -> dict:
