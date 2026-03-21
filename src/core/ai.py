@@ -977,7 +977,7 @@ async def _call_gemini_vision(image_bytes: bytes, prompt: str) -> dict:
     api_key = settings.gemini_api_key
     if not api_key: return {"is_valid": False, "error": "No API key"}
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent?key={api_key}"
     payload = {
         "contents": [{
             "parts": [
@@ -1009,7 +1009,7 @@ async def _call_gemini(prompt: str) -> str:
     if not api_key:
         raise ValueError("Gemini API key is not set in settings.")
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.1}
