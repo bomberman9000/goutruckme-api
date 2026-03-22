@@ -68,6 +68,7 @@ def _user_payload(user: User) -> dict[str, Any]:
         "role": _normalize_role(user.role),
         "email": user.email,
         "phone": user.phone,
+        "telegram_username": user.telegram_username,
         "tg_user_id": _safe_int(user.telegram_id),
         "created_at": user.created_at.isoformat() if user.created_at else None,
     }
@@ -76,6 +77,7 @@ def _user_payload(user: User) -> dict[str, Any]:
 def _company_payload_private(company: User) -> dict[str, Any]:
     return {
         "id": int(company.id),
+        "gtp_code": f"ГТП-{company.id:06d}",
         "name": _company_name(company),
         "inn": company.inn,
         "ogrn": company.ogrn,
@@ -112,6 +114,7 @@ def _company_payload_public(company: User) -> dict[str, Any]:
     )
     return {
         "id": int(company.id),
+        "gtp_code": f"ГТП-{company.id:06d}",
         "name": _company_name(company),
         "city": company.city,
         "edo_enabled": bool(company.edo_enabled),
@@ -406,7 +409,11 @@ def _build_company_profile_payload(db: Session, company: User, include_private: 
 
 
 def _build_me_payload(db: Session, user: User) -> dict[str, Any]:
+    from datetime import datetime as _dt
     base = _build_company_profile_payload(db, user, include_private=True)
+    _now = _dt.utcnow()
+    _is_pro = bool(user.pro_until and user.pro_until > _now)
+    _plan = (user.billing_plan or "pro") if _is_pro else "free"
     return {
         "user": _user_payload(user),
         "company": base["company"],
@@ -415,6 +422,11 @@ def _build_me_payload(db: Session, user: User) -> dict[str, Any]:
         "risk_summary": base["risk_summary"],
         "recent_activity": base["recent_activity"],
         "verification": base.get("verification", {}),
+        "billing": {
+            "plan": _plan,
+            "is_pro": _is_pro,
+            "pro_until": user.pro_until.isoformat() if _is_pro else None,
+        },
     }
 
 
@@ -432,13 +444,9 @@ def get_public_company_profile(
     db: Session = Depends(get_db),
     authorization: str | None = Header(None, alias="Authorization"),
 ):
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Необходима авторизация")
     company = db.query(User).filter(User.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Компания не найдена")
-    request_user = _get_request_user(authorization, db)
-    if request_user is None:
-        raise HTTPException(status_code=401, detail="Необходима авторизация")
+    request_user = _get_request_user(authorization, db) if authorization else None
     can_view_private = request_user is not None and (int(request_user.id) == int(company.id) or _is_admin(request_user))
     return _build_company_profile_payload(db, company, include_private=can_view_private)

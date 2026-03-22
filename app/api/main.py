@@ -59,6 +59,9 @@ from app.api.routes import (
     referral,
     matching,
     billing,
+    tenders,
+    push_web,
+    tms,
 )
 from app.api import ai as ai_hybrid_router
 from app.api import antifraud as antifraud_review_router
@@ -240,6 +243,9 @@ app.include_router(email_digest.router, prefix="/api", tags=["📧 Email Digest"
 app.include_router(referral.router, prefix="/api", tags=["🎁 Referral"])
 app.include_router(matching.router, prefix="/api", tags=["🚛 Matching"])
 app.include_router(billing.router, prefix="/api", tags=["💳 Billing"])
+app.include_router(tenders.router, prefix="/api", tags=["📋 Tenders"])
+app.include_router(push_web.router, prefix="/api", tags=["🔔 Push"])
+app.include_router(tms.router,      prefix="/api", tags=["🔌 TMS API"])
 
 
 # CORS: в debug разрешаем все, в остальных режимах только явный allowlist
@@ -367,6 +373,48 @@ def _spa_redirect_target(raw_path: str) -> str | None:
             return f"/#/shipments/{shipment_id}"
 
     return None
+
+
+
+# ── TMS API Documentation ─────────────────────────────────────────────────────
+from fastapi import FastAPI as _FastAPI
+from fastapi.openapi.docs import get_swagger_ui_html as _swagger_html
+
+_tms_openapi: dict | None = None
+
+@app.get("/tms/docs", include_in_schema=False)
+async def tms_docs_page():
+    """Swagger UI for TMS API (X-Api-Key auth)."""
+    from fastapi.responses import HTMLResponse
+    return _swagger_html(
+        openapi_url="/tms/openapi.json",
+        title="ГрузПоток TMS API",
+        swagger_favicon_url="/static/icons/icon-192x192.png",
+    )
+
+@app.get("/tms/openapi.json", include_in_schema=False)
+async def tms_openapi():
+    """OpenAPI spec filtered to /tms/* routes."""
+    global _tms_openapi
+    if _tms_openapi is None:
+        full = app.openapi()
+        tms_paths = {k: v for k, v in full.get("paths", {}).items() if k.startswith("/api/tms")}
+        _tms_openapi = {
+            "openapi": full["openapi"],
+            "info": {
+                "title": "ГрузПоток TMS API",
+                "version": full["info"]["version"],
+                "description": (
+                    "REST API для интеграции с ТМС-системами.\n\n"
+                    "**Авторизация:** заголовок `X-Api-Key`.\n\n"
+                    "**Лимиты:** Free — 100 запросов/день, Pro — 1000/день, Business — без ограничений.\n\n"
+                    "Получить ключ: Настройки → API → Создать ключ."
+                ),
+            },
+            "paths": tms_paths,
+            "components": full.get("components", {}),
+        }
+    return _tms_openapi
 
 
 @app.get("/{spa_path:path}")

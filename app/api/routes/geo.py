@@ -197,4 +197,18 @@ def get_map_data(
             "lon":           v.lon,
         })
 
-    return {"cargos": cargos, "vehicles": vehicles}
+    # ── Live drivers from tg-bot ──
+    live_drivers = []
+    try:
+        import httpx
+        from app.core.config import settings
+        resp = httpx.get(
+            f"{settings.TG_BOT_INTERNAL_URL}/api/webapp/live-trucks",
+            timeout=2,
+        )
+        if resp.status_code == 200:
+            live_drivers = resp.json().get("trucks", [])
+    except Exception:
+        pass
+
+    return {"cargos": cargos, "vehicles": vehicles, "live_drivers": live_drivers}

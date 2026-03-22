@@ -23,6 +23,42 @@ def get_db():
         db.close()
 
 
+
+def _ensure_employee_columns() -> None:
+    """Add employer_id / employee_role to users table."""
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+    existing = {c["name"] for c in inspector.get_columns("users")}
+    with engine.begin() as conn:
+        if "employer_id" not in existing:
+            conn.execute(text("ALTER TABLE users ADD COLUMN employer_id INTEGER REFERENCES users(id)"))
+            print("[db] users.employer_id added")
+        if "employee_role" not in existing:
+            conn.execute(text("ALTER TABLE users ADD COLUMN employee_role VARCHAR(50)"))
+            print("[db] users.employee_role added")
+
+
+def _ensure_billing():
+    """Add billing_plan to users, create platform_payments table."""
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_plan VARCHAR(20) DEFAULT 'free'"))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS platform_payments (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                plan VARCHAR(20) NOT NULL,
+                amount_rub INTEGER NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                external_id VARCHAR(100),
+                idempotency_key VARCHAR(100) UNIQUE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_platform_payments_user_id ON platform_payments(user_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_platform_payments_status ON platform_payments(status)"))
+        conn.commit()
+
 def init_db():
     """Создание таблиц в БД."""
     from app.models.models import (  # noqa: F401
@@ -39,8 +75,26 @@ def init_db():
     _ensure_vehicle_registry_columns()
     _ensure_consolidation_columns()
     _ensure_cities_catalog()
+    _ensure_employee_columns()
+    _ensure_blacklist_table()
+    _ensure_verification_columns()
+    _ensure_route_subscriptions_table()
     _ensure_referral_columns()
     _ensure_billing()
+
+
+def _ensure_verification_columns() -> None:
+    from sqlalchemy import text
+    db = SessionLocal()
+    try:
+        db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_status VARCHAR(20) DEFAULT 'none'"))
+        db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_comment VARCHAR(500)"))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f'_ensure_verification_columns error: {e}')
+    finally:
+        db.close()
 
 
 def _ensure_user_profile_columns() -> None:
@@ -331,6 +385,59 @@ def _ensure_cities_catalog() -> None:
     finally:
         db.close()
 
+
+def _ensure_blacklist_table() -> None:
+    from sqlalchemy import text
+    db = SessionLocal()
+    try:
+        db.execute(text('''
+            CREATE TABLE IF NOT EXISTS blacklist (
+                id         SERIAL PRIMARY KEY,
+                inn        VARCHAR(12) NOT NULL UNIQUE,
+                name       VARCHAR(300),
+                reason     VARCHAR(1000),
+                flags      JSONB DEFAULT \'[]\',
+                added_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                source     VARCHAR(100) DEFAULT \'manual\',
+                created_at TIMESTAMP DEFAULT NOW() NOT NULL,
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        '''))
+        db.execute(text('CREATE INDEX IF NOT EXISTS ix_blacklist_inn ON blacklist(inn)'))
+        db.execute(text('CREATE INDEX IF NOT EXISTS ix_blacklist_created_at ON blacklist(created_at)'))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f'_ensure_blacklist_table error: {e}')
+    finally:
+        db.close()
+
+
+def _ensure_route_subscriptions_table() -> None:
+    from sqlalchemy import text
+    db = SessionLocal()
+    try:
+        db.execute(text('''
+            CREATE TABLE IF NOT EXISTS route_subscriptions (
+                id         SERIAL PRIMARY KEY,
+                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                from_city  VARCHAR(150),
+                to_city    VARCHAR(150),
+                email      VARCHAR(255) NOT NULL,
+                active     BOOLEAN NOT NULL DEFAULT TRUE,
+                last_sent  TIMESTAMP,
+                created_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        '''))
+        db.execute(text('CREATE INDEX IF NOT EXISTS ix_route_subs_user ON route_subscriptions(user_id)'))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f'_ensure_route_subscriptions_table error: {e}')
+    finally:
+        db.close()
+
+
 def _ensure_referral_columns() -> None:
     from sqlalchemy import text
     db = SessionLocal()
@@ -346,23 +453,3 @@ def _ensure_referral_columns() -> None:
         print(f'_ensure_referral_columns error: {e}')
     finally:
         db.close()
-
-def _ensure_billing() -> None:
-    """Add billing_plan to users, create platform_payments table."""
-    with engine.connect() as conn:
-        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_plan VARCHAR(20) DEFAULT 'free'"))
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS platform_payments (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                plan VARCHAR(20) NOT NULL,
-                amount_rub INTEGER NOT NULL,
-                status VARCHAR(20) NOT NULL DEFAULT 'pending',
-                external_id VARCHAR(100),
-                idempotency_key VARCHAR(100) UNIQUE,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        """))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_platform_payments_user_id ON platform_payments(user_id)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_platform_payments_status ON platform_payments(status)"))
-        conn.commit()

@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ГрузПоток — Умная биржа грузоперевозок</title>
+    <meta name="description" content="ГрузПоток — умная биржа грузоперевозок. Найдите груз или транспорт быстро и безопасно.">
+    <meta property="og:title" content="ГрузПоток — Умная биржа грузоперевозок">
+    <meta property="og:description" content="Умная биржа грузоперевозок. Грузы, машины, сделки — всё в одном месте.">
+    <meta property="og:image" content="/static/img/og-image.png">
+    <meta property="og:url" content="https://gruzpotok.ru">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="https://gruzpotok.ru">
     <!-- PWA -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#1e3a8a">
@@ -12,8 +19,6 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="ГрузПоток">
     <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
-    <meta property="og:title" content="ГрузПоток">
-    <meta name="twitter:title" content="ГрузПоток">
     <script>
         (function () {
             try {
@@ -110,7 +115,7 @@
     <script src="/static/js/carriers/carrierLabels.js"></script>
     <script src="/static/js/carriers/carriersStore.js?v=20260320-jsfix-2"></script>
     <!-- jsPDF for PDF generation -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
     <!-- Tailwind utilities are precompiled into /static/css/tailwind.generated.css for production -->
     <style>
         * { font-family: 'Inter', sans-serif; }
@@ -631,11 +636,11 @@
         #carriersTableBody tr,
         #clientsTableBody tr {
             display: block;
-            border: 1px solid rgba(255,255,255,0.08);
+            border: 1px solid var(--border);
             border-radius: 12px;
             margin-bottom: 10px;
             padding: 10px 12px;
-            background: rgba(255,255,255,0.02);
+            background: var(--card);
         }
         #loadsTableBody td,
         #carriersTableBody td,
@@ -652,7 +657,7 @@
         #clientsTableBody td::before {
             content: attr(data-label);
             font-size: 10px;
-            color: rgba(255,255,255,0.4);
+            color: var(--muted);
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.05em;
@@ -1129,6 +1134,22 @@
         #filtersPanel .glass-filter-control:focus {
             border-color: rgba(29, 78, 216, 0.44) !important;
             box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12), 0 14px 26px rgba(29, 78, 216, 0.09) !important;
+            background: #ffffff !important;
+        }
+        #filtersPanel select.glass-filter-control {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            padding-right: 2.75rem !important;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%2364758b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.9rem center;
+            background-size: 16px 16px;
+            color: #0f172a !important;
+            color-scheme: light;
+        }
+        #filtersPanel select.glass-filter-control option {
+            color: #0f172a !important;
             background: #ffffff !important;
         }
         .loads-cta {
@@ -1829,7 +1850,456 @@
 
         /* bg-dark-border/30 hover */
         :root[data-theme="light"] [class*="hover:bg-dark-border"]:hover { background: #f1f5f9 !important; }
-    </style>
+
+        /* ── Kimi AI Widget — light theme ── */
+        :root[data-theme="light"] #chatWidget {
+            background: #ffffff !important;
+            border: 1px solid #e2e8f0 !important;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.12) !important;
+        }
+        :root[data-theme="light"] #chatMessages {
+            background: #f8fafc !important;
+        }
+        :root[data-theme="light"] #chatWidget .p-5.border-t {
+            background: #ffffff !important;
+            border-color: #e2e8f0 !important;
+        }
+        :root[data-theme="light"] .chat-msg-ai {
+            background: #f1f5f9 !important;
+            border: 1px solid #e2e8f0 !important;
+            color: #111827 !important;
+        }
+        :root[data-theme="light"] .chat-msg-ai p {
+            color: #1f2937 !important;
+        }
+        :root[data-theme="light"] #chatMessages .flex.items-start .text-gray-200 {
+            color: #1f2937 !important;
+        }
+        :root[data-theme="light"] #chatInput {
+            color: #111827 !important;
+            background: transparent !important;
+        }
+        :root[data-theme="light"] #chatInput::placeholder {
+            color: #9ca3af !important;
+        }
+        :root[data-theme="light"] #chatWidget .bg-dark-border\/20 {
+            background: #f1f5f9 !important;
+            border-color: #e2e8f0 !important;
+        }
+
+        /* ── Modal backdrop lighter in light theme ── */
+        :root[data-theme="light"] [id^="modal-"]:not(#modal-login):not(#modal-register) {
+            background: rgba(100, 116, 139, 0.5) !important;
+        }
+        /* Modal inner — ensure white bg */
+        :root[data-theme="light"] [id^="modal-"] > div {
+            background: #ffffff !important;
+            border-color: #e2e8f0 !important;
+            color: #111827 !important;
+        }
+        :root[data-theme="light"] [id^="modal-"] h3,
+        :root[data-theme="light"] [id^="modal-"] h4 {
+            color: #111827 !important;
+        }
+        :root[data-theme="light"] [id^="modal-"] label {
+            color: #374151 !important;
+        }
+        :root[data-theme="light"] [id^="modal-"] .border-b {
+            border-color: #e2e8f0 !important;
+        }
+        :root[data-theme="light"] [id^="modal-"] .border-t {
+            border-color: #e2e8f0 !important;
+        }
+        :root[data-theme="light"] [id^="modal-"] input:not([type="checkbox"]):not([type="radio"]),
+        :root[data-theme="light"] [id^="modal-"] select,
+        :root[data-theme="light"] [id^="modal-"] textarea {
+            background: #f8fafc !important;
+            border-color: #d1d5db !important;
+            color: #111827 !important;
+        }
+        :root[data-theme="light"] [id^="modal-"] input::placeholder,
+        :root[data-theme="light"] [id^="modal-"] textarea::placeholder {
+            color: #9ca3af !important;
+        }
+
+        /* ── Create load modal hardening ── */
+        #modal-createLoad {
+            z-index: 12000 !important;
+            padding: 2rem 1rem !important;
+            align-items: flex-start !important;
+            justify-content: center !important;
+            overflow-y: auto !important;
+            background: rgba(15, 23, 42, 0.72) !important;
+            -webkit-backdrop-filter: blur(6px);
+            backdrop-filter: blur(6px);
+        }
+        #modal-createLoad > div {
+            width: min(920px, calc(100vw - 2rem)) !important;
+            max-width: 920px !important;
+            max-height: calc(100vh - 4rem) !important;
+            margin: 0 auto !important;
+            border-radius: 24px !important;
+            overflow: hidden !important;
+            box-shadow: 0 28px 70px rgba(15, 23, 42, 0.28) !important;
+            position: relative !important;
+            z-index: 1 !important;
+        }
+        #modal-createLoad form {
+            padding: 1.5rem 1.75rem !important;
+        }
+        #modal-createLoad .border-b,
+        #modal-createLoad .border-t {
+            border-color: var(--border) !important;
+        }
+        #modal-createLoad .grid.grid-cols-2 {
+            align-items: start;
+        }
+        #modal-createLoad input,
+        #modal-createLoad select,
+        #modal-createLoad textarea {
+            min-height: 48px;
+        }
+        #modal-createLoad textarea {
+            min-height: 112px;
+        }
+        @media (max-width: 900px) {
+            #modal-createLoad {
+                padding: 1rem 0.75rem !important;
+            }
+            #modal-createLoad > div {
+                width: calc(100vw - 1.5rem) !important;
+                max-height: calc(100vh - 1.5rem) !important;
+                border-radius: 20px !important;
+            }
+            #modal-createLoad form {
+                padding: 1rem !important;
+            }
+            #modal-createLoad .grid.grid-cols-2 {
+                grid-template-columns: 1fr !important;
+                gap: 0.875rem !important;
+            }
+        }
+
+        /* ── Premium SaaS UI Overrides ── */
+        .premium-card {
+            background: #FFFFFF !important;
+            border: 1px solid #E2E8F0 !important;
+            border-radius: 20px !important;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06) !important;
+        }
+        :root[data-theme="dark"] .premium-card {
+            background: #1a1d23 !important;
+            border-color: #243041 !important;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2) !important;
+        }
+        
+        .premium-btn-primary {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 8px !important;
+            background: linear-gradient(135deg, #1D4ED8 0%, #06B6D4 100%) !important;
+            color: #FFFFFF !important;
+            border-radius: 14px !important;
+            font-weight: 600 !important;
+            box-shadow: 0 12px 30px rgba(29, 78, 216, 0.22) !important;
+            transition: all 200ms ease-out !important;
+            border: none !important;
+            cursor: pointer !important;
+            padding: 10px 20px !important;
+        }
+        .premium-btn-primary:hover {
+            transform: translateY(-1px) !important;
+            box-shadow: 0 16px 34px rgba(29, 78, 216, 0.28) !important;
+            filter: brightness(1.05);
+        }
+        .premium-btn-primary:active { transform: translateY(0) scale(0.99) !important; }
+
+        .premium-btn-soft {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 8px !important;
+            background: rgba(255, 255, 255, 0.9) !important;
+            backdrop-filter: blur(8px) !important;
+            -webkit-backdrop-filter: blur(8px) !important;
+            color: #0F172A !important;
+            border: 1px solid #E2E8F0 !important;
+            border-radius: 14px !important;
+            font-weight: 600 !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05) !important;
+            transition: all 200ms ease-out !important;
+            cursor: pointer !important;
+            padding: 10px 20px !important;
+        }
+        :root[data-theme="dark"] .premium-btn-soft {
+            background: rgba(30, 41, 59, 0.7) !important;
+            color: #F8FAFC !important;
+            border-color: #334155 !important;
+        }
+        .premium-btn-soft:hover {
+            background: #FFFFFF !important;
+            border-color: #CBD5E1 !important;
+            transform: translateY(-1px) !important;
+        }
+
+        .premium-btn-ghost {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 8px !important;
+            background: #F8FAFC !important;
+            color: #64748B !important;
+            border: 1px solid #E2E8F0 !important;
+            border-radius: 14px !important;
+            font-weight: 500 !important;
+            transition: all 200ms ease-out !important;
+            cursor: pointer !important;
+            padding: 8px 16px !important;
+        }
+        :root[data-theme="dark"] .premium-btn-ghost {
+            background: #0f1424 !important;
+            color: #94a3b8 !important;
+            border-color: #243041 !important;
+        }
+        .premium-btn-ghost:hover {
+            background: #F1F5F9 !important;
+            color: #0F172A !important;
+            border-color: #CBD5E1 !important;
+        }
+
+        .premium-btn-add {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 8px !important;
+            background: linear-gradient(135deg, #1E40AF 0%, #2563EB 55%, #06B6D4 100%) !important;
+            color: #FFFFFF !important;
+            border-radius: 14px !important;
+            font-weight: 600 !important;
+            box-shadow: 0 10px 24px rgba(37, 99, 235, 0.24) !important;
+            transition: all 200ms ease-out !important;
+            border: none !important;
+            cursor: pointer !important;
+            padding: 10px 20px !important;
+        }
+        .premium-btn-add:hover {
+            transform: translateY(-1px) !important;
+            box-shadow: 0 14px 28px rgba(37, 99, 235, 0.30) !important;
+        }
+
+        /* Table Row Hover Upgrade */
+        .loads-row { transition: all 180ms ease !important; }
+        .loads-row:hover {
+            background-color: #F8FAFC !important;
+            box-shadow: inset 0 0 0 1px #E2E8F0, 0 4px 12px rgba(15, 23, 42, 0.04) !important;
+        }
+        :root[data-theme="dark"] .loads-row:hover {
+            background-color: rgba(30, 41, 59, 0.4) !important;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05) !important;
+        }
+        .loads-row:hover > td { background: transparent !important; }
+
+        /* Badge overlap fix */
+        .loads-mode-badge { white-space: nowrap; flex-shrink: 0; }
+        
+        /* Table Header Alignment Fix */
+        #loadsTableHead th { white-space: nowrap; border-bottom: 1px solid #E2E8F0; }
+        :root[data-theme="dark"] #loadsTableHead th { border-bottom-color: #243041; }
+        
+        /* Skeleton Loading */
+        @keyframes skeleton-pulse { 0% { opacity: 0.6; } 50% { opacity: 0.3; } 100% { opacity: 0.6; } }
+        .skeleton { background: #E2E8F0; border-radius: 8px; animation: skeleton-pulse 1.5s ease-in-out infinite; }
+        :root[data-theme="dark"] .skeleton { background: #2D3748; }
+
+        /* ── AI Assistant Premium UI ── */
+        #floatingAiBtn {
+            box-shadow: 0 12px 40px rgba(37, 99, 235, 0.35) !important;
+            border: 2px solid rgba(255, 255, 255, 0.2) !important;
+        }
+        #chatWidget {
+            width: 400px !important;
+            height: 600px !important;
+            max-height: 85vh !important;
+            bottom: 1.5rem !important;
+            right: 1.5rem !important;
+            border-radius: 24px !important;
+            overflow: hidden !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3) !important;
+            background: #1a1d23 !important;
+        }
+        .chat-header-premium {
+            background: linear-gradient(135deg, #1D4ED8 0%, #06B6D4 100%) !important;
+            padding: 1.25rem !important;
+        }
+        .chat-msg-ai {
+            background: rgba(30, 41, 59, 0.7) !important;
+            border: 1px solid rgba(255, 255, 255, 0.05) !important;
+            border-radius: 18px 18px 18px 4px !important;
+        }
+        .chat-msg-user {
+            background: linear-gradient(135deg, #1D4ED8 0%, #3B82F6 100%) !important;
+            color: white !important;
+            border-radius: 18px 18px 4px 18px !important;
+            margin-left: auto !important;
+            max-width: 85% !important;
+        }
+        
+        /* Toolbar Badge Modernization */
+        #loadsResultCount {
+            background: #EFF6FF !important;
+            color: #1D4ED8 !important;
+            border: 1px solid #DBEAFE !important;
+            padding: 2px 10px !important;
+            font-size: 13px !important;
+            font-weight: 700 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            line-height: 1 !important;
+            height: 24px !important;
+            min-width: 32px !important;
+            border-radius: 20px !important;
+        }
+        :root[data-theme="dark"] #loadsResultCount {
+            background: rgba(29, 78, 216, 0.15) !important;
+            color: #60A5FA !important;
+            border-color: rgba(29, 78, 216, 0.3) !important;
+        }
+    
+        /* ── Premium SaaS UI Overrides ── */
+        .premium-card {
+            background: #FFFFFF !important;
+            border: 1px solid #E2E8F0 !important;
+            border-radius: 20px !important;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06) !important;
+        }
+        :root[data-theme='dark'] .premium-card {
+            background: #1a1d23 !important;
+            border-color: #243041 !important;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2) !important;
+        }
+        
+        .premium-btn-primary {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 8px !important;
+            background: linear-gradient(135deg, #1D4ED8 0%, #06B6D4 100%) !important;
+            color: #FFFFFF !important;
+            border-radius: 14px !important;
+            font-weight: 600 !important;
+            box-shadow: 0 12px 30px rgba(29, 78, 216, 0.22) !important;
+            transition: all 200ms ease-out !important;
+            border: none !important;
+            cursor: pointer !important;
+            padding: 10px 20px !important;
+        }
+        .premium-btn-primary:hover {
+            transform: translateY(-1px) !important;
+            box-shadow: 0 16px 34px rgba(29, 78, 216, 0.28) !important;
+            filter: brightness(1.05);
+        }
+        .premium-btn-primary:active { transform: translateY(0) scale(0.99) !important; }
+
+        .premium-btn-soft {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 8px !important;
+            background: rgba(255, 255, 255, 0.9) !important;
+            backdrop-filter: blur(8px) !important;
+            -webkit-backdrop-filter: blur(8px) !important;
+            color: #0F172A !important;
+            border: 1px solid #E2E8F0 !important;
+            border-radius: 14px !important;
+            font-weight: 600 !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05) !important;
+            transition: all 200ms ease-out !important;
+            cursor: pointer !important;
+            padding: 10px 20px !important;
+        }
+        :root[data-theme='dark'] .premium-btn-soft {
+            background: rgba(30, 41, 59, 0.7) !important;
+            color: #F8FAFC !important;
+            border-color: #334155 !important;
+        }
+        .premium-btn-soft:hover {
+            background: #FFFFFF !important;
+            border-color: #CBD5E1 !important;
+            transform: translateY(-1px) !important;
+        }
+
+        .premium-btn-ghost {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 8px !important;
+            background: #F8FAFC !important;
+            color: #64748B !important;
+            border: 1px solid #E2E8F0 !important;
+            border-radius: 14px !important;
+            font-weight: 500 !important;
+            transition: all 200ms ease-out !important;
+            cursor: pointer !important;
+            padding: 8px 16px !important;
+        }
+        :root[data-theme='dark'] .premium-btn-ghost {
+            background: #0f1424 !important;
+            color: #94a3b8 !important;
+            border-color: #243041 !important;
+        }
+        .premium-btn-ghost:hover {
+            background: #F1F5F9 !important;
+            color: #0F172A !important;
+            border-color: #CBD5E1 !important;
+        }
+
+        .premium-btn-add {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 8px !important;
+            background: linear-gradient(135deg, #1E40AF 0%, #2563EB 55%, #06B6D4 100%) !important;
+            color: #FFFFFF !important;
+            border-radius: 14px !important;
+            font-weight: 600 !important;
+            box-shadow: 0 10px 24px rgba(37, 99, 235, 0.24) !important;
+            transition: all 200ms ease-out !important;
+            border: none !important;
+            cursor: pointer !important;
+            padding: 10px 20px !important;
+        }
+        .premium-btn-add:hover {
+            transform: translateY(-1px) !important;
+            box-shadow: 0 14px 28px rgba(37, 99, 235, 0.30) !important;
+        }
+
+        /* Table Row Hover Upgrade */
+        .loads-row { transition: all 180ms ease !important; }
+        .loads-row:hover {
+            background-color: #F8FAFC !important;
+            box-shadow: inset 0 0 0 1px #E2E8F0, 0 4px 12px rgba(15, 23, 42, 0.04) !important;
+        }
+        :root[data-theme='dark'] .loads-row:hover {
+            background-color: rgba(30, 41, 59, 0.4) !important;
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05) !important;
+        }
+        .loads-row:hover > td { background: transparent !important; }
+
+        /* Badge overlap fix */
+        .loads-mode-badge { white-space: nowrap; flex-shrink: 0; }
+        
+        /* Table Header Alignment Fix */
+        #loadsTableHead th { white-space: nowrap; border-bottom: 1px solid #E2E8F0; }
+        :root[data-theme='dark'] #loadsTableHead th { border-bottom-color: #243041; }
+        
+        /* Skeleton Loading */
+        @keyframes skeleton-pulse { 0% { opacity: 0.6; } 50% { opacity: 0.3; } 100% { opacity: 0.6; } }
+        .skeleton { background: #E2E8F0; border-radius: 8px; animation: skeleton-pulse 1.5s ease-in-out infinite; }
+        :root[data-theme='dark'] .skeleton { background: #2D3748; }
+</style>
 </head>
 <body class="bg-dark text-white min-h-screen">
     
@@ -1863,8 +2333,9 @@
                 <button onclick="showPage('billing')" class="nav-page-btn px-4 py-2 rounded-lg text-sm font-medium transition-all" data-page="billing">
                     💳 Тарифы
                 </button>
-                <button onclick="showPage('blacklist')" class="nav-page-btn px-4 py-2 rounded-lg text-sm font-medium transition-all" data-page="blacklist">🚫 Стоп-лист</button>
-                <div class="relative" id="aiNavDropdown">
+                <button onclick="showPage('tenders')" class="nav-page-btn px-4 py-2 rounded-lg text-sm font-medium transition-all" data-page="tenders" style="white-space:nowrap">📋 Тендеры</button>
+                <button onclick="showPage(blacklist)" class="nav-page-btn px-4 py-2 rounded-lg text-sm font-medium transition-all" data-page="blacklist" style="white-space:nowrap">🚫 Стоп-лист</button>
+                <div class="relative" id="aiNavDropdown" style="display:none">
                     <button onclick="toggleAiDropdown()" id="aiNavBtn"
                         class="nav-page-btn px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ai-nav-btn"
                         data-page="ai">
@@ -1893,7 +2364,7 @@
                 <button onclick="toggleChat()" class="header-icon-btn relative" title="Чат">
                     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
                 </button>
-                <button class="header-icon-btn relative" title="Уведомления">
+                <button id="push-bell-btn" onclick="togglePushNotifications()" class="header-icon-btn relative" title="Включить уведомления браузера">
                     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
                     <span class="absolute top-1 right-1 w-2 h-2 bg-[#f97316] rounded-full"></span>
                 </button>
@@ -1926,11 +2397,12 @@
             <button onclick="showPage('deals'); closeMobileMenu()" class="mobile-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-300 hover:bg-dark-border hover:text-white transition-all" data-mobile-page="deals">🤝 Сделки</button>
             <button onclick="openShipmentsPage(); closeMobileMenu()" class="mobile-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-300 hover:bg-dark-border hover:text-white transition-all" data-mobile-page="shipments">📋 Реестр</button>
             <button onclick="showPage('map'); closeMobileMenu()" class="mobile-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-300 hover:bg-dark-border hover:text-white transition-all" data-mobile-page="map">🗺 Карта</button>
+            <button onclick="showPage('billing'); closeMobileMenu()" class="mobile-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-300 hover:bg-dark-border hover:text-white transition-all" data-mobile-page="billing">💳 Тарифы</button>
             <div class="my-2 border-t border-dark-border"></div>
             <p class="px-4 py-1 text-xs text-gray-500 uppercase tracking-wider font-semibold">AI-инструменты</p>
-            <button onclick="showPage('documents'); closeMobileMenu()" class="mobile-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-300 hover:bg-dark-border hover:text-white transition-all" data-mobile-page="documents">📄 Документы</button>
-            <button onclick="showPage('analytics'); closeMobileMenu()" class="mobile-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-300 hover:bg-dark-border hover:text-white transition-all" data-mobile-page="analytics">📊 Аналитика</button>
-            <button onclick="showPage('moderation'); closeMobileMenu()" class="mobile-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-300 hover:bg-dark-border hover:text-white transition-all" data-mobile-page="moderation">🛡 Модерация</button>
+            <button id="mobileNavDocuments" onclick="showPage('documents'); closeMobileMenu()" class="mobile-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-300 hover:bg-dark-border hover:text-white transition-all" data-mobile-page="documents" style="display:none">📄 Документы</button>
+            <button id="mobileNavAnalytics" onclick="showPage('analytics'); closeMobileMenu()" class="mobile-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-300 hover:bg-dark-border hover:text-white transition-all" data-mobile-page="analytics" style="display:none">📊 Аналитика</button>
+            <button id="mobileNavModeration" onclick="showPage('moderation'); closeMobileMenu()" class="mobile-nav-item w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-gray-300 hover:bg-dark-border hover:text-white transition-all" data-mobile-page="moderation" style="display:none">🛡 Модерация</button>
         </nav>
         <div class="p-4 border-t border-dark-border flex gap-2.5" id="drawerAuthBtns">
             <button onclick="openModal('login'); closeMobileMenu()" class="flex-1 px-4 py-2.5 rounded-xl border border-dark-border hover:border-purple/50 hover:text-white text-sm font-medium transition-all">Войти</button>
@@ -1952,7 +2424,7 @@
                 <div class="px-6 py-5 flex flex-col sm:flex-row sm:items-center gap-4">
                     <div class="flex-1">
                         <div class="flex items-center gap-3 mb-1">
-                            <img src="/static/icons/logo-64.png" class="w-8 h-8 rounded-lg" alt="">
+                            <img src="/static/icons/logo-64.png" class="w-8 h-8 rounded-lg" alt="ГрузПоток">
                             <span class="text-white font-bold text-lg">ГрузПоток</span>
                             <span class="px-2 py-0.5 rounded text-[11px] font-semibold" style="background:rgba(255,255,255,0.15);color:#fff">Умная биржа грузов</span>
                         </div>
@@ -1975,19 +2447,19 @@
             <!-- Live counters -->
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div class="bg-dark-card border border-dark-border rounded-xl px-4 py-3 text-center">
-                    <div id="stat-active-loads" class="text-2xl font-bold" style="color:#1e3a8a">—</div>
+                    <div id="stat-active-loads" class="text-2xl font-bold" style="color:#1e3a8a">0</div>
                     <div class="text-xs text-gray-400 mt-0.5">активных грузов</div>
                 </div>
                 <div class="bg-dark-card border border-dark-border rounded-xl px-4 py-3 text-center">
-                    <div id="stat-loads-today" class="text-2xl font-bold" style="color:#f97316">—</div>
+                    <div id="stat-loads-today" class="text-2xl font-bold" style="color:#f97316">0</div>
                     <div class="text-xs text-gray-400 mt-0.5">добавлено сегодня</div>
                 </div>
                 <div class="bg-dark-card border border-dark-border rounded-xl px-4 py-3 text-center">
-                    <div id="stat-vehicles" class="text-2xl font-bold" style="color:#16a34a">—</div>
+                    <div id="stat-vehicles" class="text-2xl font-bold" style="color:#16a34a">0</div>
                     <div class="text-xs text-gray-400 mt-0.5">машин в системе</div>
                 </div>
                 <div class="bg-dark-card border border-dark-border rounded-xl px-4 py-3 text-center">
-                    <div id="stat-companies" class="text-2xl font-bold" style="color:#7c3aed">—</div>
+                    <div id="stat-companies" class="text-2xl font-bold" style="color:#7c3aed">0</div>
                     <div class="text-xs text-gray-400 mt-0.5">компаний</div>
                 </div>
             </div>
@@ -1995,147 +2467,90 @@
             <div class="flex gap-6">
                 
                 <!-- Left Filters Panel -->
-                <aside id="filtersPanel" class="w-80 flex-shrink-0 transition-all">
-                    <div class="glass-panel loads-filters-card bg-dark-card border border-dark-border rounded-xl p-4 sticky top-20">
-                        <div class="loads-filters-header flex items-center justify-between mb-4">
-                            <h3 class="loads-filters-title text-lg font-semibold flex items-center gap-2">
-                                <span class="loads-title-icon" aria-hidden="true">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                        <circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.8"/>
-                                        <path d="M16 16L21 21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                <aside id='filtersPanel' class='w-80 flex-shrink-0 transition-all'>
+                    <div class='premium-card p-5 sticky top-20'>
+                        <div class='flex items-center justify-between mb-6'>
+                            <h3 class='text-xl font-bold tracking-tight text-slate-900 flex items-center gap-2'>
+                                <span class='text-blue-600' aria-hidden='true'>
+                                    <svg width='20' height='20' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>
+                                        <circle cx='11' cy='11' r='6.5' stroke='currentColor' stroke-width='2'/>
+                                        <path d='M16 16L21 21' stroke='currentColor' stroke-width='2' stroke-linecap='round'/>
                                     </svg>
                                 </span>
                                 <span>Фильтры</span>
                             </h3>
-                            <button onclick="toggleFiltersCollapse()" class="glass-action-btn loads-collapse-btn p-1 hover:bg-dark-border rounded transition-all" title="Свернуть панель" aria-label="Свернуть фильтры">
-                                <span id="filtersCollapseIcon">◀</span>
+                            <button onclick='toggleFiltersCollapse()' class='p-1.5 hover:bg-slate-100 rounded-lg transition-all text-slate-400 hover:text-slate-600' title='Свернуть панель'>
+                                <span>◀</span>
                             </button>
                         </div>
                         
-                        <div class="space-y-4">
-                            <!-- From -->
+                        <div class='space-y-5'>
                             <div>
-                                <label class="text-xs text-gray-400 mb-1 block">Откуда</label>
-                                <input type="text" id="filter-from" placeholder="Город" 
-                                    oninput="debounceFilter('from', this.value)"
-                                    class="glass-filter-control w-full px-3 py-2 bg-dark border border-dark-border rounded-lg text-sm focus:outline-none focus:border-purple transition-all">
+                                <label class='text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5 block'>Откуда</label>
+                                <input type='text' id='filter-from' placeholder='Город' oninput='debounceFilter("from", this.value)'
+                                    class='w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 transition-all'>
                             </div>
-                            
-                            <!-- To -->
                             <div>
-                                <label class="text-xs text-gray-400 mb-1 block">Куда</label>
-                                <input type="text" id="filter-to" placeholder="Город" 
-                                    oninput="debounceFilter('to', this.value)"
-                                    class="glass-filter-control w-full px-3 py-2 bg-dark border border-dark-border rounded-lg text-sm focus:outline-none focus:border-purple transition-all">
+                                <label class='text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5 block'>Куда</label>
+                                <input type='text' id='filter-to' placeholder='Город' oninput='debounceFilter("to", this.value)'
+                                    class='w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 transition-all'>
                             </div>
-                            
-                            <!-- Loading Date -->
                             <div>
-                                <label class="text-xs text-gray-400 mb-1 block">Дата погрузки</label>
-                                <div class="relative loads-date-input-wrap">
-                                    <input type="text" id="filter-date-display" readonly
-                                        placeholder="ДД / ММ / ГГГГ"
-                                        onclick="document.getElementById('filter-date').showPicker ? document.getElementById('filter-date').showPicker() : document.getElementById('filter-date').click()"
-                                        class="glass-filter-control w-full px-3 py-2 bg-dark border border-dark-border rounded-lg text-sm focus:outline-none focus:border-purple transition-all cursor-pointer pr-8">
-                                    <svg onclick="document.getElementById('filter-date').showPicker ? document.getElementById('filter-date').showPicker() : document.getElementById('filter-date').click()" class="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 cursor-pointer pointer-events-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                                    <input type="date" id="filter-date"
-                                        onchange="_onFilterDateChange(this.value)"
-                                        min=""
-                                        class="absolute inset-0 opacity-0 w-full h-full cursor-pointer" tabindex="-1">
+                                <label class='text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5 block'>Дата погрузки</label>
+                                <div class='relative'>
+                                    <input type='text' id='filter-date-display' readonly placeholder='ДД / ММ / ГГГГ'
+                                        onclick='document.getElementById("filter-date").showPicker()'
+                                        class='w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 transition-all cursor-pointer'>
+                                    <input type='date' id='filter-date' onchange='_onFilterDateChange(this.value)' class='absolute inset-0 opacity-0 w-full h-full cursor-pointer' tabindex='-1'>
                                 </div>
-                                <p id="filter-date-error" class="text-xs text-red-400 mt-1 hidden"></p>
                             </div>
-                            
-                            <!-- Weight -->
-                            <div>
-                                <label class="text-xs text-gray-400 mb-1 block">Вес (т)</label>
-                                <div class="flex gap-2">
-                                    <input type="number" id="filter-weight-from" placeholder="от" step="0.1" min="0"
-                                        oninput="debounceFilter('weightFrom', this.value)"
-                                        class="glass-filter-control w-full px-3 py-2 bg-dark border border-dark-border rounded-lg text-sm focus:outline-none focus:border-purple transition-all">
-                                    <input type="number" id="filter-weight-to" placeholder="до" step="0.1" min="0"
-                                        oninput="debounceFilter('weightTo', this.value)"
-                                        class="glass-filter-control w-full px-3 py-2 bg-dark border border-dark-border rounded-lg text-sm focus:outline-none focus:border-purple transition-all">
+                            <div class='grid grid-cols-2 gap-3'>
+                                <div>
+                                    <label class='text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5 block'>Вес (т)</label>
+                                    <input type='number' id='filter-weight-from' placeholder='от' step='0.1' oninput='debounceFilter("weightFrom", this.value)'
+                                        class='w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500'>
                                 </div>
-                                <p id="filter-weight-error" class="text-xs text-red-400 mt-1 hidden"></p>
-                            </div>
-                            
-                            <!-- Volume -->
-                            <div>
-                                <label class="text-xs text-gray-400 mb-1 block">Объём (м³)</label>
-                                <div class="flex gap-2">
-                                    <input type="number" id="filter-volume-from" placeholder="от" step="0.1" min="0"
-                                        oninput="debounceFilter('volumeFrom', this.value)"
-                                        class="glass-filter-control w-full px-3 py-2 bg-dark border border-dark-border rounded-lg text-sm focus:outline-none focus:border-purple transition-all">
-                                    <input type="number" id="filter-volume-to" placeholder="до" step="0.1" min="0"
-                                        oninput="debounceFilter('volumeTo', this.value)"
-                                        class="glass-filter-control w-full px-3 py-2 bg-dark border border-dark-border rounded-lg text-sm focus:outline-none focus:border-purple transition-all">
+                                <div>
+                                    <label class='text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5 block'>&nbsp;</label>
+                                    <input type='number' id='filter-weight-to' placeholder='до' step='0.1' oninput='debounceFilter("weightTo", this.value)'
+                                        class='w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500'>
                                 </div>
-                                <p id="filter-volume-error" class="text-xs text-red-400 mt-1 hidden"></p>
                             </div>
-                            
-                            <!-- Truck Type -->
                             <div>
-                                <label class="text-xs text-gray-400 mb-1 block">Тип кузова</label>
-                                <select id="filter-truck-type" 
-                                    onchange="applyFilter('truckType', this.value)"
-                                    class="glass-filter-control w-full px-3 py-2 bg-dark border border-dark-border rounded-lg text-sm focus:outline-none focus:border-purple transition-all">
-                                    <option value="">Все</option>
-                                    <option value="Тент">Тент</option>
-                                    <option value="Рефрижератор">Рефрижератор</option>
-                                    <option value="Открытый">Открытый</option>
-                                    <option value="Контейнер">Контейнер</option>
-                                    <option value="Изотерм">Изотерм</option>
-                                    <option value="Автовоз">Автовоз</option>
-                                    <option value="Самосвал">Самосвал</option>
+                                <label class='text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5 block'>Тип кузова</label>
+                                <select id='filter-truck-type' onchange='applyFilter("truckType", this.value)'
+                                    class='glass-filter-control filter-truck-select w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 transition-all cursor-pointer'>
+                                    <option value=''>Все типы</option>
+                                    <option value='Тент'>Тент</option>
+                                    <option value='Борт'>Борт</option>
+                                    <option value='Рефрижератор'>Рефрижератор</option>
+                                    <option value='Открытый'>Открытый</option>
+                                    <option value='Контейнер'>Контейнер</option>
+                                    <option value='Изотерм'>Изотерм</option>
+                                    <option value='Трал'>Трал</option>
+                                    <option value='Манипулятор'>Манипулятор</option>
+                                    <option value='Газель'>Газель</option>
+                                    <option value='Автовоз'>Автовоз</option>
+                                    <option value='Самосвал'>Самосвал</option>
+                                    <option value='Цистерна'>Цистерна</option>
+                                    <option value='Зерновоз'>Зерновоз</option>
                                 </select>
                             </div>
                             
-                            <!-- Risk Level Filter -->
-                            <div>
-                                <label class="text-xs text-gray-400 mb-1 block">AI-риск</label>
-                                <select id="filter-risk-level" 
-                                    onchange="applyFilter('riskLevel', this.value)"
-                                    class="glass-filter-control w-full px-3 py-2 bg-dark border border-dark-border rounded-lg text-sm focus:outline-none focus:border-purple transition-all">
-                                    <option value="">Все</option>
-                                    <option value="low">🟢 Низкий</option>
-                                    <option value="medium">🟡 Средний</option>
-                                    <option value="high">🔴 Высокий</option>
-                                </select>
-                            </div>
-                            
-                            <!-- AI Filter -->
-                            <div class="flex flex-col gap-2">
-                                <button onclick="aiFilter()" class="glass-filter-button glass-filter-ai-button loads-cta loads-cta-primary w-full px-4 py-2 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark rounded-lg text-sm font-semibold transition-all transform hover:scale-[1.02] active:scale-[0.98]" aria-label="Подобрать груз с AI">
-                                    <span class="loads-btn-icon" aria-hidden="true">
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M12 3L13.9 8.1L19 10L13.9 11.9L12 17L10.1 11.9L5 10L10.1 8.1L12 3Z" fill="currentColor"/>
-                                            <path d="M18.5 16L19.4 18.1L21.5 19L19.4 19.9L18.5 22L17.6 19.9L15.5 19L17.6 18.1L18.5 16Z" fill="currentColor"/>
-                                        </svg>
-                                    </span>
+                            <div class='pt-4 flex flex-col gap-3'>
+                                <button onclick='aiFilter()' class='premium-btn-primary w-full'>
+                                    <svg class='w-5 h-5' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M12 3L13.9 8.1L19 10L13.9 11.9L12 17L10.1 11.9L5 10L10.1 8.1L12 3Z' fill='currentColor'/><path d='M18.5 16L19.4 18.1L21.5 19L19.4 19.9L18.5 22L17.6 19.9L15.5 19L17.6 18.1L18.5 16Z' fill='currentColor'/></svg>
                                     <span>Подобрать груз с AI</span>
                                 </button>
-                                <button onclick="openBestLoadsModal()" class="glass-filter-button loads-cta loads-cta-secondary w-full px-4 py-2 bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/30 text-yellow-300 rounded-lg text-sm font-semibold transition-all transform hover:scale-[1.02] active:scale-[0.98]" aria-label="Лучшие 3 рейса">
-                                    <span class="loads-btn-icon" aria-hidden="true">
-                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M13 2L4 14H11L9 22L20 9H13L13 2Z" fill="currentColor"/>
-                                        </svg>
-                                    </span>
+                                <button onclick='openBestLoadsModal()' class='premium-btn-soft w-full'>
+                                    <svg class='w-5 h-5 text-yellow-500' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M13 2L4 14H11L9 22L20 9H13L13 2Z' fill='currentColor'/></svg>
                                     <span>Лучшие 3 рейса</span>
                                 </button>
+                                <button onclick='clearAllFilters()' class='premium-btn-ghost w-full'>
+                                    <svg class='w-4 h-4' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M20 11C20 15.4183 16.4183 19 12 19C8.8809 19 6.17861 17.214 4.86243 14.6084' stroke='currentColor' stroke-width='2' stroke-linecap='round'/><path d='M4 13V18H9' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/><path d='M4 13C4 8.58172 7.58172 5 12 5C15.1191 5 17.8214 6.78604 19.1376 9.39157' stroke='currentColor' stroke-width='2' stroke-linecap='round'/></svg>
+                                    <span>Сбросить фильтры</span>
+                                </button>
                             </div>
-                            
-                            <!-- Reset -->
-                            <button onclick="clearAllFilters()" class="glass-filter-button loads-cta loads-cta-reset w-full px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg text-sm transition-all" aria-label="Сбросить фильтры">
-                                <span class="loads-btn-icon" aria-hidden="true">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                        <path d="M20 11C20 15.4183 16.4183 19 12 19C8.8809 19 6.17861 17.214 4.86243 14.6084" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                                        <path d="M4 13V18H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                                        <path d="M4 13C4 8.58172 7.58172 5 12 5C15.1191 5 17.8214 6.78604 19.1376 9.39157" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                                    </svg>
-                                </span>
-                                <span>Сбросить фильтры</span>
-                            </button>
                         </div>
                     </div>
                 </aside>
@@ -2144,34 +2559,22 @@
                 <div class="flex-1 min-w-0">
                     <div class="loads-table-shell bg-dark-card border border-dark-border rounded-xl overflow-hidden">
                         <!-- Table Header with Active Filters -->
-                        <div class="loads-table-toolbar p-4 border-b border-dark-border">
-                            <div class="flex items-center justify-between mb-3">
-                                <div class="flex items-center gap-2">
-                                    <h2 class="text-lg font-semibold">Грузы</h2>
-                                    <span id="loadsResultCount"></span>
-                                    <span id="loadsAiModeBadge" class="loads-mode-badge hidden px-2 py-1 text-xs rounded-full border border-blue-500/30 bg-blue-500/10 text-blue-300">
-                                        AI режим
-                                    </span>
-                                    <span id="loadsCompactBadge" class="loads-mode-badge hidden px-2 py-1 text-xs rounded-full border border-yellow-500/30 bg-yellow-500/10 text-yellow-300">
-                                        Компактный режим
-                                    </span>
+                        <div class='loads-table-toolbar p-4 border-b border-dark-border'>
+                            <div class='flex items-center justify-between flex-wrap gap-4 mb-3'>
+                                <div class='flex items-center flex-wrap gap-2'>
+                                    <h2 class='text-xl font-bold text-slate-900'>Грузы</h2>
+                                    <span id='loadsResultCount' class='bg-slate-100 px-2 py-0.5 rounded-full text-xs font-bold text-slate-600'></span>
+                                    <div class='flex items-center gap-1.5 ml-2'>
+                                        <button id='loadsAiModeBadge' onclick='applyColumnsPreset("expanded")' title='Режим AI: показываются только AI-колонки. Нажмите, чтобы показать все колонки.' class='loads-mode-badge hidden px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md border border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all cursor-pointer'>AI режим</button>
+                                        <button id='loadsCompactBadge' onclick='applyColumnsPreset("expanded")' title='Компактный режим: часть колонок скрыта. Нажмите, чтобы показать все колонки.' class='loads-mode-badge hidden px-2 py-1 text-[10px] uppercase tracking-wider font-bold rounded-md border border-yellow-500/30 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20 transition-all cursor-pointer'>Компактный</button>
+                                    </div>
                                 </div>
-                                <div class="flex items-center gap-2">
-                                    <button onclick="openColumnSettings()" class="loads-toolbar-icon p-2 hover:bg-dark-border rounded-lg transition-all" title="Настройки колонок" aria-label="Настройки колонок">
-                                        <span class="loads-btn-icon" aria-hidden="true">
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                <path d="M12 3L13.8 3.8L15.8 3.4L16.6 5.4L18.6 6.2L18.2 8.2L19 10L18.2 11.8L18.6 13.8L16.6 14.6L15.8 16.6L13.8 16.2L12 17L10.2 16.2L8.2 16.6L7.4 14.6L5.4 13.8L5.8 11.8L5 10L5.8 8.2L5.4 6.2L7.4 5.4L8.2 3.4L10.2 3.8L12 3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-                                                <circle cx="12" cy="10" r="3" stroke="currentColor" stroke-width="1.5"/>
-                                            </svg>
-                                        </span>
+                                <div class='flex items-center gap-2'>
+                                    <button onclick='openColumnSettings()' class='p-2 hover:bg-slate-100 rounded-lg transition-all text-slate-400 hover:text-slate-600' title='Настройки колонок'>
+                                        <svg width='20' height='20' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M12 3L13.8 3.8L15.8 3.4L16.6 5.4L18.6 6.2L18.2 8.2L19 10L18.2 11.8L18.6 13.8L16.6 14.6L15.8 16.6L13.8 16.2L12 17L10.2 16.2L8.2 16.6L7.4 14.6L5.4 13.8L5.8 11.8L5 10L5.8 8.2L5.4 6.2L7.4 5.4L8.2 3.4L10.2 3.8L12 3Z' stroke='currentColor' stroke-width='1.5' stroke-linejoin='round'/><circle cx='12' cy='10' r='3' stroke='currentColor' stroke-width='1.5'/></svg>
                                     </button>
-                                    <button onclick="openModal('createLoad')" class="loads-toolbar-add px-4 py-2 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark rounded-lg text-sm font-semibold transition-all transform hover:scale-[1.02] active:scale-[0.98]" aria-label="Добавить груз">
-                                        <span class="loads-btn-icon" aria-hidden="true">
-                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                <path d="M12 5V19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                                <path d="M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                            </svg>
-                                        </span>
+                                    <button onclick='openModal("createLoad")' class='premium-btn-add'>
+                                        <svg class='w-5 h-5' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M12 5V19' stroke='currentColor' stroke-width='2.5' stroke-linecap='round'/><path d='M5 12H19' stroke='currentColor' stroke-width='2.5' stroke-linecap='round'/></svg>
                                         <span>Добавить груз</span>
                                     </button>
                                 </div>
@@ -2715,10 +3118,22 @@
                                     </div>
                                 </th>
                                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase">Маршрут</th>
-                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase">Ставка</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase cursor-pointer hover:bg-dark-border/50 transition-colors"
+                                    onclick="sortDeals('price')">
+                                    <div class="flex items-center gap-2">
+                                        Ставка
+                                        <span id="sort-deals-price-icon" class="text-gray-500">⇅</span>
+                                    </div>
+                                </th>
                                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase">Дата погрузки</th>
-                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase">Статус</th>
-                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase">AI Risk</th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase cursor-pointer hover:bg-dark-border/50 transition-colors"
+                                    onclick="sortDeals('status')">
+                                    <div class="flex items-center gap-2">
+                                        Статус
+                                        <span id="sort-deals-status-icon" class="text-gray-500">⇅</span>
+                                    </div>
+                                </th>
+                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase">AI-Риск</th>
                                 <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase">Действия</th>
                             </tr>
                         </thead>
@@ -3461,6 +3876,100 @@
             </div>
         </div>
 
+
+        <div id="page-tenders" class="page-content hidden">
+          <div class="space-y-4">
+            <div class="bg-dark-card border border-dark-border rounded-xl p-5">
+              <div class="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+                <div class="flex-1">
+                  <h2 class="text-xl font-bold">📋 Тендеры</h2>
+                  <p class="text-sm text-gray-400 mt-0.5">Грузовладелец создаёт тендер — перевозчики подают заявки с ценой</p>
+                </div>
+                <button id="btn-create-tender" onclick="openCreateTenderModal()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-purple to-blue text-white text-sm font-semibold hidden">+ Создать тендер</button>
+              </div>
+              <div class="flex gap-2 flex-wrap">
+                <button onclick="loadTenders('active')" class="tender-tab-btn px-3 py-1.5 rounded-lg text-sm border border-dark-border transition-all" data-tstatus="active">Активные</button>
+                <button onclick="loadTenders('awarded')" class="tender-tab-btn px-3 py-1.5 rounded-lg text-sm border border-dark-border transition-all" data-tstatus="awarded">Завершённые</button>
+                <button onclick="loadTenders('all')" class="tender-tab-btn px-3 py-1.5 rounded-lg text-sm border border-dark-border transition-all" data-tstatus="all">Все</button>
+              </div>
+            </div>
+            <div id="tenders-list" class="space-y-3">
+              <div class="text-sm text-gray-400 text-center py-8">Загрузка…</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="modal-create-tender" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[300] p-4" onclick="if(event.target===this)closeCreateTenderModal()">
+          <div class="bg-dark-card border border-dark-border rounded-xl w-full max-w-lg flex flex-col max-h-[92vh]">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-dark-border flex-shrink-0">
+              <h3 class="text-lg font-bold">📋 Новый тендер</h3>
+              <button onclick="closeCreateTenderModal()" class="text-gray-400 hover:text-white">✕</button>
+            </div>
+            <div class="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+              <input id="tn-title" placeholder="Название (напр. Москва–Екб, 20т, тент)" class="w-full px-3 py-2 rounded-lg bg-dark border border-dark-border text-sm focus:outline-none focus:border-purple">
+              <div class="grid grid-cols-2 gap-2">
+                <input id="tn-from" placeholder="Откуда" class="px-3 py-2 rounded-lg bg-dark border border-dark-border text-sm focus:outline-none focus:border-purple">
+                <input id="tn-to" placeholder="Куда" class="px-3 py-2 rounded-lg bg-dark border border-dark-border text-sm focus:outline-none focus:border-purple">
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-xs text-gray-400 mb-1 block">Дата погрузки</label>
+                  <input id="tn-loading-date" type="date" class="w-full px-3 py-2 rounded-lg bg-dark border border-dark-border text-sm focus:outline-none focus:border-purple">
+                </div>
+                <div>
+                  <label class="text-xs text-gray-400 mb-1 block">Deadline приёма заявок</label>
+                  <input id="tn-deadline" type="datetime-local" class="w-full px-3 py-2 rounded-lg bg-dark border border-dark-border text-sm focus:outline-none focus:border-purple">
+                </div>
+              </div>
+              <div class="grid grid-cols-3 gap-2">
+                <input id="tn-weight" type="number" placeholder="Вес, т" class="px-3 py-2 rounded-lg bg-dark border border-dark-border text-sm focus:outline-none focus:border-purple">
+                <input id="tn-volume" type="number" placeholder="Объём, м³" class="px-3 py-2 rounded-lg bg-dark border border-dark-border text-sm focus:outline-none focus:border-purple">
+                <input id="tn-budget" type="number" placeholder="Бюджет макс, ₽" class="px-3 py-2 rounded-lg bg-dark border border-dark-border text-sm focus:outline-none focus:border-purple">
+              </div>
+              <select id="tn-body" class="w-full px-3 py-2 rounded-lg bg-dark border border-dark-border text-sm focus:outline-none focus:border-purple">
+                <option value="">Тип кузова (любой)</option>
+                <option>Тент</option><option>Реф</option><option>Изотерм</option>
+                <option>Борт</option><option>Контейнер</option><option>Самосвал</option>
+              </select>
+              <textarea id="tn-desc" rows="3" placeholder="Дополнительные условия (необязательно)" class="w-full px-3 py-2 rounded-lg bg-dark border border-dark-border text-sm focus:outline-none focus:border-purple resize-none"></textarea>
+            </div>
+            <div class="px-5 py-4 border-t border-dark-border flex gap-2 justify-end">
+              <button onclick="closeCreateTenderModal()" class="px-4 py-2 rounded-lg border border-dark-border text-sm">Отмена</button>
+              <button onclick="submitCreateTender()" class="px-5 py-2 rounded-xl bg-gradient-to-r from-purple to-blue text-white text-sm font-semibold">Опубликовать</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="modal-tender-detail" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[300] p-4" onclick="if(event.target===this)closeTenderDetail()">
+          <div class="bg-dark-card border border-dark-border rounded-xl w-full max-w-2xl flex flex-col max-h-[92vh]">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-dark-border flex-shrink-0">
+              <h3 class="text-lg font-bold" id="td-title">Тендер</h3>
+              <button onclick="closeTenderDetail()" class="text-gray-400 hover:text-white">✕</button>
+            </div>
+            <div class="flex-1 overflow-y-auto px-5 py-4" id="td-body"></div>
+          </div>
+        </div>
+
+                <!-- API Keys Section -->
+                <div id="apiKeysSection" class="hidden bg-dark-card border border-dark-border rounded-xl p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 class="font-bold text-lg">🔌 API для ТМС-интеграции</h3>
+                            <p class="text-sm text-gray-400 mt-1">Используйте ключ для подключения внешних систем. <a href="/tms/docs" target="_blank" class="text-purple hover:underline">Документация API →</a></p>
+                        </div>
+                        <button onclick="createApiKey()" class="px-4 py-2 bg-gradient-to-r from-purple to-blue rounded-lg text-sm font-semibold hover:opacity-90 transition-all">
+                            + Создать ключ
+                        </button>
+                    </div>
+                    <div id="apiKeysList" class="space-y-3">
+                        <div class="text-gray-400 text-sm">Загрузка...</div>
+                    </div>
+                    <div class="mt-4 p-4 bg-dark border border-dark-border rounded-lg text-xs text-gray-400">
+                        <b>Лимиты:</b> Free — 100 запросов/день · Pro — 1000/день · Business — без ограничений<br>
+                        <b>Авторизация:</b> заголовок <code class="bg-dark-card px-1 py-0.5 rounded">X-Api-Key: ваш_ключ</code>
+                    </div>
+                </div>
+
         <div id="page-blacklist" class="page-content hidden">
             <div class="space-y-4">
                 <div class="bg-dark-card border border-dark-border rounded-xl p-5">
@@ -3559,11 +4068,11 @@
         © ГрузПоток 2026 &nbsp;·&nbsp;
         <a href="/requisites" target="_blank" class="underline hover:text-gray-300 transition-colors">Реквизиты</a>
         &nbsp;·&nbsp;
-        <a href="javascript:void(0)" onclick="showPage('billing')" class="underline hover:text-gray-300 transition-colors">Тарифы</a>
+        <a href="#tariffs" onclick="showPage('billing')" class="underline hover:text-gray-300 transition-colors">Тарифы</a>
     </footer>
 
     <!-- Modal: Best Loads -->
-    <div id="modal-bestLoads" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+    <div id="modal-bestLoads" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200]" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-3xl w-full mx-4">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-xl font-bold">⚡ Лучшие 3 рейса сегодня</h3>
@@ -3581,7 +4090,7 @@
     </div>
 
     <!-- Modal: Column Settings -->
-    <div id="modal-columnSettings" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+    <div id="modal-columnSettings" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200]" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-xl font-bold">Настройка колонок</h3>
@@ -3601,7 +4110,7 @@
                     </button>
                 </div>
                 <div class="text-xs text-gray-400">
-                    Перетаскивайте строки за маркер `⋮⋮`, чтобы изменить порядок колонок.
+                    Перетаскивайте строки за маркер <code>⋮⋮</code>, чтобы изменить порядок колонок.
                 </div>
                 <div id="columnSettingsList" class="space-y-2"></div>
             </div>
@@ -3622,64 +4131,72 @@
         </div>
     </div>
 
-    <!-- ChatGPT Widget -->
-    <div id="chatWidget" class="fixed bottom-4 right-4 w-96 bg-dark-card border border-dark-border rounded-xl shadow-2xl hidden flex flex-col" style="height: 600px; z-index: 1000;">
+    <!-- Floating AI Assistant Button -->
+    <button onclick="toggleChat()" id="floatingAiBtn" class="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-2xl flex items-center justify-center z-[1001] transition-all hover:scale-110 active:scale-95 group" title="Задать вопрос AI">
+        <svg class="w-7 h-7 transition-transform group-hover:rotate-12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 3L13.9 8.1L19 10L13.9 11.9L12 17L10.1 11.9L5 10L10.1 8.1L12 3Z" fill="currentColor"/>
+            <path d="M18.5 16L19.4 18.1L21.5 19L19.4 19.9L18.5 22L17.6 19.9L15.5 19L17.6 18.1L18.5 16Z" fill="currentColor"/>
+        </svg>
+        <div class="absolute -top-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>
+    </button>
+
+    <!-- Kimi AI Widget -->
+    <div id="chatWidget" class="fixed hidden flex-col z-[1000]">
         <!-- Chat Header -->
-        <div class="p-4 border-b border-dark-border flex items-center justify-between bg-gradient-to-r from-purple to-blue">
-            <div class="flex items-center gap-2">
-                <div class="w-3 h-3 bg-green-400 rounded-full"></div>
-                <h3 class="font-semibold text-white">AI Помощник</h3>
+        <div class="chat-header-premium border-b border-white/10 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-2.5 h-2.5 bg-green-400 rounded-full shadow-[0_0_8px_rgba(74,222,128,0.6)]"></div>
+                <h3 class="font-bold text-white tracking-wide">Kimi AI Помощник</h3>
             </div>
-            <button onclick="toggleChat()" class="text-white hover:text-gray-200">✕</button>
+            <button onclick="toggleChat()" class="text-white/80 hover:text-white transition-all p-1 hover:bg-white/10 rounded-lg">✕</button>
         </div>
         
         <!-- Chat Messages -->
-        <div id="chatMessages" class="flex-1 overflow-y-auto p-4 space-y-4" style="max-height: 450px;">
-            <div class="flex items-start gap-2">
-                <div class="w-8 h-8 rounded-full bg-gradient-to-r from-purple to-blue flex items-center justify-center text-white text-sm font-bold">
-                    AI
+        <div id="chatMessages" class="flex-1 overflow-y-auto p-5 space-y-5">
+            <div class="flex items-start gap-3">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center text-white text-sm font-black shadow-lg">
+                    KI
                 </div>
-                <div class="flex-1 bg-dark border border-dark-border rounded-lg p-3">
-                    <p class="text-sm text-gray-300">
-                        Привет! Я AI-помощник ГрузПоток. Могу помочь с вопросами о грузоперевозках, логистике, документах и использовании платформы. Чем могу помочь?
+                <div class="chat-msg-ai flex-1 p-4">
+                    <p class="text-[14px] leading-relaxed text-gray-200">
+                        Привет! Я Kimi — твой интеллектуальный ассистент ГрузПоток. Помогу найти лучшие грузы, проверю контрагента или подготовлю документы. Что тебя интересует?
                     </p>
                 </div>
             </div>
         </div>
         
         <!-- Chat Input -->
-        <div class="p-4 border-t border-dark-border">
-            <div class="flex gap-2">
+        <div class="p-5 border-t border-dark-border bg-dark-card">
+            <div class="flex gap-2 bg-dark-border/20 p-1.5 rounded-2xl border border-white/5 focus-within:border-blue-500/50 transition-all">
                 <input 
                     type="text" 
                     id="chatInput" 
-                    placeholder="Напишите сообщение..."
-                    class="flex-1 px-3 py-2 bg-dark border border-dark-border rounded-lg focus:outline-none focus:border-purple text-sm"
+                    placeholder="Задайте вопрос..."
+                    class="flex-1 bg-transparent border-none focus:ring-0 text-white text-sm px-3 py-2"
                     onkeypress="if(event.key === 'Enter') sendChatMessage()"
                 >
                 <button 
                     onclick="sendChatMessage()" 
-                    class="px-4 py-2 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark rounded-lg transition-all"
+                    class="w-10 h-10 flex items-center justify-center rounded-xl bg-blue-600 text-white hover:bg-blue-500 transition-all shadow-lg"
                 >
-                    ➤
+                    <svg class="w-5 h-5 rotate-90" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 19L12 5M12 5L19 12M12 5L5 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
                 </button>
             </div>
-            <p class="text-xs text-gray-500 mt-2 text-center">
-                Powered by ChatGPT
-            </p>
         </div>
     </div>
 
     <!-- Modals -->
     <!-- Modal: Create Load -->
-    <div id="modal-createLoad" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
-        <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+    <div id="modal-createLoad" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200]" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
+        <div class="bg-dark-card border border-dark-border rounded-2xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col shadow-2xl transition-all">
+            <div class="flex items-center justify-between p-5 border-b border-dark-border bg-dark-card z-20 rounded-t-2xl flex-shrink-0 shadow-sm">
                 <h3 class="text-xl font-bold">📦 Добавить груз</h3>
-                <button onclick="closeModal('createLoad')" class="text-gray-400 hover:text-white transition-colors">✕</button>
+                <button onclick="closeModal('createLoad')" class="text-gray-400 hover:text-white transition-all p-2 hover:bg-white/10 rounded-full text-2xl leading-none flex items-center justify-center w-10 h-10" title="Закрыть (Esc)">✕</button>
             </div>
             
-            <form id="createLoadForm" novalidate onsubmit="event.preventDefault(); createLoad();" class="space-y-6">
+            <form id="createLoadForm" style="padding: 24px; overflow-y: auto; flex: 1;" novalidate onsubmit="event.preventDefault(); createLoad();" class="space-y-6">
                 <!-- Priority promo -->
                 <div id="createLoad-priority-banner" class="hidden items-center gap-3 px-4 py-3 rounded-xl border border-yellow-500/30 bg-yellow-500/8">
                     <span class="text-xl">⭐</span>
@@ -3760,6 +4277,7 @@
                                 <option value="Изотерм">Изотерм</option>
                                 <option value="Автовоз">Автовоз</option>
                                 <option value="Самосвал">Самосвал</option>
+                                <option value="jumbo">Jumbo (джамбо)</option>
                             </select>
                         </div>
                         <div>
@@ -3776,9 +4294,10 @@
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="text-sm text-gray-400 mb-1 block">Дата погрузки *</label>
-                            <input type="date" id="load-loading-date" min="" oninput="updateLoadingDateDisplay()"
+                            <input type="text" id="load-loading-date" placeholder="ДД.ММ.ГГГГ" inputmode="numeric" maxlength="10" autocomplete="off"
+                                oninput="handleLoadingDateInput(event)"
                                 class="w-full px-3 py-2 bg-dark border border-dark-border rounded-lg focus:outline-none focus:border-purple transition-all">
-                            <div id="load-loading-date-display" class="text-xs text-gray-500 mt-1">Формат отображения: ДД.ММ.ГГГГ</div>
+                            <div id="load-loading-date-display" class="text-xs text-gray-500 mt-1">Формат: ДД.ММ.ГГГГ (например, 25.03.2026)</div>
                         </div>
                         <div>
                             <label class="text-sm text-gray-400 mb-1 block">Время погрузки (24ч)</label>
@@ -3842,24 +4361,23 @@
                 
                 <!-- Ошибки валидации -->
                 <div id="load-form-errors" class="hidden text-red-400 text-sm space-y-1"></div>
-                
-                <!-- Кнопки -->
-                <div class="flex gap-3 pt-4 border-t border-dark-border">
-                    <button type="button" onclick="closeModal('createLoad')" class="flex-1 px-4 py-2 bg-dark-border hover:bg-dark-border/80 rounded-lg transition-all">
-                        Отмена
-                    </button>
-                    <button type="submit" class="flex-1 px-4 py-2 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark rounded-lg font-semibold transition-all transform hover:scale-[1.02] active:scale-[0.98]">
-                        Создать груз
-                    </button>
-                </div>
             </form>
+            <!-- Кнопки вне формы — не скроллируются -->
+            <div class="flex gap-3 px-6 py-4 border-t border-dark-border bg-dark-card flex-shrink-0">
+                <button type="button" onclick="closeModal('createLoad')" class="flex-1 px-4 py-3 bg-dark-border hover:bg-dark-border/80 text-gray-300 rounded-xl font-semibold transition-all">
+                    Отмена
+                </button>
+                <button type="button" onclick="createLoad()" class="flex-[2] px-4 py-3 bg-gradient-to-r from-purple to-blue hover:from-purple-dark hover:to-blue-dark text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-purple/20">
+                    Разместить груз
+                </button>
+            </div>
         </div>
     </div>
 
     <!-- Modal: Take Cargo (Подтверждение взятия груза) -->
-    <div id="modal-takeCargo" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+    <div id="modal-takeCargo" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200]" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-lg w-full mx-4">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-xl font-bold">Взять груз?</h3>
                 <button onclick="closeModal('takeCargo')" class="text-gray-400 hover:text-white transition-colors">✕</button>
             </div>
@@ -3931,7 +4449,7 @@
     </div>
 
     <!-- Modal: Deal Details (Детали сделки) -->
-    <div id="modal-dealDetails" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 p-4">
+    <div id="modal-dealDetails" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200] p-4" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl max-w-2xl w-full flex flex-col max-h-[90vh]">
             <div class="flex items-center justify-between px-6 py-4 border-b border-dark-border flex-shrink-0">
                 <h3 class="text-xl font-bold">Детали сделки</h3>
@@ -3944,9 +4462,9 @@
     </div>
 
     <!-- Modal: Document Parameters (Параметры документа) -->
-    <div id="modal-documentParams" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-documentParams" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200] overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-xl font-bold" id="documentParamsTitle">Параметры документа</h3>
                 <button onclick="closeModal('documentParams')" class="text-gray-400 hover:text-white transition-colors">✕</button>
             </div>
@@ -4040,9 +4558,9 @@
     </div>
 
     <!-- Modal: Company Profile (Настройки компании) -->
-    <div id="modal-companyProfile" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-companyProfile" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200] overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-xl font-bold">Настройки компании</h3>
                 <button onclick="closeModal('companyProfile')" class="text-gray-400 hover:text-white transition-colors">✕</button>
             </div>
@@ -4127,9 +4645,9 @@
     </div>
 
     <!-- Modal: Import Clients (Импорт клиентов) -->
-    <div id="modal-importClients" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-importClients" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200] overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-4xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-xl font-bold">📥 Импорт клиентов</h3>
                 <button onclick="closeModal('importClients')" class="text-gray-400 hover:text-white transition-colors">✕</button>
             </div>
@@ -4182,9 +4700,9 @@
     </div>
 
     <!-- Modal: Import Carriers (Импорт перевозчиков) -->
-    <div id="modal-importCarriers" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-importCarriers" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200] overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-4xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-xl font-bold">📥 Импорт перевозчиков</h3>
                 <button onclick="closeModal('importCarriers')" class="text-gray-400 hover:text-white transition-colors">✕</button>
             </div>
@@ -4239,9 +4757,9 @@
     </div>
 
     <!-- Modal: Add/Edit Client (Добавить/Редактировать клиента) -->
-    <div id="modal-clientForm" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-clientForm" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200] overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-xl font-bold" id="client-form-title">Добавить клиента</h3>
                 <button onclick="closeModal('clientForm')" class="text-gray-400 hover:text-white transition-colors">✕</button>
             </div>
@@ -4381,9 +4899,9 @@
 
 
     <!-- Modal: Add/Edit Carrier (Добавить/Редактировать перевозчика) -->
-    <div id="modal-carrierForm" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-carrierForm" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200] overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-xl font-bold" id="carrier-form-title">Добавить перевозчика</h3>
                 <button onclick="closeModal('carrierForm')" class="text-gray-400 hover:text-white transition-colors">✕</button>
             </div>
@@ -4483,9 +5001,9 @@
     </div>
 
     <!-- Modal: Role Selection (Step 1) -->
-    <div id="modal-role-selection" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-role-selection" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200] overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-8 max-w-5xl w-full mx-4 my-8">
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between p-6 border-b border-dark-border sticky top-0 bg-dark-card/95 backdrop-blur z-10 rounded-t-2xl">
                 <h3 class="text-2xl font-bold">Регистрация на ГрузПоток</h3>
                 <button onclick="closeModal('role-selection')" class="text-gray-400 hover:text-white">✕</button>
             </div>
@@ -4545,7 +5063,7 @@
     </div>
 
     <!-- Modal: Register -->
-    <div id="modal-register" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-register" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200] overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-2xl w-full mx-4 my-8">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-xl font-bold">Регистрация ИП/ООО</h3>
@@ -4583,8 +5101,7 @@
                 
                 <!-- Контакт: телефон или email + OTP -->
                 <div class="p-4 bg-dark rounded-xl border border-dark-border space-y-3">
-                    <p class="text-sm font-semibold text-gray-300">Контакт для связи *</p>
-                    <p class="text-xs text-gray-500">OTP можно пропустить, если код не приходит.</p>
+                    <p class="text-sm font-semibold text-gray-300">Подтверждение контакта *</p>
                     <div class="flex gap-1 bg-dark-card rounded-lg p-1">
                         <button type="button" onclick="switchRegContact('phone')" id="regContactTabPhone"
                             class="flex-1 py-1.5 text-xs rounded-md font-medium transition-all bg-dark-border text-white">
@@ -4685,7 +5202,7 @@
     <!-- Modal: Login -->
 
     <!-- Deal Picker Modal (for createDocument) -->
-    <div id="modal-dealPicker" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50 overflow-y-auto">
+    <div id="modal-dealPicker" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200] overflow-y-auto" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-lg w-full mx-4 my-6">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-xl font-bold" id="dealPickerTitle">Выберите сделку</h3>
@@ -4703,7 +5220,7 @@
 
 
     <!-- ── Balance / Plan Modal ── -->
-    <div id="modal-balance" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+    <div id="modal-balance" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200]" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-sm w-full mx-4">
             <div class="flex items-center justify-between mb-5">
                 <h3 class="text-lg font-bold">Ваш план</h3>
@@ -4719,7 +5236,7 @@
         </div>
     </div>
 
-    <div id="modal-login" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-50">
+    <div id="modal-login" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[200]" onclick="if(event.target===this)closeModal(this.id.replace(\'modal-\', \'\'))">
         <div class="bg-dark-card border border-dark-border rounded-xl p-6 max-w-md w-full mx-4">
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-xl font-bold">Вход</h3>
@@ -5396,7 +5913,7 @@
                 _aiBtn.classList.toggle('nav-page-btn-active', _aiPages.includes(page));
             }
             
-            if (page === 'blacklist') {
+            if (page === 'tenders') { loadTenders('active'); } else if (page === 'blacklist') {
                 loadBlacklist();
             }
             if (page === 'loads') {
@@ -5437,6 +5954,8 @@
                 }
             } else if (page === 'map') {
                 loadMap();
+            } else if (page === 'billing') {
+                if (typeof loadBillingPage === 'function') loadBillingPage();
             }
         }
 
@@ -5535,6 +6054,17 @@
         }
 
         window.addEventListener('hashchange', handleProfileHashRoute);
+
+        // Global Modal Keyboard Shortcuts (Esc)
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const openModals = document.querySelectorAll('[id^="modal-"]:not(.hidden)');
+                openModals.forEach(modal => {
+                    const modalId = modal.id.replace('modal-', '');
+                    closeModal(modalId);
+                });
+            }
+        });
 
         function goHome(event) {
             if (event) {
@@ -6023,31 +6553,39 @@
             if (!head) return;
 
             const columns = getVisibleLoadsColumns();
-            head.innerHTML = `
-                <tr>
-                    ${columns.map((column) => {
-                        const tipAttr = column.tip ? ` title="${column.tip}"` : '';
-                        if (!column.sortable) {
-                            return `
-                                <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase" data-column="${column.key}"${tipAttr}>
-                                    ${column.label}
-                                </th>
-                            `;
-                        }
+            
+            // Ensure alignment with body columns from CargoManager
+            let html = '<tr>';
+            html += columns.map((column) => {
+                const tipAttr = column.tip ? ` title="${column.tip}"` : '';
+                const sortKey = column.sortKey || column.key;
+                
+                if (!column.sortable) {
+                    return `
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase" data-column="${column.key}"${tipAttr}>
+                            ${column.label}
+                        </th>
+                    `;
+                }
 
-                        const sortKey = column.sortKey || column.key;
-                        return `
-                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase cursor-pointer hover:bg-dark-border/50 transition-colors"
-                                onclick="sortTable('${sortKey}')" data-column="${column.key}"${tipAttr}>
-                                <div class="flex items-center gap-2">
-                                    ${column.label}
-                                    <span id="sort-${sortKey}-icon" class="text-gray-500">⇅</span>
-                                </div>
-                            </th>
-                        `;
-                    }).join('')}
-                </tr>
-            `;
+                return `
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-400 uppercase cursor-pointer hover:bg-dark-border/50 transition-colors"
+                        onclick="sortTable('${sortKey}')" data-column="${column.key}"${tipAttr}>
+                        <div class="flex items-center gap-2">
+                            ${column.label}
+                            <span id="sort-${sortKey}-icon" class="text-gray-500">⇅</span>
+                        </div>
+                    </th>
+                `;
+            }).join('');
+            
+            // Add Actions header if not present but expected in body
+            if (!columns.some(c => c.key === 'actions')) {
+                html += '<th class="px-4 py-3 text-right text-xs font-semibold text-gray-400 uppercase">Действия</th>';
+            }
+            
+            html += '</tr>';
+            head.innerHTML = html;
 
             updateSortIcons();
         }
@@ -6331,24 +6869,32 @@
         function applyFilter(key, value) {
             cargoState.filters[key] = value;
             cargoState.currentPage = 1;
+
+            const hideIfExists = (id) => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.classList.add('hidden');
+                }
+                return element;
+            };
             
             // Валидация
             const errors = validateFilters(cargoState.filters);
-            document.getElementById('filter-weight-error').classList.add('hidden');
-            document.getElementById('filter-volume-error').classList.add('hidden');
-            document.getElementById('filter-date-error').classList.add('hidden');
+            const weightError = hideIfExists('filter-weight-error');
+            const volumeError = hideIfExists('filter-volume-error');
+            const dateError = hideIfExists('filter-date-error');
             
-            if (errors.weight) {
-                document.getElementById('filter-weight-error').textContent = errors.weight;
-                document.getElementById('filter-weight-error').classList.remove('hidden');
+            if (errors.weight && weightError) {
+                weightError.textContent = errors.weight;
+                weightError.classList.remove('hidden');
             }
-            if (errors.volume) {
-                document.getElementById('filter-volume-error').textContent = errors.volume;
-                document.getElementById('filter-volume-error').classList.remove('hidden');
+            if (errors.volume && volumeError) {
+                volumeError.textContent = errors.volume;
+                volumeError.classList.remove('hidden');
             }
-            if (errors.date) {
-                document.getElementById('filter-date-error').textContent = errors.date;
-                document.getElementById('filter-date-error').classList.remove('hidden');
+            if (errors.date && dateError) {
+                dateError.textContent = errors.date;
+                dateError.classList.remove('hidden');
             }
             
             applyFiltersAndSort();
@@ -6369,22 +6915,36 @@
                 riskLevel: ''
             };
             cargoState.currentPage = 1;
+
+            const setValue = (id, value = '') => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.value = value;
+                }
+            };
+            const hideIfExists = (id) => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.classList.add('hidden');
+                }
+            };
             
             // Очистка полей
-            document.getElementById('filter-from').value = '';
-            document.getElementById('filter-to').value = '';
-            document.getElementById('filter-date').value = ''; const _dDisp = document.getElementById('filter-date-display'); if (_dDisp) _dDisp.value = '';
-            document.getElementById('filter-weight-from').value = '';
-            document.getElementById('filter-weight-to').value = '';
-            document.getElementById('filter-volume-from').value = '';
-            document.getElementById('filter-volume-to').value = '';
-            document.getElementById('filter-truck-type').value = '';
-            document.getElementById('filter-risk-level').value = '';
+            setValue('filter-from');
+            setValue('filter-to');
+            setValue('filter-date');
+            setValue('filter-date-display');
+            setValue('filter-weight-from');
+            setValue('filter-weight-to');
+            setValue('filter-volume-from');
+            setValue('filter-volume-to');
+            setValue('filter-truck-type');
+            setValue('filter-risk-level');
             
             // Очистка ошибок
-            document.getElementById('filter-weight-error').classList.add('hidden');
-            document.getElementById('filter-volume-error').classList.add('hidden');
-            document.getElementById('filter-date-error').classList.add('hidden');
+            hideIfExists('filter-weight-error');
+            hideIfExists('filter-volume-error');
+            hideIfExists('filter-date-error');
             
             applyFiltersAndSort();
             saveCargoState();
@@ -7047,15 +7607,37 @@
             }
             
             // Восстанавливаем состояние фильтров в DOM
-            document.getElementById('filter-from').value = cargoState.filters.from;
-            document.getElementById('filter-to').value = cargoState.filters.to;
-            document.getElementById('filter-date').value = cargoState.filters.date;
-            document.getElementById('filter-weight-from').value = cargoState.filters.weightFrom;
-            document.getElementById('filter-weight-to').value = cargoState.filters.weightTo;
-            document.getElementById('filter-volume-from').value = cargoState.filters.volumeFrom;
-            document.getElementById('filter-volume-to').value = cargoState.filters.volumeTo;
-            document.getElementById('filter-truck-type').value = cargoState.filters.truckType;
-            document.getElementById('filter-risk-level').value = cargoState.filters.riskLevel;
+            const setFilterValue = (id, value) => {
+                const element = document.getElementById(id);
+                if (element) {
+                    const normalizedValue = value || '';
+                    if (id === 'filter-truck-type' && normalizedValue) {
+                        const match = Array.from(element.options || []).find(opt =>
+                            opt.value === normalizedValue ||
+                            opt.value.toLowerCase() === String(normalizedValue).trim().toLowerCase()
+                        );
+                        if (match) {
+                            element.value = match.value;
+                            return;
+                        }
+                        const customOption = document.createElement('option');
+                        customOption.value = normalizedValue;
+                        customOption.textContent = normalizedValue;
+                        customOption.dataset.dynamic = '1';
+                        element.appendChild(customOption);
+                    }
+                    element.value = normalizedValue;
+                }
+            };
+            setFilterValue('filter-from', cargoState.filters.from);
+            setFilterValue('filter-to', cargoState.filters.to);
+            setFilterValue('filter-date', cargoState.filters.date);
+            setFilterValue('filter-weight-from', cargoState.filters.weightFrom);
+            setFilterValue('filter-weight-to', cargoState.filters.weightTo);
+            setFilterValue('filter-volume-from', cargoState.filters.volumeFrom);
+            setFilterValue('filter-volume-to', cargoState.filters.volumeTo);
+            setFilterValue('filter-truck-type', cargoState.filters.truckType);
+            setFilterValue('filter-risk-level', cargoState.filters.riskLevel);
             
             // Восстанавливаем состояние панели фильтров
             if (cargoState.filtersCollapsed) {
@@ -7164,10 +7746,21 @@
                         </div>
                     </div>
                     ` : `
-                    <button onclick="openTakeCargoModal(${load.id})" class="loads-card-action loads-card-action-primary w-full px-4 py-2 rounded-lg font-semibold transition-all">
+                    ${currentUser && load.creator && load.creator.id == currentUser.id ? `
+                    <button onclick="showLoadResponses(${load.id})" class="loads-card-action loads-card-action-primary w-full px-4 py-2 rounded-lg font-semibold transition-all">
+                        <span class="loads-btn-icon" aria-hidden="true">📋</span>
+                        <span>Отклики перевозчиков</span>
+                    </button>
+                    ` : `
+                    <button onclick="openRespondModal(${load.id}, {from_city: '${load.from_city}', to_city: '${load.to_city}', price: ${load.total_price || load.price || 0}})" class="loads-card-action loads-card-action-primary w-full px-4 py-2 rounded-lg font-semibold transition-all">
+                        <span class="loads-btn-icon" aria-hidden="true">✉️</span>
+                        <span>Откликнуться</span>
+                    </button>
+                    <button onclick="openTakeCargoModal(${load.id})" class="loads-card-action loads-card-action-secondary w-full px-4 py-2 rounded-lg transition-all">
                         <span class="loads-btn-icon" aria-hidden="true">🤝</span>
                         <span>Взять груз</span>
                     </button>
+                    `}
                     <button onclick="showLoadContacts(${load.id})" class="loads-card-action loads-card-action-secondary w-full px-4 py-2 rounded-lg transition-all">
                         <span class="loads-btn-icon" aria-hidden="true">📞</span>
                         <span>Связаться</span>
@@ -7250,8 +7843,83 @@
                         <div class="text-sm font-semibold mb-3">🔍 Подходящие машины</div>
                         <div id="matching-list-${load.id}" class="space-y-2"></div>
                     </div>
+                    <div id="responses-block-${load.id}" class="hidden mt-4 pt-4 border-t border-dark-border">
+                        <div class="text-sm font-semibold mb-3">📋 Отклики перевозчиков</div>
+                        <div id="responses-list-${load.id}" class="space-y-2"></div>
+                    </div>
                 </div>
             `;
+        }
+
+
+        async function showLoadResponses(loadId) {
+            const block = document.getElementById('responses-block-' + loadId);
+            const list = document.getElementById('responses-list-' + loadId);
+            if (!block || !list) return;
+            block.classList.remove('hidden');
+            list.innerHTML = '<div class="text-xs text-gray-400">Загрузка...</div>';
+            if (!authToken) { list.innerHTML = '<div class="text-xs text-red-400">Требуется авторизация</div>'; return; }
+            try {
+                const r = await fetch(`/bids/${loadId}/responses?token=${authToken}`);
+                if (!r.ok) { list.innerHTML = '<div class="text-xs text-red-400">Ошибка загрузки</div>'; return; }
+                const bids = await r.json();
+                if (!bids.length) { list.innerHTML = '<div class="text-xs text-gray-400">Откликов пока нет</div>'; return; }
+                const labelMap = { best_match: {icon: '🏆', cls: 'text-yellow-400'}, good_fit: {icon: '✅', cls: 'text-green-400'}, risky: {icon: '⚠️', cls: 'text-orange-400'}, incomplete: {icon: '❓', cls: 'text-gray-400'} };
+                const statusMap = { new: 'Новый', viewed: 'Просмотрен', shortlisted: 'В шортлисте', accepted: 'Принят', rejected: 'Отклонён', cancelled: 'Отменён' };
+                const vatMap = { with_vat: 'с НДС', no_vat: 'без НДС', cash: 'нал' };
+                list.innerHTML = bids.map(b => {
+                    const lm = labelMap[b.fit_label] || labelMap.incomplete;
+                    const carrier = b.carrier || {};
+                    const warn = (b.fit_warnings || []).map(w => ({body_type_mismatch:'⚠️ Тип кузова не совпадает', may_not_fit_weight:'⚠️ Может не хватить грузоподъёмности', may_not_fit_volume:'⚠️ Может не хватить объёма'}[w] || w)).join('<br>');
+                    const actions = ['new','viewed','shortlisted'].includes(b.status) ? `
+                        <div class="flex gap-1 mt-2 flex-wrap">
+                            ${b.status === 'new' ? `<button onclick="updateBidStatus(${b.id},'viewed',${loadId})" class="px-2 py-1 bg-blue-600/30 text-blue-300 rounded text-xs hover:bg-blue-600/50">👁 Просмотрен</button>` : ''}
+                            ${b.status !== 'shortlisted' ? `<button onclick="updateBidStatus(${b.id},'shortlisted',${loadId})" class="px-2 py-1 bg-purple-600/30 text-purple-300 rounded text-xs hover:bg-purple-600/50">📌 Шортлист</button>` : ''}
+                            <button onclick="updateBidStatus(${b.id},'accepted',${loadId})" class="px-2 py-1 bg-green-600/30 text-green-300 rounded text-xs hover:bg-green-600/50">✅ Принять</button>
+                            <button onclick="updateBidStatus(${b.id},'rejected',${loadId})" class="px-2 py-1 bg-red-600/30 text-red-300 rounded text-xs hover:bg-red-600/50">❌ Отклонить</button>
+                        </div>` : '';
+                    return `<div class="bg-dark-card border border-dark-border rounded-lg p-3 text-sm">
+                        <div class="flex items-start justify-between gap-2">
+                            <div>
+                                <span class="font-semibold">${carrier.name || 'Перевозчик'}</span>
+                                ${carrier.phone ? `<span class="text-gray-400 ml-2 text-xs">${carrier.phone}</span>` : ''}
+                            </div>
+                            <span class="text-xs px-2 py-0.5 rounded bg-dark-border whitespace-nowrap">${statusMap[b.status] || b.status}</span>
+                        </div>
+                        <div class="mt-1 flex gap-3 flex-wrap text-xs text-gray-300">
+                            <span class="font-semibold text-white">${(b.price||0).toLocaleString('ru')} ₽ ${vatMap[b.vat_type]||''}</span>
+                            <span class="${lm.cls}">${lm.icon} ${b.score}/100</span>
+                            ${b.vehicle_type ? `<span>🚛 ${b.vehicle_type}${b.capacity_tons ? ' ' + b.capacity_tons + 'т' : ''}</span>` : ''}
+                            ${b.ready_date ? `<span>📅 ${b.ready_date}</span>` : ''}
+                        </div>
+                        ${warn ? `<div class="mt-1 text-xs text-orange-400">${warn}</div>` : ''}
+                        ${b.comment ? `<div class="mt-1 text-xs text-gray-400">${b.comment}</div>` : ''}
+                        ${actions}
+                    </div>`;
+                }).join('');
+            } catch(e) {
+                list.innerHTML = '<div class="text-xs text-red-400">Ошибка: ' + e.message + '</div>';
+            }
+        }
+
+        async function updateBidStatus(bidId, newStatus, loadId) {
+            if (!authToken) return;
+            try {
+                const r = await fetch(`/bids/responses/${bidId}/status?token=${authToken}`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({status: newStatus}),
+                });
+                if (!r.ok) {
+                    const err = await r.json().catch(() => ({}));
+                    showNotification(err.detail || 'Ошибка', 'error');
+                    return;
+                }
+                showNotification(newStatus === 'accepted' ? '✅ Принят' : newStatus === 'rejected' ? '❌ Отклонён' : newStatus === 'shortlisted' ? '📌 В шортлист' : 'Обновлено', 'success');
+                if (loadId) showLoadResponses(loadId);
+            } catch(e) {
+                showNotification('Ошибка: ' + e.message, 'error');
+            }
         }
 
         function closeLoadCard() {
@@ -7378,10 +8046,6 @@
         }
 
         function switchRegContact(type) {
-            if (type === 'email') {
-                alert('❌ Регистрация по email временно недоступна. Используйте телефон.');
-                return;
-            }
             _regContactType = type;
             _regOtpVerified = false;
             const phoneWrap = document.getElementById('regContactPhoneWrap');
@@ -7422,25 +8086,8 @@
                 });
                 const d = await r.json();
                 if (r.ok) {
-                    const statusEl = document.getElementById('regOtpStatus');
-                    if (d.otp_optional || d.delivery_mode === 'stub') {
-                        _regOtpVerified = true;
-                        document.getElementById('regOtpCodeWrap').classList.add('hidden');
-                        if (statusEl) {
-                            statusEl.textContent = '✓ OTP не требуется';
-                            statusEl.classList.remove('hidden');
-                            statusEl.classList.add('flex');
-                        }
-                        btn.textContent = 'OTP не нужен';
-                        alert('ℹ️ Код сейчас не обязателен. Можно продолжить регистрацию.');
-                    } else {
-                        document.getElementById('regOtpCodeWrap').classList.remove('hidden');
-                        if (statusEl) {
-                            statusEl.textContent = '✓ Подтверждено';
-                            statusEl.classList.add('hidden');
-                        }
-                        btn.textContent = 'Отправить ещё раз';
-                    }
+                    document.getElementById('regOtpCodeWrap').classList.remove('hidden');
+                    btn.textContent = 'Отправить ещё раз';
                 } else { alert('❌ ' + (d.detail || 'Ошибка')); }
             } catch(e) { alert('❌ Ошибка сети'); }
             btn.disabled = false;
@@ -7537,6 +8184,12 @@
             const bankBik = document.getElementById('reg-bank-bik').value.trim();
             const bankKs = document.getElementById('reg-bank-ks').value.trim();
 
+            // Валидация OTP
+            if (!_regOtpVerified) {
+                alert('❌ Сначала подтвердите телефон или email через OTP');
+                return;
+            }
+
             // Валидация
             if (!organizationType || !inn || !organizationName || !phone || !password) {
                 alert('❌ Заполните все обязательные поля');
@@ -7587,7 +8240,7 @@
 
                 const data = await response.json();
                 if (response.ok) {
-                    alert('✅ ' + (data.message || 'Регистрация успешна!'));
+                    alert('✅ Регистрация успешна! Подтвердите аккаунт оплатой для полного доступа.');
                     // Очищаем форму
                     document.getElementById('reg-organization-type').value = '';
                     document.getElementById('reg-inn').value = '';
@@ -7700,12 +8353,24 @@
                 document.getElementById('registerBtn').classList.add('hidden');
                 document.getElementById('authenticatedMenu').classList.remove('hidden');
                 refreshBillingBadge();
+                const aiNav = document.getElementById('aiNavDropdown');
+                if (aiNav) aiNav.style.display = '';
+                ['mobileNavDocuments', 'mobileNavAnalytics', 'mobileNavModeration'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = '';
+                });
             } else {
                 document.getElementById('loginBtn').classList.remove('hidden');
                 document.getElementById('registerBtn').classList.remove('hidden');
                 document.getElementById('authenticatedMenu').classList.add('hidden');
                 const btn = document.getElementById('headerBalanceBtn');
                 if (btn) btn.textContent = 'Баланс';
+                const aiNav = document.getElementById('aiNavDropdown');
+                if (aiNav) aiNav.style.display = 'none';
+                ['mobileNavDocuments', 'mobileNavAnalytics', 'mobileNavModeration'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = 'none';
+                });
             }
         }
 
@@ -8104,6 +8769,25 @@
             return `${match[3]}.${match[2]}.${match[1]}`;
         }
 
+        function parseDateDdMmYyyy(str) {
+            const m = String(str || '').trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+            if (!m) return null;
+            const d = parseInt(m[1], 10), mo = parseInt(m[2], 10), y = parseInt(m[3], 10);
+            if (mo < 1 || mo > 12 || d < 1 || d > 31 || y < 2000 || y > 2100) return null;
+            return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        }
+
+        function handleLoadingDateInput(event) {
+            const input = event.target;
+            let digits = input.value.replace(/\D/g, '').slice(0, 8);
+            let masked = '';
+            if (digits.length >= 1) masked = digits.slice(0, 2);
+            if (digits.length >= 3) masked += '.' + digits.slice(2, 4);
+            if (digits.length >= 5) masked += '.' + digits.slice(4, 8);
+            input.value = masked;
+            updateLoadingDateDisplay();
+        }
+
         function updateLoadingDateDisplay() {
             const input = document.getElementById('load-loading-date');
             const label = document.getElementById('load-loading-date-display');
@@ -8111,21 +8795,21 @@
 
             const value = String(input.value || '').trim();
             if (!value) {
-                label.textContent = 'Формат отображения: ДД.ММ.ГГГГ';
+                label.textContent = 'Формат: ДД.ММ.ГГГГ (например, 25.03.2026)';
                 label.classList.remove('text-green-400', 'text-red-400');
                 label.classList.add('text-gray-500');
                 return;
             }
 
-            const formatted = formatIsoDateRu(value);
-            if (!formatted) {
+            const iso = parseDateDdMmYyyy(value);
+            if (!iso) {
                 label.textContent = 'Некорректная дата. Формат: ДД.ММ.ГГГГ';
                 label.classList.remove('text-gray-500', 'text-green-400');
                 label.classList.add('text-red-400');
                 return;
             }
 
-            label.textContent = `Дата: ${formatted}`;
+            label.textContent = `✓ ${value}`;
             label.classList.remove('text-gray-500', 'text-red-400');
             label.classList.add('text-green-400');
         }
@@ -8712,27 +9396,31 @@
             }
             if (!price || price <= 0) errors.push('Укажите корректную ставку');
             if (!truckType) errors.push('Выберите тип кузова');
-            if (!loadingDate) errors.push('Укажите дату погрузки');
-            if (loadingDate && !/^\d{4}-\d{2}-\d{2}$/.test(loadingDate)) {
-                errors.push('Некорректная дата. Формат: YYYY-MM-DD');
+            let isoDate = null;
+            if (!loadingDate) {
+                errors.push('Укажите дату погрузки');
+            } else {
+                isoDate = parseDateDdMmYyyy(loadingDate);
+                if (!isoDate) {
+                    errors.push('Некорректная дата. Формат: ДД.ММ.ГГГГ (например, 25.03.2026)');
+                } else {
+                    const [y, m, d] = isoDate.split('-').map(Number);
+                    const date = new Date(y, (m || 1) - 1, d || 1);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    if (date < today) {
+                        errors.push('Дата погрузки не может быть в прошлом');
+                    }
+                }
             }
             if (parsedTime.error) {
                 errors.push('Некорректное время. Формат: 21:30');
             }
             
-            if (loadingDate && /^\d{4}-\d{2}-\d{2}$/.test(loadingDate)) {
-                const [y, m, d] = loadingDate.split('-').map(Number);
-                const date = new Date(y, (m || 1) - 1, d || 1);
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                if (date < today) {
-                    errors.push('Дата погрузки не может быть в прошлом');
-                }
-            }
-            
             return {
                 errors,
                 normalizedLoadingTime: parsedTime.value,
+                isoDate,
             };
         }
         
@@ -8777,7 +9465,7 @@
                 distance_km: parseFloat(document.getElementById('load-distance').value) || null,
                 price_per_km: null,
                 rate_per_km: null,
-                loading_date: document.getElementById('load-loading-date').value,
+                loading_date: validation.isoDate,
                 loading_time: normalizedLoadingTime || null,
                 contact_phone: document.getElementById('load-contact-phone').value.trim() || null,
                 contact_telegram: document.getElementById('load-contact-telegram').value.trim() || null,
@@ -8867,11 +9555,7 @@
                 updateLoadingDateDisplay();
                 setLoadingTimeHint('Формат: ЧЧ:ММ (например, 21:30)', 'muted');
                 
-                // Устанавливаем минимальную дату
-                const dateInput = document.getElementById('load-loading-date');
-                if (dateInput) {
-                    dateInput.min = new Date().toISOString().split('T')[0];
-                }
+                setupCreateLoadModal();
                 
                 // Показываем уведомление
                 showNotification('✅ Груз успешно создан!', 'success');
@@ -8947,7 +9631,10 @@
         function setupCreateLoadModal() {
             const dateInput = document.getElementById('load-loading-date');
             if (dateInput) {
-                dateInput.min = new Date().toISOString().split('T')[0];
+                const now = new Date();
+                const dd = String(now.getDate()).padStart(2,'0');
+                const mm = String(now.getMonth()+1).padStart(2,'0');
+                dateInput.value = `${dd}.${mm}.${now.getFullYear()}`;
             }
             if (routeCalcState.debounceTimer) {
                 clearTimeout(routeCalcState.debounceTimer);
@@ -9998,11 +10685,26 @@
                 dealsState.filteredDeals = [...dealsState.allDeals];
             }
             
-            // Сортировка по дате (новые сверху)
+            // Сортировка
             dealsState.filteredDeals.sort((a, b) => {
-                const dateA = new Date(a.createdAt);
-                const dateB = new Date(b.createdAt);
-                return dealsState.sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+                let valA, valB;
+                if (dealsState.sortBy === 'price') {
+                    const cargoA = window.dealsStore ? window.dealsStore.getDealCargo(a, cargoState.allLoads) : null;
+                    const cargoB = window.dealsStore ? window.dealsStore.getDealCargo(b, cargoState.allLoads) : null;
+                    valA = (cargoA && cargoA.price) ? cargoA.price : 0;
+                    valB = (cargoB && cargoB.price) ? cargoB.price : 0;
+                    return dealsState.sortOrder === 'desc' ? valB - valA : valA - valB;
+                } else if (dealsState.sortBy === 'status') {
+                    const statusOrder = { 'IN_PROGRESS': 0, 'CONFIRMED': 1, 'COMPLETED': 2, 'CANCELLED': 3 };
+                    valA = statusOrder[a.status] !== undefined ? statusOrder[a.status] : 99;
+                    valB = statusOrder[b.status] !== undefined ? statusOrder[b.status] : 99;
+                    return dealsState.sortOrder === 'asc' ? valA - valB : valB - valA;
+                } else {
+                    // date (default)
+                    const dateA = new Date(a.createdAt);
+                    const dateB = new Date(b.createdAt);
+                    return dealsState.sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+                }
             });
             
             dealsState.displayedDeals = dealsState.filteredDeals;
@@ -10031,16 +10733,18 @@
         
         // Обновление иконок сортировки
         function updateDealsSortIcons() {
-            const icon = document.getElementById('sort-deals-date-icon');
-            if (icon) {
-                if (dealsState.sortBy === 'date') {
+            const keys = ['date', 'price', 'status'];
+            keys.forEach(key => {
+                const icon = document.getElementById(`sort-deals-${key}-icon`);
+                if (!icon) return;
+                if (dealsState.sortBy === key) {
                     icon.textContent = dealsState.sortOrder === 'desc' ? '↓' : '↑';
                     icon.className = 'text-purple';
                 } else {
                     icon.textContent = '⇅';
                     icon.className = 'text-gray-500';
                 }
-            }
+            });
         }
         
         // Рендеринг таблицы сделок
@@ -10676,18 +11380,21 @@
             }
         });
 
-        // ChatGPT Chat
+        // Kimi AI Chat
         let chatConversationId = `chat_${Date.now()}`;
         
         function toggleChat() {
             const chatWidget = document.getElementById('chatWidget');
+            const floatingAiBtn = document.getElementById('floatingAiBtn');
             if (chatWidget.classList.contains('hidden')) {
                 chatWidget.classList.remove('hidden');
                 chatWidget.classList.add('flex');
+                if (floatingAiBtn) floatingAiBtn.classList.add('hidden');
                 document.getElementById('chatInput').focus();
             } else {
                 chatWidget.classList.add('hidden');
                 chatWidget.classList.remove('flex');
+                if (floatingAiBtn) floatingAiBtn.classList.remove('hidden');
             }
         }
         
@@ -10728,11 +11435,11 @@
                 if (data.response) {
                     addChatMessage('ai', data.response);
                 } else {
-                    addChatMessage('ai', '❌ Произошла ошибка. Проверьте настройки ChatGPT API.');
+                    addChatMessage('ai', '❌ Произошла ошибка. Проверьте настройки Kimi AI.');
                 }
             } catch (err) {
                 removeChatMessage(loadingId);
-                addChatMessage('ai', `❌ Ошибка: ${err.message}. Убедитесь, что ChatGPT API настроен.`);
+                addChatMessage('ai', `❌ Ошибка: ${err.message}. Убедитесь, что сервер Kimi доступен.`);
             }
         }
         
@@ -11596,6 +12303,10 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
             const contentEl = document.getElementById('profilePageContent');
             if (loadingEl) loadingEl.classList.toggle('hidden', !loading);
             if (contentEl) contentEl.classList.toggle('hidden', loading);
+            if (!loading) {
+                const apiSec = document.getElementById('apiKeysSection');
+                if (apiSec) { apiSec.classList.remove('hidden'); loadApiKeys(); }
+            }
         }
 
         function renderMyProfileError(message, options = {}) {
@@ -11637,6 +12348,10 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
             const contentEl = document.getElementById('publicCompanyContent');
             if (loadingEl) loadingEl.classList.toggle('hidden', !loading);
             if (contentEl) contentEl.classList.toggle('hidden', loading);
+            if (!loading) {
+                const apiSec = document.getElementById('apiKeysSection');
+                if (apiSec) { apiSec.classList.remove('hidden'); loadApiKeys(); }
+            }
         }
 
         function renderPublicCompanyError(message) {
@@ -14106,6 +14821,41 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
                     map.geoObjects.add(vehicleClusterer);
                 }
 
+
+                // ── Live drivers from TG-bot ──
+                const liveDrivers = data.live_drivers || [];
+                let driversPlaced = 0;
+                if (liveDrivers.length > 0) {
+                    const driverClusterer = new ymaps.Clusterer({
+                        preset: 'islands#blueClusterIcons',
+                        groupByCoordinates: false,
+                    });
+                    const dMarks = [];
+                    liveDrivers.forEach(function(d) {
+                        if (!d.lat || !d.lng) return;
+                        const ts = d.ts ? new Date(d.ts * 1000).toLocaleTimeString('ru-RU') : '—';
+                        const speed = d.speed ? Math.round(d.speed * 3.6) + ' км/ч' : '—';
+                        dMarks.push(new ymaps.Placemark(
+                            [d.lat, d.lng],
+                            {
+                                balloonContentHeader: '🚛 Водитель онлайн',
+                                balloonContentBody: [
+                                    d.route ? '<b>' + d.route + '</b>' : '',
+                                    '🕐 ' + ts,
+                                    speed !== '—' ? '🏎 ' + speed : '',
+                                    d.cargo_id ? '📦 Груз #' + d.cargo_id : '',
+                                    '<a href="/track/' + d.token + '" target="_blank">📍 Отслеживать</a>',
+                                ].filter(Boolean).join('<br>'),
+                                hintContent: 'Водитель онлайн' + (d.route ? ': ' + d.route : '')
+                            },
+                            { preset: 'islands#blueDeliveryIcon' }
+                        ));
+                        driversPlaced++;
+                    });
+                    driverClusterer.add(dMarks);
+                    map.geoObjects.add(driverClusterer);
+                }
+
                 const loading = document.getElementById('mapLoading');
                 const stats = document.getElementById('mapStats');
                 if (loading) loading.style.display = 'none';
@@ -14113,6 +14863,8 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
                     stats.classList.remove('hidden');
                     document.getElementById('mapCargosCount').textContent = cargosPlaced;
                     document.getElementById('mapTrucksCount').textContent = vehiclesPlaced;
+                    const dEl = document.getElementById('mapDriversCount');
+                    if (dEl) dEl.textContent = driversPlaced;
                 }
                 if (cargosPlaced + vehiclesPlaced > 0) {
                     try { map.setBounds(map.geoObjects.getBounds(), { checkZoomRange: true, zoomMargin: 40 }); } catch(e) {}
@@ -14241,7 +14993,7 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
                 if (loginBody) {
                     const registerLink = document.createElement('div');
                     registerLink.className = 'text-center text-sm text-gray-400';
-                    registerLink.innerHTML = 'Нет аккаунта? <a href="#" onclick="event.preventDefault(); closeModal(\'login\'); openModal(\'role-selection\');" class="text-purple hover:text-purple-dark font-semibold">Зарегистрироваться</a>';
+                    registerLink.innerHTML = 'Нет аккаунта? <a href="javascript:void(0)" onclick="closeModal(\'login\'); openModal(\'role-selection\');" class="text-purple hover:text-purple-dark font-semibold">Зарегистрироваться</a>';
                     loginBody.appendChild(registerLink);
                 }
             }
@@ -14253,7 +15005,7 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
                 if (registerBody) {
                     const loginLink = document.createElement('div');
                     loginLink.className = 'text-center text-sm text-gray-400';
-                    loginLink.innerHTML = 'Уже есть аккаунт? <a href="#" onclick="event.preventDefault(); closeModal(\'register\'); openModal(\'login\');" class="text-purple hover:text-purple-dark font-semibold">Войти</a>';
+                    loginLink.innerHTML = 'Уже есть аккаунт? <a href="javascript:void(0)" onclick="closeModal(\'register\'); openModal(\'login\');" class="text-purple hover:text-purple-dark font-semibold">Войти</a>';
                     registerBody.appendChild(loginLink);
                 }
             }
@@ -14291,24 +15043,24 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
     </div>
 
     <script>
-    // ── Service Worker hard-off until shell stabilizes ─────────────────
-    window.__GP_SHELL_VERSION = '20260320-shell-v3-nosw';
+    // ── Service Worker / shell cache hygiene ─────────────────
+    window.__GP_SHELL_VERSION = '20260320-shell-v2';
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', async () => {
             try {
-                const regs = await navigator.serviceWorker.getRegistrations();
-                await Promise.all(regs.map((reg) => reg.unregister()));
-                if (window.caches && typeof window.caches.keys === 'function') {
-                    const keys = await window.caches.keys();
-                    await Promise.all(
-                        keys
-                            .filter((key) => key.startsWith('gruzpotok-') || key.startsWith('workbox-'))
-                            .map((key) => window.caches.delete(key))
-                    );
+                const lastVersion = localStorage.getItem('gp-shell-version');
+                if (lastVersion !== window.__GP_SHELL_VERSION) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(regs.map((reg) => reg.unregister()));
+                    if (window.caches && typeof window.caches.keys === 'function') {
+                        const keys = await window.caches.keys();
+                        await Promise.all(keys.filter((key) => key.startsWith('gruzpotok-')).map((key) => window.caches.delete(key)));
+                    }
+                    localStorage.setItem('gp-shell-version', window.__GP_SHELL_VERSION);
                 }
-                localStorage.setItem('gp-shell-version', window.__GP_SHELL_VERSION);
+                await navigator.serviceWorker.register('/sw.js?v=' + encodeURIComponent(window.__GP_SHELL_VERSION), {scope: '/'});
             } catch (err) {
-                console.warn('SW disable:', err);
+                console.warn('SW:', err);
             }
         });
     }
@@ -14808,7 +15560,379 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
         // ── end Onboarding ─────────────────────────────────────────────────
 
 
-        // -- Email Subscriptions --
+
+        // ── Tenders ───────────────────────────────────────────────────────────
+        let _tenderStatus = 'active';
+
+        async function loadTenders(status) {
+            _tenderStatus = status || 'active';
+            document.querySelectorAll('.tender-tab-btn').forEach(b => {
+                b.classList.toggle('bg-purple/20', b.dataset.tstatus === _tenderStatus);
+                b.classList.toggle('border-purple', b.dataset.tstatus === _tenderStatus);
+            });
+            const list = document.getElementById('tenders-list');
+            if (!list) return;
+            list.innerHTML = '<div class="text-sm text-gray-400 text-center py-8">Загрузка…</div>';
+            const btn = document.getElementById('btn-create-tender');
+            if (btn) btn.classList.toggle('hidden', !authToken);
+            try {
+                const headers = authToken ? {Authorization: 'Bearer ' + authToken} : {};
+                const r = await fetch('/api/tenders?status=' + _tenderStatus + '&limit=50', {headers});
+                const d = await r.json();
+                if (!d.results || d.results.length === 0) {
+                    list.innerHTML = '<div class="text-sm text-gray-400 text-center py-12">Тендеров пока нет</div>';
+                    return;
+                }
+                list.innerHTML = d.results.map(renderTenderCard).join('');
+            } catch(e) {
+                list.innerHTML = '<div class="text-sm text-red-400 text-center py-8">Ошибка загрузки</div>';
+            }
+        }
+
+        function renderTenderCard(t) {
+            const statusLabel = {active:'🟢 Активен', closed:'⛔ Закрыт', awarded:'✅ Завершён'}[t.status] || t.status;
+            const deadline = t.deadline ? new Date(t.deadline).toLocaleString('ru', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+            const myBidBadge = t.my_bid ? '<span style="font-size:.75rem;padding:2px 8px;background:#3b82f620;border:1px solid #3b82f6;border-radius:99px;color:#60a5fa">Ваша заявка: ' + t.my_bid.price.toLocaleString('ru') + ' ₽</span>' : '';
+            return '<div class="bg-dark-card border border-dark-border rounded-xl p-4 cursor-pointer hover:border-purple/50 transition-all" onclick="openTenderDetail(' + t.id + ')">' +
+                '<div class="flex items-start justify-between gap-3 mb-2">' +
+                '<div class="font-semibold text-sm">' + t.title + '</div>' +
+                '<span class="text-xs text-gray-400 flex-shrink-0">' + statusLabel + '</span></div>' +
+                '<div class="text-xs text-gray-400 mb-2">' + t.from_city + ' → ' + t.to_city +
+                (t.weight ? ' · ' + t.weight + ' т' : '') +
+                (t.body_type ? ' · ' + t.body_type : '') + '</div>' +
+                '<div class="flex items-center gap-3 flex-wrap">' +
+                '<span class="text-xs text-gray-500">⏰ до ' + deadline + '</span>' +
+                '<span class="text-xs text-gray-500">📩 ' + t.bids_count + ' заявок</span>' +
+                (t.min_price ? '<span class="text-xs text-green-400">от ' + t.min_price.toLocaleString('ru') + ' ₽</span>' : '') +
+                (t.budget_max ? '<span class="text-xs text-gray-500">макс ' + t.budget_max.toLocaleString('ru') + ' ₽</span>' : '') +
+                myBidBadge + '</div></div>';
+        }
+
+        async function openTenderDetail(id) {
+            const modal = document.getElementById('modal-tender-detail');
+            const body = document.getElementById('td-body');
+            const title = document.getElementById('td-title');
+            modal.classList.remove('hidden'); modal.classList.add('flex');
+            body.innerHTML = '<div class="text-center py-10 text-gray-400">Загрузка…</div>';
+            try {
+                const headers = authToken ? {Authorization: 'Bearer ' + authToken} : {};
+                const r = await fetch('/api/tenders/' + id, {headers});
+                const t = await r.json();
+                title.textContent = t.title;
+                const deadline = t.deadline ? new Date(t.deadline).toLocaleString('ru') : '—';
+                const statusLabel = {active:'🟢 Активен', closed:'⛔ Закрыт', awarded:'✅ Завершён'}[t.status] || t.status;
+                let bidsHtml = '';
+                if (t.is_mine && t.bids) {
+                    bidsHtml = '<div class="mt-4"><div class="font-semibold text-sm mb-2">📩 Заявки (' + t.bids.length + ')</div>' +
+                        (t.bids.length === 0 ? '<div class="text-sm text-gray-400">Заявок пока нет</div>' :
+                        '<div class="space-y-2">' + t.bids.map(b => {
+                            const sc = {pending:'#9ca3af', accepted:'#34d399', rejected:'#f87171'}[b.status] || '#9ca3af';
+                            const sl = {pending:'Ожидает', accepted:'Принята', rejected:'Отклонена'}[b.status] || b.status;
+                            const btns = t.status === 'active' && b.status === 'pending'
+                                ? '<div class="flex gap-2 mt-2"><button onclick="event.stopPropagation();acceptBid('+t.id+','+b.id+')" class="px-3 py-1 rounded-lg bg-green-600 text-white text-xs">Принять</button><button onclick="event.stopPropagation();rejectBid('+t.id+','+b.id+')" class="px-3 py-1 rounded-lg bg-red-600/30 border border-red-500/50 text-red-400 text-xs">Отклонить</button></div>'
+                                : '';
+                            return '<div class="border border-dark-border rounded-lg p-3"><div class="flex justify-between items-center"><div><div class="text-sm font-semibold">' + b.bidder + '</div><div class="text-xs text-gray-400">' + b.bidder_gtp + '</div></div><div class="text-right"><div class="font-bold text-green-400">' + b.price.toLocaleString('ru') + ' ₽</div><div class="text-xs" style="color:'+sc+'">' + sl + '</div></div></div>' + (b.comment ? '<div class="text-xs text-gray-400 mt-1">' + b.comment + '</div>' : '') + btns + '</div>';
+                        }).join('') + '</div>') + '</div>';
+                }
+                let bidForm = '';
+                if (authToken && !t.is_mine && t.status === 'active') {
+                    const existing = t.my_bid;
+                    bidForm = '<div class="mt-4 border-t border-dark-border pt-4">' +
+                        '<div class="font-semibold text-sm mb-2">' + (existing ? '✏️ Изменить заявку' : '📩 Подать заявку') + '</div>' +
+                        '<div class="flex gap-2">' +
+                        '<input id="bid-price-'+id+'" type="number" placeholder="Ваша цена, ₽" value="' + (existing ? existing.price : '') + '" class="flex-1 px-3 py-2 rounded-lg bg-dark border border-dark-border text-sm focus:outline-none focus:border-purple">' +
+                        '<input id="bid-comment-'+id+'" placeholder="Комментарий" value="' + (existing && existing.comment ? existing.comment : '') + '" class="flex-1 px-3 py-2 rounded-lg bg-dark border border-dark-border text-sm focus:outline-none focus:border-purple"></div>' +
+                        '<button onclick="submitBid('+id+')" class="mt-2 px-5 py-2 rounded-xl bg-gradient-to-r from-purple to-blue text-white text-sm font-semibold">' + (existing ? 'Обновить' : 'Подать заявку') + '</button></div>';
+                }
+                const closBtn = t.is_mine && t.status === 'active'
+                    ? '<button onclick="closeTenderAction('+t.id+')" class="mt-4 px-4 py-2 rounded-lg border border-red-500/50 text-red-400 text-xs hover:bg-red-500/10 transition-all">Закрыть тендер</button>'
+                    : '';
+                body.innerHTML =
+                    '<div class="space-y-3">' +
+                    '<div class="flex flex-wrap gap-2 text-xs text-gray-400">' +
+                    '<span>' + statusLabel + '</span> · <span>' + t.from_city + ' → ' + t.to_city + '</span>' +
+                    (t.weight ? ' · <span>' + t.weight + ' т</span>' : '') +
+                    (t.body_type ? ' · <span>' + t.body_type + '</span>' : '') + '</div>' +
+                    (t.description ? '<div class="text-sm text-gray-300">' + t.description + '</div>' : '') +
+                    '<div class="flex flex-wrap gap-4 text-sm">' +
+                    (t.loading_date ? '<div><div class="text-xs text-gray-500">Дата погрузки</div><div>' + t.loading_date + '</div></div>' : '') +
+                    '<div><div class="text-xs text-gray-500">Deadline</div><div>' + deadline + '</div></div>' +
+                    (t.budget_max ? '<div><div class="text-xs text-gray-500">Бюджет макс</div><div class="text-green-400">' + t.budget_max.toLocaleString('ru') + ' ₽</div></div>' : '') +
+                    '</div>' +
+                    '<div class="text-xs text-gray-500">Опубликовал: ' + (t.creator || '') + ' · ' + t.creator_gtp + '</div>' +
+                    bidsHtml + bidForm + closBtn + '</div>';
+            } catch(e) {
+                body.innerHTML = '<div class="text-red-400 text-sm">Ошибка загрузки</div>';
+            }
+        }
+
+        function closeTenderDetail() {
+            const m = document.getElementById('modal-tender-detail');
+            m.classList.add('hidden'); m.classList.remove('flex');
+        }
+
+        function openCreateTenderModal() {
+            if (!authToken) { openModal('login'); return; }
+            const m = document.getElementById('modal-create-tender');
+            m.classList.remove('hidden'); m.classList.add('flex');
+            const dl = document.getElementById('tn-deadline');
+            if (dl && !dl.value) {
+                const d = new Date(); d.setDate(d.getDate() + 3);
+                dl.value = d.toISOString().slice(0,16);
+            }
+        }
+
+        function closeCreateTenderModal() {
+            const m = document.getElementById('modal-create-tender');
+            m.classList.add('hidden'); m.classList.remove('flex');
+        }
+
+        async function submitCreateTender() {
+            const title = document.getElementById('tn-title').value.trim();
+            const from = document.getElementById('tn-from').value.trim();
+            const to = document.getElementById('tn-to').value.trim();
+            const dl = document.getElementById('tn-deadline').value;
+            if (!title || !from || !to || !dl) { showNotification('Заполните обязательные поля', 'error'); return; }
+            try {
+                const r = await fetch('/api/tenders', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json', Authorization:'Bearer '+authToken},
+                    body: JSON.stringify({
+                        title, from_city: from, to_city: to,
+                        deadline: new Date(dl).toISOString(),
+                        loading_date: document.getElementById('tn-loading-date').value || null,
+                        weight: parseFloat(document.getElementById('tn-weight').value) || null,
+                        volume: parseFloat(document.getElementById('tn-volume').value) || null,
+                        body_type: document.getElementById('tn-body').value || null,
+                        budget_max: parseInt(document.getElementById('tn-budget').value) || null,
+                        description: document.getElementById('tn-desc').value.trim() || null,
+                    })
+                });
+                const d = await r.json();
+                if (!r.ok) { showNotification(d.detail || 'Ошибка', 'error'); return; }
+                showNotification('Тендер опубликован!', 'success');
+                closeCreateTenderModal();
+                loadTenders('active');
+            } catch(e) { showNotification('Ошибка соединения', 'error'); }
+        }
+
+        async function submitBid(tenderId) {
+            const price = parseInt(document.getElementById('bid-price-'+tenderId)?.value);
+            const comment = document.getElementById('bid-comment-'+tenderId)?.value.trim() || null;
+            if (!price || price <= 0) { showNotification('Укажите цену', 'error'); return; }
+            try {
+                const r = await fetch('/api/tenders/'+tenderId+'/bids', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json', Authorization:'Bearer '+authToken},
+                    body: JSON.stringify({price, comment})
+                });
+                const d = await r.json();
+                if (!r.ok) { showNotification(d.detail || 'Ошибка', 'error'); return; }
+                showNotification('Заявка подана!', 'success');
+                openTenderDetail(tenderId);
+                loadTenders(_tenderStatus);
+            } catch(e) { showNotification('Ошибка соединения', 'error'); }
+        }
+
+        async function acceptBid(tenderId, bidId) {
+            if (!confirm('Принять эту заявку? Остальные будут отклонены.')) return;
+            const r = await fetch('/api/tenders/'+tenderId+'/bids/'+bidId+'?status=accepted', {
+                method: 'PATCH', headers: {Authorization:'Bearer '+authToken}
+            });
+            if (r.ok) { showNotification('Заявка принята!', 'success'); openTenderDetail(tenderId); loadTenders(_tenderStatus); }
+            else { const d = await r.json(); showNotification(d.detail || 'Ошибка', 'error'); }
+        }
+
+        async function rejectBid(tenderId, bidId) {
+            const r = await fetch('/api/tenders/'+tenderId+'/bids/'+bidId+'?status=rejected', {
+                method: 'PATCH', headers: {Authorization:'Bearer '+authToken}
+            });
+            if (r.ok) { showNotification('Заявка отклонена', 'info'); openTenderDetail(tenderId); }
+            else { const d = await r.json(); showNotification(d.detail || 'Ошибка', 'error'); }
+        }
+
+        async function closeTenderAction(tenderId) {
+            if (!confirm('Закрыть тендер? Новые заявки приниматься не будут.')) return;
+            const r = await fetch('/api/tenders/'+tenderId+'/close', {
+                method: 'POST', headers: {Authorization:'Bearer '+authToken}
+            });
+            if (r.ok) { showNotification('Тендер закрыт', 'info'); closeTenderDetail(); loadTenders(_tenderStatus); }
+            else { const d = await r.json(); showNotification(d.detail || 'Ошибка', 'error'); }
+        }
+        // ── end Tenders ───────────────────────────────────────────────────────
+        
+// ── Web Push Notifications ────────────────────────────────────────────────────
+let _pushReg = null;
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+async function initWebPush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  try {
+    _pushReg = await navigator.serviceWorker.register('/static/sw.js');
+    const resp = await fetch('/api/push/vapid-public-key');
+    if (!resp.ok) return;
+    const { publicKey } = await resp.json();
+
+    const existing = await _pushReg.pushManager.getSubscription();
+    if (existing) { await _savePushSub(existing); return; }
+
+    // Ask permission lazily (when user clicks bell)
+  } catch(e) { console.warn('WebPush init:', e); }
+}
+
+async function subscribeToPush() {
+  if (!_pushReg) return false;
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') { showNotification('Уведомления отклонены', 'error'); return false; }
+  try {
+    const resp = await fetch('/api/push/vapid-public-key');
+    const { publicKey } = await resp.json();
+    const sub = await _pushReg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey),
+    });
+    await _savePushSub(sub);
+    showNotification('Уведомления включены!', 'success');
+    return true;
+  } catch(e) { console.warn('WebPush subscribe:', e); return false; }
+}
+
+async function _savePushSub(sub) {
+  const key = sub.getKey('p256dh');
+  const auth = sub.getKey('auth');
+  await fetch('/api/push/subscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(window._authHeader ? {'Authorization': window._authHeader} : {}) },
+    body: JSON.stringify({
+      endpoint: sub.endpoint,
+      p256dh: btoa(String.fromCharCode(...new Uint8Array(key))),
+      auth:   btoa(String.fromCharCode(...new Uint8Array(auth))),
+    }),
+  });
+}
+
+async function togglePushNotifications() {
+  if (!('Notification' in window)) { showNotification('Браузер не поддерживает уведомления', 'error'); return; }
+  if (Notification.permission === 'granted') {
+    const sub = _pushReg && await _pushReg.pushManager.getSubscription();
+    if (sub) {
+      const key = sub.getKey('p256dh');
+      const auth = sub.getKey('auth');
+      await fetch('/api/push/subscribe', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: sub.endpoint,
+          p256dh: btoa(String.fromCharCode(...new Uint8Array(key))),
+          auth:   btoa(String.fromCharCode(...new Uint8Array(auth))),
+        }),
+      });
+      await sub.unsubscribe();
+      showNotification('Уведомления отключены', 'info');
+      updatePushBellIcon(false);
+    }
+  } else {
+    const ok = await subscribeToPush();
+    if (ok) updatePushBellIcon(true);
+  }
+}
+
+function updatePushBellIcon(on) {
+  const btn = document.getElementById('push-bell-btn');
+  if (!btn) return;
+  btn.title = on ? 'Отключить уведомления' : 'Включить уведомления';
+  btn.innerHTML = on ? '🔔' : '🔕';
+}
+
+async function checkPushStatus() {
+  if (!('Notification' in window) || !_pushReg) return;
+  const sub = await _pushReg.pushManager.getSubscription();
+  updatePushBellIcon(!!sub && Notification.permission === 'granted');
+}
+
+// Init on load
+window.addEventListener('load', () => { initWebPush().then(checkPushStatus); });
+
+
+
+// ── TMS API Keys ─────────────────────────────────────────────────────────────
+async function loadApiKeys() {
+    const el = document.getElementById('apiKeysList');
+    if (!el) return;
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('access_token');
+    if (!token) { el.innerHTML = '<div class="text-gray-500 text-sm">Войдите чтобы управлять ключами</div>'; return; }
+    try {
+        const r = await fetch('/api/tms/keys', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!r.ok) { el.innerHTML = '<div class="text-gray-500 text-sm">Ошибка загрузки</div>'; return; }
+        const { keys } = await r.json();
+        if (!keys.length) {
+            el.innerHTML = '<div class="text-gray-500 text-sm">Ключей нет. Создайте первый.</div>';
+            return;
+        }
+        el.innerHTML = keys.map(k => {
+            const used = k.calls_today || 0;
+            const limit = k.limit_day ? `${used}/${k.limit_day}` : `${used}/∞`;
+            const pct = k.limit_day ? Math.min(100, Math.round(used / k.limit_day * 100)) : 0;
+            const planBadge = { free: 'bg-gray-600', pro: 'bg-purple/30 text-purple', business: 'bg-green-500/20 text-green-400' }[k.plan] || 'bg-gray-600';
+            return `<div class="flex flex-col sm:flex-row sm:items-center gap-3 p-4 bg-dark border border-dark-border rounded-xl">
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="font-medium text-sm">${escapeHtml(k.name)}</span>
+                        <span class="px-2 py-0.5 rounded text-xs font-bold uppercase ${planBadge}">${k.plan}</span>
+                        ${k.is_active ? '' : '<span class="px-2 py-0.5 rounded text-xs bg-red-500/20 text-red-400">Отозван</span>'}
+                    </div>
+                    <div class="flex items-center gap-2 mt-1">
+                        <code class="text-xs text-gray-300 bg-dark-card px-2 py-1 rounded font-mono break-all">${k.key}</code>
+                        <button onclick="copyText('${k.key}')" class="flex-shrink-0 text-xs text-gray-500 hover:text-white transition-all">📋</button>
+                    </div>
+                    <div class="mt-2 text-xs text-gray-500">
+                        Сегодня: <span class="text-white">${limit}</span> запросов
+                        ${k.limit_day ? `<div class="mt-1 h-1 bg-dark-border rounded-full overflow-hidden w-48"><div class="h-full bg-purple rounded-full transition-all" style="width:${pct}%"></div></div>` : ''}
+                    </div>
+                </div>
+                ${k.is_active ? `<button onclick="revokeApiKey(${k.id})" class="flex-shrink-0 text-xs text-red-400 hover:text-red-300 transition-all px-3 py-1.5 border border-red-500/30 rounded-lg">Отозвать</button>` : ''}
+            </div>`;
+        }).join('');
+    } catch(e) { el.innerHTML = '<div class="text-red-400 text-sm">Ошибка: ' + e.message + '</div>'; }
+}
+
+async function createApiKey() {
+    const name = prompt('Название ключа:', 'Мой ключ');
+    if (!name) return;
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('access_token');
+    if (!token) { showNotification('Войдите в аккаунт', 'error'); return; }
+    const r = await fetch('/api/tms/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ name }),
+    });
+    if (r.ok) { showNotification('Ключ создан!', 'success'); loadApiKeys(); }
+    else { const e = await r.json(); showNotification(e.detail || 'Ошибка', 'error'); }
+}
+
+async function revokeApiKey(id) {
+    if (!confirm('Отозвать ключ? Это действие необратимо.')) return;
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('access_token');
+    await fetch('/api/tms/keys/' + id, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + token },
+    });
+    showNotification('Ключ отозван', 'info');
+    loadApiKeys();
+}
+
+function copyText(text) {
+    navigator.clipboard.writeText(text).then(() => showNotification('Скопировано!', 'success'));
+}
+
+
+// -- Email Subscriptions --
         function openSubsForm() {
             const form = document.getElementById('subs-form');
             if (form) {
@@ -15506,4 +16630,226 @@ ${carrier.notes ? `Примечания: ${carrier.notes}` : ''}
         <div id="tl-content" style="display:none"></div>
       </div>
     </div>
+
+    <!-- ── Modal: Отклик на груз ── -->
+    <div id="modal-respond" class="fixed inset-0 bg-black/80 hidden items-center justify-center z-[300] p-4" onclick="if(event.target===this)closeRespondModal()">
+      <div class="bg-dark-card border border-dark-border rounded-xl w-full max-w-lg flex flex-col max-h-[92vh]">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-dark-border flex-shrink-0">
+          <h3 class="text-lg font-bold">✉️ Отклик на груз <span id="respond-load-title" class="text-accent font-normal text-sm"></span></h3>
+          <button onclick="closeRespondModal()" class="text-gray-400 hover:text-white">✕</button>
+        </div>
+        <div class="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          <div id="respond-validation-error" class="hidden bg-red-900/40 border border-red-500 rounded-lg px-4 py-3 text-red-300 text-sm"></div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-400 mb-1 block">Ваша ставка (₽) *</label>
+              <input id="respond-price" type="number" min="0" placeholder="85000" class="w-full bg-dark-input border border-dark-border rounded-lg px-3 py-2 text-sm focus:border-accent outline-none">
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 mb-1 block">Оплата</label>
+              <select id="respond-vat" class="w-full bg-dark-input border border-dark-border rounded-lg px-3 py-2 text-sm focus:border-accent outline-none">
+                <option value="no_vat">Без НДС</option>
+                <option value="with_vat">С НДС</option>
+                <option value="cash">Наличные</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-400 mb-1 block">Тип ТС</label>
+              <select id="respond-vtype" class="w-full bg-dark-input border border-dark-border rounded-lg px-3 py-2 text-sm focus:border-accent outline-none">
+                <option value="">— выберите —</option>
+                <option value="тент">Тент</option>
+                <option value="реф">Рефрижератор</option>
+                <option value="борт">Бортовой</option>
+                <option value="цистерна">Цистерна</option>
+                <option value="площадка">Площадка</option>
+                <option value="контейнер">Контейнер</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 mb-1 block">Грузоподъёмность (т)</label>
+              <input id="respond-capacity" type="number" step="0.1" min="0" placeholder="20" class="w-full bg-dark-input border border-dark-border rounded-lg px-3 py-2 text-sm focus:border-accent outline-none">
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-400 mb-1 block">Объём кузова (м³)</label>
+              <input id="respond-volume" type="number" step="0.1" min="0" placeholder="82" class="w-full bg-dark-input border border-dark-border rounded-lg px-3 py-2 text-sm focus:border-accent outline-none">
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 mb-1 block">Готов с</label>
+              <input id="respond-date" type="date" class="w-full bg-dark-input border border-dark-border rounded-lg px-3 py-2 text-sm focus:border-accent outline-none">
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 mb-1 block">Телефон *</label>
+            <input id="respond-phone" type="tel" placeholder="+7 900 000-00-00" class="w-full bg-dark-input border border-dark-border rounded-lg px-3 py-2 text-sm focus:border-accent outline-none">
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 mb-1 block">Комментарий</label>
+            <textarea id="respond-comment" rows="2" placeholder="Машина в Москве, выезд сегодня…" class="w-full bg-dark-input border border-dark-border rounded-lg px-3 py-2 text-sm focus:border-accent outline-none resize-none"></textarea>
+          </div>
+        </div>
+        <div class="px-5 py-4 border-t border-dark-border flex-shrink-0 flex gap-3">
+          <button onclick="closeRespondModal()" class="flex-1 py-2.5 rounded-lg border border-dark-border text-gray-300 text-sm hover:border-gray-500">Отмена</button>
+          <button id="respond-submit-btn" onclick="submitRespondForm()" class="flex-1 py-2.5 rounded-lg bg-accent text-white font-semibold text-sm hover:opacity-90">Отправить</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+    // ── Respond to Load ──────────────────────────────────────────────────────
+    window._respondLoadId = null;
+
+    async function openRespondModal(loadId, meta) {
+      window._respondLoadId = loadId;
+      const errEl = document.getElementById('respond-validation-error');
+      if (errEl) { errEl.textContent = ''; errEl.classList.add('hidden'); }
+      const titleEl = document.getElementById('respond-load-title');
+      if (titleEl && meta) titleEl.textContent = `#${loadId} ${meta.from_city||''} → ${meta.to_city||''}`;
+
+      // Pre-fill from user profile
+      try {
+        const token = window._authToken || localStorage.getItem('auth_token');
+        if (token) {
+          const r = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + token } });
+          if (r.ok) {
+            const u = await r.json();
+            const phone = u.phone || u.contact_phone || '';
+            if (phone) document.getElementById('respond-phone').value = phone;
+          }
+        }
+      } catch(e) {}
+
+      // Pre-fill vehicle from first truck
+      try {
+        const token = window._authToken || localStorage.getItem('auth_token');
+        if (token) {
+          const r = await fetch('/api/trucks?limit=1', { headers: { Authorization: 'Bearer ' + token } });
+          if (r.ok) {
+            const data = await r.json();
+            const trucks = Array.isArray(data) ? data : (data.items || []);
+            if (trucks.length > 0) {
+              const t = trucks[0];
+              if (t.body_type) document.getElementById('respond-vtype').value = t.body_type;
+              if (t.capacity_tons) document.getElementById('respond-capacity').value = t.capacity_tons;
+              if (t.volume_m3) document.getElementById('respond-volume').value = t.volume_m3;
+            }
+          }
+        }
+      } catch(e) {}
+
+      // Check existing response
+      try {
+        const token = window._authToken || localStorage.getItem('auth_token');
+        if (token) {
+          const r = await fetch(`/bids/${loadId}/my-response?token=${token}`);
+          if (r.ok) {
+            const data = await r.json();
+            if (data.bid) {
+              const b = data.bid;
+              if (b.price) document.getElementById('respond-price').value = b.price;
+              if (b.vat_type) document.getElementById('respond-vat').value = b.vat_type;
+              if (b.vehicle_type) document.getElementById('respond-vtype').value = b.vehicle_type;
+              if (b.capacity_tons) document.getElementById('respond-capacity').value = b.capacity_tons;
+              if (b.volume_m3) document.getElementById('respond-volume').value = b.volume_m3;
+              if (b.ready_date) document.getElementById('respond-date').value = b.ready_date;
+              if (b.phone) document.getElementById('respond-phone').value = b.phone;
+              if (b.comment) document.getElementById('respond-comment').value = b.comment;
+              const btn = document.getElementById('respond-submit-btn');
+              if (btn) btn.textContent = 'Обновить отклик';
+            }
+          }
+        }
+      } catch(e) {}
+
+      const m = document.getElementById('modal-respond');
+      if (m) { m.classList.remove('hidden'); m.classList.add('flex'); }
+    }
+
+    function closeRespondModal() {
+      const m = document.getElementById('modal-respond');
+      if (m) { m.classList.add('hidden'); m.classList.remove('flex'); }
+      window._respondLoadId = null;
+    }
+
+    async function submitRespondForm() {
+      const loadId = window._respondLoadId;
+      if (!loadId) return;
+      const token = window._authToken || localStorage.getItem('auth_token');
+      if (!token) { alert('Необходимо войти в аккаунт'); return; }
+
+      const price = parseFloat(document.getElementById('respond-price').value);
+      const phone = (document.getElementById('respond-phone').value || '').trim();
+      if (!price || price <= 0) { showRespondError('Укажите ставку'); return; }
+      if (!phone) { showRespondError('Укажите телефон'); return; }
+
+      const payload = {
+        price,
+        vat_type: document.getElementById('respond-vat').value || 'no_vat',
+        vehicle_type: document.getElementById('respond-vtype').value || null,
+        capacity_tons: parseFloat(document.getElementById('respond-capacity').value) || null,
+        volume_m3: parseFloat(document.getElementById('respond-volume').value) || null,
+        ready_date: document.getElementById('respond-date').value || null,
+        phone,
+        comment: document.getElementById('respond-comment').value || null,
+      };
+
+      const btn = document.getElementById('respond-submit-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Отправка…'; }
+
+      try {
+        const r = await fetch(`/bids/${loadId}/respond?token=${token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (r.ok) {
+          closeRespondModal();
+          showToast && showToast('✅ Отклик отправлен! Заказчик получит уведомление.');
+        } else {
+          const err = await r.json().catch(() => ({}));
+          showRespondError(err.detail || 'Ошибка при отправке');
+          if (btn) { btn.disabled = false; btn.textContent = 'Отправить'; }
+        }
+      } catch(e) {
+        showRespondError('Сетевая ошибка, попробуй ещё раз');
+        if (btn) { btn.disabled = false; btn.textContent = 'Отправить'; }
+      }
+    }
+
+    function showRespondError(msg) {
+      const el = document.getElementById('respond-validation-error');
+      if (el) { el.textContent = msg; el.classList.remove('hidden'); }
+    }
+
+    // Handle #respond/{id} hash on load
+    (function() {
+      const hash = window.location.hash || '';
+      const m = hash.match(/^#respond\/([\d]+)$/);
+      if (!m) return;
+      const cargoId = parseInt(m[1]);
+      if (!cargoId) return;
+      const deadline = Date.now() + 15000;
+      async function tryOpen() {
+        if (typeof window.showLoadCard !== 'function') return false;
+        try {
+          if (typeof window.showPage === 'function') window.showPage('loads');
+          if (typeof window.loadLoads === 'function') await window.loadLoads();
+          const card = await window.showLoadCard(cargoId);
+          setTimeout(() => openRespondModal(cargoId, null), 600);
+          return true;
+        } catch(e) { return false; }
+      }
+      tryOpen().then(ok => {
+        if (ok) return;
+        const t = setInterval(async () => {
+          if (Date.now() > deadline) { clearInterval(t); return; }
+          if (await tryOpen()) clearInterval(t);
+        }, 400);
+      });
+    })();
+    </script>
+
 </html>

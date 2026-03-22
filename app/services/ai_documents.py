@@ -929,46 +929,165 @@ class AIDocuments:
         }
     
     def get_document_html(self, doc_number: str) -> str:
-        """Получить HTML-представление документа для PDF."""
+        """Получить HTML-представление документа для печати/PDF."""
         doc = self.documents_storage.get(doc_number)
         if not doc:
             return "<h1>Документ не найден</h1>"
-        
-        doc_type = doc.get("document_type")
-        
-        # Возвращаем базовый HTML (в реальности - полные шаблоны)
-        return f"""
-<!DOCTYPE html>
-<html>
+
+        doc_type = doc.get("document_type", "")
+        if doc_type == DocumentType.CONTRACT.value:
+            return self._render_contract_html(doc)
+        # fallback
+        return self._render_generic_html(doc, doc_number)
+
+    def _render_contract_html(self, doc: dict) -> str:
+        """Договор-заявка на перевозку по стандартному образцу."""
+        p = doc.get("parties", {})
+        customer = p.get("customer", {})
+        carrier = p.get("carrier", {})
+        subj = doc.get("subject", {})
+        pay = doc.get("payment", {})
+        dates = doc.get("dates", {})
+        liability = doc.get("liability", {})
+
+        def v(val, default="______________"):
+            return val if val else default
+
+        num = v(doc.get("document_number"), "___")
+        date = v(doc.get("document_date"))
+
+        return f"""<!DOCTYPE html>
+<html lang="ru">
 <head>
-    <meta charset="UTF-8">
-    <title>{doc_type} {doc_number}</title>
-    <style>
-        body {{ font-family: 'Times New Roman', serif; font-size: 12pt; }}
-        .header {{ text-align: center; margin-bottom: 20px; }}
-        .title {{ font-size: 14pt; font-weight: bold; }}
-        table {{ width: 100%; border-collapse: collapse; }}
-        td, th {{ border: 1px solid black; padding: 5px; }}
-        .signature {{ margin-top: 50px; }}
-        .stamp {{ color: blue; font-style: italic; }}
-    </style>
+<meta charset="UTF-8">
+<title>Договор-заявка № {num}</title>
+<style>
+  body {{font-family:'Times New Roman',serif;font-size:11pt;margin:20mm 25mm;color:#000;line-height:1.4}}
+  h2 {{text-align:center;font-size:13pt;margin:0 0 4px}}
+  h3 {{font-size:11pt;margin:14px 0 4px}}
+  .center{{text-align:center}}
+  .bold{{font-weight:bold}}
+  table{{width:100%;border-collapse:collapse;margin:8px 0}}
+  td,th{{border:1px solid #000;padding:4px 6px;vertical-align:top;font-size:10pt}}
+  th{{background:#f0f0f0;font-weight:bold;text-align:center}}
+  .field{{border-bottom:1px solid #000;display:inline-block;min-width:180px}}
+  .sig-table{{width:100%;margin-top:30px;border:none}}
+  .sig-table td{{border:none;vertical-align:top;width:50%}}
+  .underline{{border-bottom:1px solid #000;display:block;min-height:18px}}
+  @media print{{body{{margin:10mm 15mm}}}}
+</style>
 </head>
 <body>
-    <div class="header">
-        <div class="title">{doc_type.upper()} № {doc_number}</div>
-        <div>от {doc.get('document_date')}</div>
-    </div>
-    <div>
-        <!-- Содержимое документа -->
-        <pre>{json.dumps(doc, ensure_ascii=False, indent=2)}</pre>
-    </div>
-    <div class="signature">
-        <p>Подпись: _________________ / _________________ /</p>
-        <p class="stamp">М.П.</p>
-    </div>
+
+<h2>ДОГОВОР-ЗАЯВКА № {num}</h2>
+<h2>на разовую перевозку груза</h2>
+<p class="center">от {date}</p>
+
+<p>
+<span class="bold">{v(customer.get('name'), 'Наименование Заказчика')}</span>,
+именуемое в дальнейшем <b>Заказчик</b>, в лице
+{v(customer.get('director'))}, действующего на основании {v(customer.get('basis','Устава'))},
+с одной стороны, и
+<span class="bold">{v(carrier.get('name'), 'Наименование Исполнителя')}</span>,
+именуемое в дальнейшем <b>Исполнитель</b>, в лице
+{v(carrier.get('director'))}, действующего на основании {v(carrier.get('basis','Устава'))},
+с другой стороны, заключили настоящий Договор о нижеследующем:
+</p>
+
+<h3>1. Предмет договора</h3>
+<p>Исполнитель принимает на себя обязательство осуществить перевозку груза, а Заказчик
+обязуется оплатить оказанные услуги в порядке и на условиях, предусмотренных настоящим Договором.</p>
+
+<h3>2. Условия перевозки</h3>
+<table>
+  <tr><th colspan="2">Параметры перевозки</th></tr>
+  <tr><td style="width:40%"><b>Маршрут</b></td><td>{v(subj.get('route_from'))} → {v(subj.get('route_to'))}</td></tr>
+  <tr><td><b>Характер груза</b></td><td>{v(subj.get('cargo_description','Груз'))}</td></tr>
+  <tr><td><b>Вес (брутто), т</b></td><td>{v(subj.get('weight'))}</td></tr>
+  <tr><td><b>Объём, м³</b></td><td>{v(subj.get('volume'))}</td></tr>
+  <tr><td><b>Дата и время загрузки</b></td><td>{v(dates.get('loading_date'))}</td></tr>
+  <tr><td><b>Срок доставки</b></td><td>{v(dates.get('delivery_deadline'))}</td></tr>
+  <tr><td><b>Адрес загрузки</b></td><td>{v(subj.get('route_from'))}</td></tr>
+  <tr><td><b>Адрес разгрузки</b></td><td>{v(subj.get('route_to'))}</td></tr>
+  <tr><td><b>Стоимость услуг</b></td><td>{v(str(pay.get('amount','')))} руб. ({v(pay.get('amount_words'))})</td></tr>
+  <tr><td><b>Порядок оплаты</b></td><td>{v(pay.get('payment_terms', 'В течение 10 банковских дней после предоставления оригиналов документов'))}</td></tr>
+</table>
+
+<h3>3. Обязанности сторон</h3>
+<p><b>Заказчик обязуется:</b></p>
+<ul>
+  <li>Предоставить груз к перевозке в указанное время и место;</li>
+  <li>Обеспечить надлежащую упаковку и маркировку груза;</li>
+  <li>Предоставить необходимые документы на груз;</li>
+  <li>Произвести оплату в установленный срок.</li>
+</ul>
+<p><b>Исполнитель обязуется:</b></p>
+<ul>
+  <li>Подать транспортное средство в указанное время и место;</li>
+  <li>Обеспечить сохранность груза при перевозке;</li>
+  <li>Доставить груз в пункт назначения в установленный срок;</li>
+  <li>Предоставить оригиналы транспортных документов по завершении перевозки.</li>
+</ul>
+
+<h3>4. Ответственность сторон</h3>
+<p>{v(liability.get('carrier_liability','Исполнитель несёт ответственность за сохранность груза с момента принятия до момента выдачи.'))}</p>
+<p>За срыв перевозки по вине одной из сторон — штраф <b>150 EUR</b>. За опоздание подвижного состава — <b>100 EUR</b> за каждые сутки.
+Пеня за просрочку оплаты: {v(liability.get('penalty','0,1% от суммы за каждый день просрочки'))}.</p>
+
+<h3>5. Реквизиты сторон</h3>
+<table>
+  <tr>
+    <th>ЗАКАЗЧИК</th>
+    <th>ИСПОЛНИТЕЛЬ</th>
+  </tr>
+  <tr>
+    <td>
+      {v(customer.get('name'))}<br>
+      ИНН: {v(customer.get('inn'))}<br>
+      ОГРН: {v(customer.get('ogrn'))}<br>
+      Адрес: {v(customer.get('address'))}<br>
+    </td>
+    <td>
+      {v(carrier.get('name'))}<br>
+      ИНН: {v(carrier.get('inn'))}<br>
+      ОГРН: {v(carrier.get('ogrn'))}<br>
+      Адрес: {v(carrier.get('address'))}<br>
+    </td>
+  </tr>
+</table>
+
+<table class="sig-table">
+  <tr>
+    <td>
+      <p><b>ЗАКАЗЧИК</b></p>
+      <p class="underline">&nbsp;</p>
+      <p style="font-size:9pt">подпись / {v(customer.get('director'))}</p>
+      <p style="margin-top:10px">М.П.</p>
+    </td>
+    <td>
+      <p><b>ИСПОЛНИТЕЛЬ</b></p>
+      <p class="underline">&nbsp;</p>
+      <p style="font-size:9pt">подпись / {v(carrier.get('director'))}</p>
+      <p style="margin-top:10px">М.П.</p>
+    </td>
+  </tr>
+</table>
+
 </body>
-</html>
-"""
+</html>"""
+
+    def _render_generic_html(self, doc: dict, doc_number: str) -> str:
+        doc_type = doc.get("document_type", "")
+        return f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>{doc_type} {doc_number}</title>
+<style>body{{font-family:'Times New Roman',serif;font-size:12pt;margin:20mm}}
+.title{{text-align:center;font-weight:bold;font-size:14pt}}</style></head>
+<body>
+<div class="title">{doc_type.upper()} № {doc_number}</div>
+<div>от {doc.get('document_date','')}</div>
+<pre style="white-space:pre-wrap;font-size:10pt">{json.dumps(doc, ensure_ascii=False, indent=2)}</pre>
+<p>Подпись: _________________ М.П.</p>
+</body></html>"""
 
 
 # Singleton instance

@@ -93,12 +93,18 @@ class User(Base):
     telegram_id = Column(BigInteger, unique=True, nullable=True, index=True)
     telegram_username = Column(String(255), nullable=True)
     telegram_linked_at = Column(DateTime, nullable=True)
+
+    # Сотрудники компании
+    employer_id   = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    employee_role = Column(String(50), nullable=True)  # manager / driver / accountant
+    verification_status  = Column(String(20), nullable=True, default="none")  # none/pending/approved/rejected
     # Referral & Pro
     referral_code  = Column(String(20), nullable=True, unique=True, index=True)
     referred_by    = Column(Integer, ForeignKey("users.id"), nullable=True)
     referral_count = Column(Integer, default=0, nullable=False)
     pro_until      = Column(DateTime, nullable=True)
     billing_plan   = Column(String(20), nullable=True, default="free")
+    verification_comment = Column(String(500), nullable=True)
 
     trucks = relationship("Truck", back_populates="owner")
     loads = relationship("Load", back_populates="creator")
@@ -317,7 +323,21 @@ class Bid(Base):
     carrier_id = Column(Integer, ForeignKey("users.id"))
     price = Column(Float, nullable=False)
     comment = Column(Text, nullable=True)
-    status = Column(String, default="waiting")  # waiting / accepted / rejected
+    status = Column(String, default="waiting")  # waiting / accepted / rejected / viewed
+    vat_type = Column(String(16), nullable=True)       # with_vat / no_vat / cash
+    vehicle_type = Column(String(32), nullable=True)   # tent / ref / bort / etc
+    capacity_tons = Column(Float, nullable=True)
+    volume_m3 = Column(Float, nullable=True)
+    ready_date = Column(Date, nullable=True)
+    phone = Column(String(32), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    score = Column(Integer, default=0)
+    fit_label = Column(String(20), default='incomplete')
+    fit_warnings = Column(JSON, default=list)
+    viewed_at = Column(DateTime, nullable=True)
+    accepted_at = Column(DateTime, nullable=True)
+    rejected_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     load = relationship("Load", back_populates="bids")
     carrier = relationship("User", back_populates="bids")
@@ -877,16 +897,131 @@ class ConsolidationPlanItem(Base):
     cargo = relationship("Load")
 
 
+# --------------------
+#  BLACKLIST
+# --------------------
+class Blacklist(Base):
+    __tablename__ = "blacklist"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    inn        = Column(String(12), nullable=False, index=True, unique=True)
+    name       = Column(String(300), nullable=True)
+    reason     = Column(String(1000), nullable=True)
+    flags      = Column(JSON, nullable=True)       # ['fraud', 'non_payment', 'fake_docs', ...]
+    added_by   = Column(Integer, ForeignKey('users.id'), nullable=True)
+    source     = Column(String(100), nullable=True, default='manual')  # manual / auto
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    added_by_user = relationship('User', foreign_keys=[added_by])
+
+
+# --------------------
+#  ROUTE SUBSCRIPTIONS (email digest)
+# --------------------
+class RouteSubscription(Base):
+    __tablename__ = "route_subscriptions"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    from_city  = Column(String(150), nullable=True)   # None = любой
+    to_city    = Column(String(150), nullable=True)   # None = любой
+    email      = Column(String(255), nullable=False)
+    active     = Column(Boolean, default=True, nullable=False)
+    last_sent  = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship('User', foreign_keys=[user_id])
+
+
+# --------------------
+#  PLATFORM PAYMENTS (billing)
+# --------------------
 class PlatformPayment(Base):
     __tablename__ = "platform_payments"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
-    plan = Column(String(20), nullable=False)
-    amount_rub = Column(Integer, nullable=False)
-    status = Column(String(20), nullable=False, default='pending', index=True)
-    external_id = Column(String(100), nullable=True, index=True)
-    idempotency_key = Column(String(100), nullable=True, unique=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    id               = Column(Integer, primary_key=True, index=True)
+    user_id          = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    plan             = Column(String(20), nullable=False)          # pro / business
+    amount_rub       = Column(Integer, nullable=False)
+    status           = Column(String(20), nullable=False, default='pending', index=True)  # pending / succeeded / canceled
+    external_id      = Column(String(100), nullable=True, index=True)   # YooKassa payment id
+    idempotency_key  = Column(String(100), nullable=True, unique=True)
+    created_at       = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     user = relationship('User', foreign_keys=[user_id])
+
+
+# --------------------
+#  TENDERS
+# --------------------
+class Tender(Base):
+    __tablename__ = "tenders"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    creator_id  = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    title       = Column(String(300), nullable=False)
+    description = Column(String(2000), nullable=True)
+    from_city   = Column(String(150), nullable=False)
+    to_city     = Column(String(150), nullable=False)
+    loading_date= Column(String(20), nullable=True)
+    deadline    = Column(DateTime, nullable=False)          # когда закрывается приём заявок
+    weight      = Column(Float, nullable=True)
+    volume      = Column(Float, nullable=True)
+    body_type   = Column(String(100), nullable=True)
+    budget_max  = Column(Integer, nullable=True)            # максимальный бюджет (опционально)
+    status      = Column(String(20), nullable=False, default='active', index=True)  # active / closed / awarded
+    winner_id   = Column(Integer, ForeignKey('users.id'), nullable=True)
+    created_at  = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at  = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    creator  = relationship('User', foreign_keys=[creator_id])
+    winner   = relationship('User', foreign_keys=[winner_id])
+    bids     = relationship('TenderBid', back_populates='tender', cascade='all, delete-orphan')
+
+
+class TenderBid(Base):
+    __tablename__ = "tender_bids"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    tender_id  = Column(Integer, ForeignKey('tenders.id', ondelete='CASCADE'), nullable=False, index=True)
+    bidder_id  = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    price      = Column(Integer, nullable=False)
+    comment    = Column(String(1000), nullable=True)
+    status     = Column(String(20), nullable=False, default='pending', index=True)  # pending / accepted / rejected
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    tender = relationship('Tender', back_populates='bids')
+    bidder = relationship('User', foreign_keys=[bidder_id])
+
+
+class PushSubscription(Base):
+    """Web Push subscription (one per user/device)."""
+    __tablename__ = "push_subscriptions"
+
+    id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    endpoint   = Column(String(2048), nullable=False, unique=True, index=True)
+    p256dh     = Column(String(512), nullable=False)
+    auth       = Column(String(256), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
+class ApiKey(Base):
+    """API key for TMS/external integrations."""
+    __tablename__ = "api_keys"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    user_id     = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    key         = Column(String(64), nullable=False, unique=True, index=True)
+    name        = Column(String(128), nullable=False, default="Мой ключ")
+    plan        = Column(String(20),  nullable=False, default="free")  # free / pro / business
+    calls_today = Column(Integer, nullable=False, default=0)
+    reset_date  = Column(DateTime, nullable=True)   # date when calls_today was last reset
+    last_used   = Column(DateTime, nullable=True)
+    is_active   = Column(Boolean, nullable=False, default=True)
+    created_at  = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", foreign_keys=[user_id])

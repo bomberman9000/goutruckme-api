@@ -61,24 +61,70 @@ def _call_openai_chat(user_message: str) -> str:
     return response.choices[0].message.content
 
 
-def _call_groq_chat(user_message: str) -> str:
-    from openai import OpenAI
+def _is_complex_question(message: str) -> bool:
+    """Простой классификатор: сложный вопрос → Gemini, простой → Ollama."""
+    words = message.strip().split()
+    if len(words) <= 5:
+        return False
+    complex_keywords = [
+        "документ", "договор", "ттн", "упд", "накладн", "юридич", "налог",
+        "страхов", "ответственност", "закон", "штраф", "арбитраж", "суд",
+        "рассчитай", "проанализируй", "объясни подробно", "почему", "как правильно",
+        "calculate", "analyze", "explain",
+    ]
+    msg_lower = message.lower()
+    if any(kw in msg_lower for kw in complex_keywords):
+        return True
+    return len(words) > 15
 
-    api_key = os.getenv("GROQ_API_KEY", "")
+
+def _call_gemini_chat(user_message: str) -> str:
+    import urllib.request
+    import json
+
+    api_key = os.getenv("GEMINI_API_KEY", "")
     if not api_key:
-        raise RuntimeError("no_groq_api_key")
+        raise RuntimeError("no_gemini_api_key")
 
-    client = OpenAI(
-        api_key=api_key,
-        base_url=os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
-    )
-    response = client.chat.completions.create(
-        model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
-        messages=_build_chat_messages(user_message),
-        temperature=0.7,
-        max_tokens=500,
-    )
-    return response.choices[0].message.content
+    model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+
+    system_prompt = _build_chat_messages("")
+    payload = json.dumps({
+        "system_instruction": {"parts": [{"text": system_prompt[0]["content"]}]},
+        "contents": [{"parts": [{"text": user_message}]}],
+        "generationConfig": {"maxOutputTokens": 500, "temperature": 0.7},
+    }).encode("utf-8")
+
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read())
+    return data["candidates"][0]["content"]["parts"][0]["text"]
+
+
+def _call_ollama_chat(user_message: str) -> str:
+    import urllib.request
+    import json
+
+    base_url = os.getenv("OLLAMA_URL", "http://10.0.0.2:11434")
+    model = os.getenv("OLLAMA_MODEL", "qwen3:30b")
+    url = f"{base_url}/api/chat"
+
+    system_prompt = _build_chat_messages("")[0]["content"]
+    payload = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+        "stream": False,
+        "options": {"num_predict": 300},
+    }).encode("utf-8")
+
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        data = json.loads(resp.read())
+    return data["message"]["content"]
 
 
 def _is_openai_quota_error(error: Exception) -> bool:
@@ -89,54 +135,36 @@ def _is_openai_quota_error(error: Exception) -> bool:
 @router.post("/chat")
 async def chat_with_gpt(request: ChatMessage):
     """
-    💬 Простой чат с ChatGPT.
-    Универсальный помощник для любых вопросов.
+    💬 Умный чат: сложные вопросы → Gemini, простые → Ollama.
+    Fallback: OpenAI → Groq.
     """
-    try:
-        content = _call_openai_chat(request.message)
-        return {
-            "response": content,
-            "conversation_id": request.conversation_id or "default",
-            "provider": "openai",
-        }
-    except Exception as e:
-        if str(e) == "no_openai_api_key":
-            if os.getenv("GROQ_API_KEY", ""):
-                try:
-                    content = _call_groq_chat(request.message)
-                    return {
-                        "response": content,
-                        "conversation_id": request.conversation_id or "default",
-                        "provider": "groq",
-                    }
-                except Exception as groq_error:
-                    return {
-                        "response": f"❌ Ошибка: {str(groq_error)}",
-                        "error": str(groq_error),
-                    }
-            return {
-                "response": "⚠️ ChatGPT не настроен. Добавьте OPENAI_API_KEY или GROQ_API_KEY в .env файл.",
-                "error": "no_api_key"
-            }
+    message = request.message
+    is_complex = _is_complex_question(message)
 
-        if _is_openai_quota_error(e) and os.getenv("GROQ_API_KEY", ""):
-            try:
-                content = _call_groq_chat(request.message)
-                return {
-                    "response": content,
-                    "conversation_id": request.conversation_id or "default",
-                    "provider": "groq",
-                    "fallback": "openai_quota",
-                }
-            except Exception as groq_error:
-                return {
-                    "response": f"❌ Ошибка: {str(groq_error)}",
-                    "error": str(groq_error),
-                }
-        return {
-            "response": f"❌ Ошибка: {str(e)}",
-            "error": str(e)
-        }
+    # Сначала пробуем AI по сложности
+    primary = "gemini" if is_complex else "ollama"
+    secondary = "ollama" if is_complex else "gemini"
+
+    for provider in [primary, secondary, "openai"]:
+        try:
+            if provider == "gemini":
+                content = _call_gemini_chat(message)
+            elif provider == "ollama":
+                content = _call_ollama_chat(message)
+            else:
+                content = _call_openai_chat(message)
+            return {
+                "response": content,
+                "conversation_id": request.conversation_id or "default",
+                "provider": provider,
+            }
+        except Exception:
+            continue
+
+    return {
+        "response": "⚠️ Все AI-провайдеры недоступны. Проверьте настройки.",
+        "error": "all_providers_failed"
+    }
 
 
 def get_db():

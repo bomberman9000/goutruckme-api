@@ -165,7 +165,7 @@ async def get_cargos(
         raise HTTPException(status_code=422, detail="status должен быть active|expired|all")
     query = apply_cargo_status_filter(query, status_value, default=CargoStatus.active.value)
 
-    loads = query.order_by(Load.created_at.desc()).limit(limit).all()
+    loads = query.order_by(Load.is_priority.desc(), Load.created_at.desc()).limit(limit).all()
     stats = MarketStats.from_db(db, lookback_days=60)
     return [
         _load_to_list_item(l, compute_ai_score(l, stats))

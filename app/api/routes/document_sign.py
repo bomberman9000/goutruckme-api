@@ -396,3 +396,97 @@ def get_signed_pdf(
         media_type="application/pdf",
         filename=f"document_{document.id}_signed.pdf",
     )
+
+# ─── CREATE SIGN REQUEST (без сделки) ────────────────────────────────────────
+
+class CreateSignRequest(BaseModel):
+    doc_type: str = "CONTRACT"
+    payload: dict[str, Any] | None = None
+    counterparty_phone: str | None = None
+    counterparty_user_id: int | None = None
+
+
+@router.post("/docs/sign-request")
+def create_sign_request(
+    body: CreateSignRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Создать документ и выслать ссылку на подпись контрагенту (без сделки)."""
+    from datetime import timedelta
+    import logging
+
+    now = _now()
+    expires_at = now + timedelta(hours=SIGN_TTL_HOURS)
+
+    # Найти контрагента по телефону или id
+    counterparty = None
+    if body.counterparty_user_id:
+        counterparty = db.query(User).filter(User.id == body.counterparty_user_id).first()
+    elif body.counterparty_phone:
+        phone_norm = re.sub(r"\D+", "", str(body.counterparty_phone or ""))
+        counterparty = (
+            db.query(User)
+            .filter(User.phone.like(f"%{phone_norm[-10:]}"))
+            .first()
+        )
+
+    # Создать документ
+    doc = Document(
+        doc_type=(body.doc_type or "CONTRACT").upper(),
+        status="sent",
+        payload_json=body.payload or {},
+        company_id_from=current_user.id,
+        company_id_to=counterparty.id if counterparty else None,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    # Создать сессию подписи
+    token = generate_sign_token()
+    sign_session = DocumentSignSession(
+        document_id=doc.id,
+        token_hash=sha256_hex(token),
+        phone=body.counterparty_phone,
+        expires_at=expires_at,
+        sms_verified=False,
+        otp_attempts=0,
+    )
+    _set_first_touch(sign_session, request)
+    db.add(sign_session)
+    db.commit()
+
+    base_url = str(request.base_url).rstrip("/")
+    sign_url = f"{base_url}/sign/{token}"
+
+    # Отправить SMS со ссылкой
+    sms_sent = False
+    sms_error = None
+    if body.counterparty_phone:
+        try:
+            from app.services.sms_provider import get_sms_provider
+            provider = get_sms_provider()
+            # Используем кастомный текст (не OTP), логируем всегда
+            logging.getLogger("document_sign").info(
+                "SIGN LINK to %s: %s", body.counterparty_phone, sign_url
+            )
+            # Отправляем SMS с текстом-ссылкой через stub/http
+            class _FakeSendResult:
+                ok = True
+                provider = "sent"
+            provider.send_otp(body.counterparty_phone, sign_url[:160])
+            sms_sent = True
+        except Exception as exc:
+            sms_error = str(exc)
+
+    return {
+        "document_id": doc.id,
+        "sign_url": sign_url,
+        "expires_at": expires_at.isoformat(),
+        "sms_sent": sms_sent,
+        "sms_error": sms_error,
+    }

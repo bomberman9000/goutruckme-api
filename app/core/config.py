@@ -112,8 +112,23 @@ class Settings(BaseSettings):
     OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.1")
 
     # Telegram alerts for HIGH risk
+    DADATA_API_TOKEN: str = os.getenv("DADATA_API_TOKEN", "")
     ADMIN_CHAT_ID: str = os.getenv("ADMIN_CHAT_ID", "")
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+
+
+    # Web Push (VAPID)
+    VAPID_PRIVATE_KEY: str = os.getenv("VAPID_PRIVATE_KEY", "")
+    VAPID_PUBLIC_KEY:  str = os.getenv("VAPID_PUBLIC_KEY", "")
+    VAPID_SUBJECT:     str = os.getenv("VAPID_SUBJECT", "mailto:admin@gruzpotok.ru")
+
+    # Email / SMTP
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "465"))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASS: str = os.getenv("SMTP_PASS", "")
+    SMTP_FROM: str = os.getenv("SMTP_FROM", "noreply@gruzpotok.ru")
+    SMTP_SSL: bool = os.getenv("SMTP_SSL", "true").lower() == "true"
 
 @lru_cache
 def get_settings() -> Settings:

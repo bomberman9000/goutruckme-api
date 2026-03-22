@@ -170,27 +170,41 @@ def _normalize_phone_digits(value: Any) -> str | None:
     return raw
 
 
-def _resolve_sync_user(db: Session, raw_user_id: Any, *, phone: Any | None = None) -> User | None:
-    numeric_user_id = _coerce_int(raw_user_id)
-    if not numeric_user_id:
-        user = None
-    else:
-        user = db.query(User).filter(User.id == numeric_user_id).first()
+def _resolve_sync_user_by_phone(db: Session, normalized_phone: str | None) -> User | None:
+    if not normalized_phone:
+        return None
+    for candidate in db.query(User).filter(User.phone.isnot(None)).all():
+        if _normalize_phone_digits(candidate.phone) == normalized_phone:
+            return candidate
+    return None
+
+
+def _resolve_sync_user(
+    db: Session,
+    raw_user_id: Any,
+    *,
+    phone: Any | None = None,
+    allow_local_id: bool = True,
+    prefer_phone: bool = False,
+) -> User | None:
+    normalized_phone = _normalize_phone_digits(phone)
+    if prefer_phone:
+        user = _resolve_sync_user_by_phone(db, normalized_phone)
         if user:
             return user
+
+    numeric_user_id = _coerce_int(raw_user_id)
+    if numeric_user_id:
+        if allow_local_id:
+            user = db.query(User).filter(User.id == numeric_user_id).first()
+            if user:
+                return user
 
         user = db.query(User).filter(User.telegram_id == numeric_user_id).first()
         if user:
             return user
 
-    normalized_phone = _normalize_phone_digits(phone)
-    if not normalized_phone:
-        return None
-
-    for candidate in db.query(User).filter(User.phone.isnot(None)).all():
-        if _normalize_phone_digits(candidate.phone) == normalized_phone:
-            return candidate
-    return None
+    return _resolve_sync_user_by_phone(db, normalized_phone)
 
 
 def _resolve_user_for_login_token(db: Session, req: CreateLoginTokenRequest) -> User:
@@ -218,6 +232,9 @@ def _upsert_order_from_sync(
     fallback_user_id: int | None,
 ) -> dict[str, Any]:
     order_id = _coerce_int(order.get("id"))
+    source_normalized = str(order.get("source") or "").strip().lower()
+    prefer_phone = source_normalized == "tg-bot"
+    allow_local_id = source_normalized != "tg-bot"
     from_city_raw = str(order.get("from_city") or "").strip()
     to_city_raw = str(order.get("to_city") or "").strip()
     from_city = _normalize_sync_city(db, from_city_raw)
@@ -242,10 +259,18 @@ def _upsert_order_from_sync(
     delivery_lon = _coerce_float(order.get("delivery_lon") or order.get("to_lon"))
     loading_date = _coerce_date(order.get("loading_date") or order.get("load_date"))
     loading_time = _normalize_loading_time(order.get("loading_time") or order.get("load_time"))
-    owner = _resolve_sync_user(db, order.get("user_id"), phone=order.get("phone")) or _resolve_sync_user(
+    owner = _resolve_sync_user(
+        db,
+        order.get("user_id"),
+        phone=order.get("phone"),
+        allow_local_id=allow_local_id,
+        prefer_phone=prefer_phone,
+    ) or _resolve_sync_user(
         db,
         fallback_user_id,
         phone=order.get("phone"),
+        allow_local_id=allow_local_id,
+        prefer_phone=prefer_phone,
     )
     owner_id = int(owner.id) if owner else None
 
@@ -348,15 +373,25 @@ def _upsert_vehicle_from_sync(
     if not vehicle_id:
         return {"saved": False, "reason": "missing_vehicle_id"}
 
-    user = _resolve_sync_user(db, vehicle.get("user_id"), phone=vehicle.get("owner_phone")) or _resolve_sync_user(
+    source_normalized = (event_source or vehicle.get("source") or "").strip().lower()
+    prefer_phone = source_normalized == "tg-bot"
+    allow_local_id = source_normalized != "tg-bot"
+
+    user = _resolve_sync_user(
+        db,
+        vehicle.get("user_id"),
+        phone=vehicle.get("owner_phone"),
+        allow_local_id=allow_local_id,
+        prefer_phone=prefer_phone,
+    ) or _resolve_sync_user(
         db,
         fallback_user_id,
         phone=vehicle.get("owner_phone"),
+        allow_local_id=allow_local_id,
+        prefer_phone=prefer_phone,
     )
     if not user:
         return {"saved": False, "reason": "missing_user_id"}
-
-    source_normalized = (event_source or vehicle.get("source") or "").strip().lower()
     sync_vehicle_id = vehicle_id + 900_000_000 if source_normalized == "tg-bot" else vehicle_id
 
     from_city_raw = str(vehicle.get("from_city") or vehicle.get("location_city") or "").strip()
