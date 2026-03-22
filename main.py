@@ -3,7 +3,7 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from src.core.config import settings
 from src.core.logger import logger
@@ -32,9 +32,12 @@ async def lifespan(app: FastAPI):
     from src.bot.handlers.chat import router as chat_router
     from src.bot.handlers.antifraud import router as antifraud_router
     from src.bot.handlers.geolocation import router as geolocation_router
+    from src.bot.handlers.driver_tracking import router as driver_tracking_router
     from src.bot.handlers.inline import router as inline_router
     from src.bot.handlers.claims import router as claims_router
     from src.bot.handlers.legal import router as legal_router
+    from src.bot.handlers.add_truck import router as add_truck_router
+    from src.bot.handlers.ai_assistant import router as ai_assistant_router
     from src.bot.middlewares.logging import LoggingMiddleware
     from src.bot.middlewares.watchdog import WatchdogMiddleware
     from src.core.services.watchdog import watchdog_loop
@@ -86,6 +89,9 @@ async def lifespan(app: FastAPI):
     dp.inline_query.outer_middleware(debug_updates)
 
     dp.message.middleware(WatchdogMiddleware())
+    from src.bot.middlewares.moderation import ContentModerationMiddleware
+    dp.message.middleware(ContentModerationMiddleware())
+    
     dp.callback_query.middleware(WatchdogMiddleware())
     dp.message.middleware(LoggingMiddleware())
     dp.callback_query.middleware(LoggingMiddleware())
@@ -102,6 +108,7 @@ async def lifespan(app: FastAPI):
     dp.include_router(chat_router)
     dp.include_router(antifraud_router)
     dp.include_router(geolocation_router)
+    dp.include_router(driver_tracking_router)
     dp.include_router(claims_router)
     dp.include_router(legal_router)
     dp.include_router(verification_router)
@@ -110,6 +117,25 @@ async def lifespan(app: FastAPI):
     dp.include_router(reminder_router)
     dp.include_router(payments_router)
     dp.include_router(referral_router)
+    dp.include_router(add_truck_router)
+    dp.include_router(ai_assistant_router)
+
+    # Register bot commands menu
+    try:
+        from aiogram.types import BotCommand
+        await bot.set_my_commands([
+            BotCommand(command="start",    description="Главное меню"),
+            BotCommand(command="ai",       description="🤖 AI-ассистент (логист, цена, антифрод, документ)"),
+            BotCommand(command="add_cargo", description="Разместить груз"),
+            BotCommand(command="search",   description="Найти груз"),
+            BotCommand(command="my_cargos", description="Мои грузы"),
+            BotCommand(command="profile",  description="Профиль"),
+            BotCommand(command="go_online", description="🟢 Выйти на линию (GPS-трекинг)"),
+            BotCommand(command="cancel",   description="Отмена"),
+        ])
+        logger.info("Bot commands registered")
+    except Exception as e:
+        logger.warning("set_my_commands failed: %s", e)
 
     polling_task = None
     if BOT_POLLING_ENABLED:
@@ -141,6 +167,64 @@ async def lifespan(app: FastAPI):
     await close_redis()
 
 app = FastAPI(title="Logistics Bot API", lifespan=lifespan)
+
+
+# ── Security headers ──────────────────────────────────────────────────────────
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(self), microphone=()"
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+# ── Global rate limit (anti-flood) ───────────────────────────────────────────
+_rl_store: dict = {}  # fallback in-memory if Redis unavailable
+
+def _rl_client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown")
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    import time
+    path = request.url.path
+    # Skip static assets
+    if path.startswith(("/webapp/assets", "/static", "/favicon")):
+        return await call_next(request)
+
+    ip = _rl_client_ip(request)
+
+    # Stricter limit for Telegram WebApp auth endpoint
+    if path in ("/webapp/auth", "/api/auth", "/auth/login"):
+        limit, window = 10, 60
+    else:
+        limit, window = 120, 60
+
+    key = f"{ip}:{path if limit == 10 else 'global'}"
+    now = time.time()
+    bucket = _rl_store.get(key, {"count": 0, "reset": now + window})
+    if now > bucket["reset"]:
+        bucket = {"count": 0, "reset": now + window}
+    bucket["count"] += 1
+    _rl_store[key] = bucket
+
+    if bucket["count"] > limit:
+        retry = int(bucket["reset"] - now)
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Слишком много запросов. Попробуйте позже."},
+            headers={"Retry-After": str(max(1, retry))},
+        )
+
+    return await call_next(request)
+
 
 TWA_ASSETS_DIR = Path("frontend/twa/dist/assets")
 app.mount(
@@ -174,6 +258,7 @@ from src.api.subscriptions import router as subscriptions_router
 from src.api.escrow import router as escrow_router
 from src.api.geo import router as geo_router
 from src.api.match import router as match_router
+from src.api.billing import router as billing_router
 from src.core.ai_diag import explain_health
 from src.core.services.watchdog import watchdog
 
@@ -198,6 +283,7 @@ app.include_router(subscriptions_router)
 app.include_router(escrow_router)
 app.include_router(geo_router)
 app.include_router(match_router)
+app.include_router(billing_router)
 app.include_router(antifraud_api_router)
 app.include_router(antifraud_admin_api_router)
 app.include_router(internal_api_router)
@@ -271,6 +357,9 @@ async def api_cargos(from_city: str = None, to_city: str = None):
         cargos = result.scalars().all()
 
     return [{"id": c.id, "from": c.from_city, "to": c.to_city, "weight": c.weight, "price": c.price} for c in cargos]
+
+from src.api.v1.dogruz import router as dogruz_router
+app.include_router(dogruz_router, prefix="/api/v1")
 
 @app.get("/")
 async def root(request: Request):
