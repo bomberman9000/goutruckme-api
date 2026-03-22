@@ -151,6 +151,20 @@ def _check_rate_limit(key: str, *, limit: int, window_sec: int = 60) -> bool:
         return True
 
 
+
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(self), microphone=()"
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     path = request.url.path
@@ -159,15 +173,14 @@ async def rate_limit_middleware(request: Request, call_next):
         return await call_next(request)
 
     ip = _client_ip(request)
-    if path == "/auth/login":
-        allowed = _check_rate_limit(
-            f"login:{ip}",
-            limit=max(1, settings.AUTH_LOGIN_RATE_LIMIT_PER_MINUTE),
-        )
+    if path in ("/auth/login", "/auth/send-otp", "/auth/verify-otp", "/auth/login-otp"):
+        limit = 5 if "otp" in path else max(1, settings.AUTH_LOGIN_RATE_LIMIT_PER_MINUTE)
+        allowed = _check_rate_limit(f"auth:{ip}", limit=limit)
         if not allowed:
             return JSONResponse(
                 status_code=429,
-                content={"detail": "Слишком много попыток входа. Попробуйте позже."},
+                content={"detail": "Слишком много попыток. Подождите минуту."},
+                headers={"Retry-After": "60"},
             )
     elif not _is_authenticated_request(request):
         allowed = _check_rate_limit(
