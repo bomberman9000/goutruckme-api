@@ -16,7 +16,7 @@ from src.core.config import settings
 from src.core.database import async_session
 from src.core.logger import logger
 from src.core.matching import TruckMatch, match_trucks
-from src.core.models import TruckContactUnlock, User
+from src.core.models import TruckContactUnlock, User, UserVehicle
 from src.core.redis import get_redis
 from src.core.truck_search import (
     extract_truck_search_params,
