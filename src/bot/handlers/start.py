@@ -379,11 +379,12 @@ async def begin_onboarding(cb: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "menu")
 async def show_menu(cb: CallbackQuery):
-    try:
-        await cb.message.edit_text("🏠 <b>Главное меню</b>", reply_markup=main_menu())
-    except TelegramBadRequest:
-        await cb.message.answer("🏠 <b>Главное меню</b>", reply_markup=main_menu())
     await cb.answer()
+    try:
+        await cb.message.delete()
+    except Exception:
+        pass
+    await cb.message.answer("🏠 <b>Главное меню</b>", reply_markup=main_menu(), parse_mode="HTML")
 
 
 @router.message(Command("webapp"))
