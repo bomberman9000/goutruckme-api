@@ -50,6 +50,10 @@ class BotWatchdog:
             "manual_review": None,
             "synced_24h": None,
             "ignored_24h": None,
+            "rejected_incomplete": None,
+            "rejected_missing_contact": None,
+            "rejected_missing_weight_or_volume": None,
+            "rejected_missing_both": None,
             "last_event_age_min": None,
             "heartbeat_key": settings.parser_heartbeat_key,
             "heartbeat_age_sec": None,
@@ -118,6 +122,35 @@ class BotWatchdog:
                         ParserIngestEvent.status.in_(["ignored", "spam_filtered"]),
                         ParserIngestEvent.created_at >= since,
                     )
+                )
+                metrics["rejected_missing_contact"] = await session.scalar(
+                    select(func.count())
+                    .select_from(ParserIngestEvent)
+                    .where(
+                        ParserIngestEvent.status == "ignored",
+                        ParserIngestEvent.error == "missing_contact",
+                    )
+                )
+                metrics["rejected_missing_weight_or_volume"] = await session.scalar(
+                    select(func.count())
+                    .select_from(ParserIngestEvent)
+                    .where(
+                        ParserIngestEvent.status == "ignored",
+                        ParserIngestEvent.error == "missing_weight_or_volume",
+                    )
+                )
+                metrics["rejected_missing_both"] = await session.scalar(
+                    select(func.count())
+                    .select_from(ParserIngestEvent)
+                    .where(
+                        ParserIngestEvent.status == "ignored",
+                        ParserIngestEvent.error == "missing_weight_or_volume_and_contact",
+                    )
+                )
+                metrics["rejected_incomplete"] = (
+                    int(metrics["rejected_missing_contact"] or 0)
+                    + int(metrics["rejected_missing_weight_or_volume"] or 0)
+                    + int(metrics["rejected_missing_both"] or 0)
                 )
 
             if latest:
@@ -319,6 +352,18 @@ class BotWatchdog:
             issues.append(f"в manual_review лежит {manual_review}")
             actions.append("Открой /admin/manual-review и разберите спорные карточки.")
 
+        rejected_incomplete = parser_metrics.get("rejected_incomplete")
+        if isinstance(rejected_incomplete, int) and rejected_incomplete > 0:
+            rejected_missing_contact = int(parser_metrics.get("rejected_missing_contact") or 0)
+            rejected_missing_measurement = int(parser_metrics.get("rejected_missing_weight_or_volume") or 0)
+            rejected_missing_both = int(parser_metrics.get("rejected_missing_both") or 0)
+            issues.append(
+                "отбрасываются неполные грузы "
+                f"({rejected_incomplete}: контакт {rejected_missing_contact}, "
+                f"вес/объем {rejected_missing_measurement}, оба {rejected_missing_both})"
+            )
+            actions.append("Проверь источники: часть грузов приходит без контакта или без веса/объема.")
+
         if not issues:
             summary = "Система работает штатно: ingestion, очередь, база и bot API выглядят живыми."
             actions.append("Ручное вмешательство не требуется.")
@@ -389,6 +434,18 @@ class BotWatchdog:
             for item in issues[:5]:
                 text += f"• {item}\n"
 
+        parser_metrics = (overview.get("metrics", {}) or {}).get("parser", {}) or {}
+        rejected_incomplete = parser_metrics.get("rejected_incomplete")
+        if isinstance(rejected_incomplete, int) and rejected_incomplete > 0:
+            rejected_missing_contact = int(parser_metrics.get("rejected_missing_contact") or 0)
+            rejected_missing_measurement = int(parser_metrics.get("rejected_missing_weight_or_volume") or 0)
+            rejected_missing_both = int(parser_metrics.get("rejected_missing_both") or 0)
+            text += "\n<b>Интеграция:</b>\n"
+            text += f"• ⛔️ Отброшено неполных: {rejected_incomplete}\n"
+            text += f"• без контакта: {rejected_missing_contact}\n"
+            text += f"• без веса/объема: {rejected_missing_measurement}\n"
+            text += f"• без обоих: {rejected_missing_both}\n"
+
         actions = overview.get("actions", []) or []
         if actions:
             text += "\n<b>Что делать:</b>\n"
@@ -407,7 +464,14 @@ _last_alert: dict[str, float] = {}
 
 async def notify_admin(message: str, alert_key: str = "default"):
     """Отправить уведомление админу (с кулдауном по alert_key)."""
-    if settings.admin_id is None:
+    targets: list[int] = []
+    if settings.watchdog_alert_chat_id is not None:
+        targets.append(settings.watchdog_alert_chat_id)
+    elif settings.admin_chat_id is not None:
+        targets.append(settings.admin_chat_id)
+    if settings.admin_id is not None and settings.admin_id not in targets:
+        targets.append(settings.admin_id)
+    if not targets:
         return
     now = datetime.utcnow().timestamp()
     if now - _last_alert.get(alert_key, 0) < ALERT_COOLDOWN_SEC:
@@ -415,11 +479,9 @@ async def notify_admin(message: str, alert_key: str = "default"):
     _last_alert[alert_key] = now
     try:
         from src.bot.bot import bot
-        await bot.send_message(
-            settings.admin_id,
-            f"🚨 <b>Watchdog Alert</b>\n\n{message}",
-            parse_mode="HTML",
-        )
+        text = f"🚨 <b>Watchdog Alert</b>\n\n{message}"
+        for target in targets:
+            await bot.send_message(target, text, parse_mode="HTML")
     except Exception as e:
         logger.error("Failed to notify admin: %s", e)
 

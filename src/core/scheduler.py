@@ -1,11 +1,17 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 from src.core.logger import logger
 
 scheduler = AsyncIOScheduler()
+
+_AUTO_IGNORE_MANUAL_REVIEW_ERRORS = frozenset({"rate_above_cap", "rate_per_km_above_cap"})
+
+
+def _utcnow_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 async def daily_stats_job():
     from src.bot.bot import bot
@@ -32,14 +38,15 @@ async def daily_stats_job():
 
 async def check_reminders_job():
     from src.bot.bot import bot
+    from src.core.cache import clear_cached
     from src.core.database import async_session
     from src.core.models import Reminder
 
     async with async_session() as session:
         result = await session.execute(
             select(Reminder)
-            .where(Reminder.is_sent == False)
-            .where(Reminder.remind_at <= datetime.utcnow())
+            .where(Reminder.is_sent.is_(False))
+            .where(Reminder.remind_at <= _utcnow_naive())
         )
         reminders = result.scalars().all()
 
@@ -60,7 +67,7 @@ async def archive_old_cargos_job():
     from src.core.models import Cargo, CargoStatus
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-    now = datetime.utcnow()
+    now = _utcnow_naive()
     date_cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
     age_cutoff = now - timedelta(days=7)
 
@@ -91,6 +98,7 @@ async def archive_old_cargos_job():
 
         if all_cargos:
             await session.commit()
+            await clear_cached("feed")
             logger.info("Archived cargos: %s", len(all_cargos))
 
         # 3) Уведомляем владельцев
@@ -121,7 +129,7 @@ async def push_notifications_job():
     from src.core.models import Cargo, CargoStatus
     from src.core.services.notifications import notify_subscribers
 
-    cutoff = datetime.utcnow() - timedelta(minutes=6)
+    cutoff = _utcnow_naive() - timedelta(minutes=6)
     async with async_session() as session:
         result = await session.execute(
             select(Cargo)
@@ -134,7 +142,7 @@ async def push_notifications_job():
         for cargo in cargos:
             try:
                 await notify_subscribers(cargo)
-                cargo.notified_at = datetime.utcnow()
+                cargo.notified_at = _utcnow_naive()
             except Exception as e:
                 logger.error("Push notification error for cargo #%s: %s", cargo.id, e)
 
@@ -192,7 +200,7 @@ async def reverse_matching_job():
                         ParserIngestEvent.is_spam.is_(False),
                         ParserIngestEvent.status == "synced",
                         ParserIngestEvent.from_city.ilike(f"%{city}%"),
-                        ParserIngestEvent.created_at >= datetime.utcnow() - __import__("datetime").timedelta(minutes=10),
+                        ParserIngestEvent.created_at >= _utcnow_naive() - __import__("datetime").timedelta(minutes=10),
                     )
                 )
                 if vehicle.body_type:
@@ -259,7 +267,7 @@ async def retention_nudge_job():
                         ParserIngestEvent.is_spam.is_(False),
                         ParserIngestEvent.status == "synced",
                         ParserIngestEvent.from_city.ilike(f"%{city}%"),
-                        ParserIngestEvent.created_at >= datetime.utcnow() - timedelta(hours=4),
+                        ParserIngestEvent.created_at >= _utcnow_naive() - timedelta(hours=4),
                     )
                 )
                 if not count:
@@ -298,7 +306,7 @@ async def auto_purge_job():
     from src.core.models import ParserIngestEvent
     from sqlalchemy import delete
 
-    cutoff = datetime.utcnow() - timedelta(days=14)
+    cutoff = _utcnow_naive() - timedelta(days=14)
     try:
         async with async_session() as session:
             result = await session.execute(
@@ -312,6 +320,46 @@ async def auto_purge_job():
             logger.info("Auto-purge: deleted %d old events", deleted)
     except Exception as e:
         logger.error("Auto-purge error: %s", e)
+
+
+async def auto_ignore_stale_manual_review_job():
+    """Auto-ignore stale manual_review items for rate-cap heuristics."""
+    from datetime import timedelta
+    from src.core.config import settings
+    from src.core.database import async_session
+    from src.core.models import ParserIngestEvent
+
+    hours = max(0, int(settings.parser_manual_review_auto_ignore_hours))
+    if hours <= 0:
+        return
+
+    cutoff = _utcnow_naive() - timedelta(hours=hours)
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(ParserIngestEvent).where(
+                    ParserIngestEvent.status == "manual_review",
+                    ParserIngestEvent.created_at < cutoff,
+                    ParserIngestEvent.error.in_(tuple(_AUTO_IGNORE_MANUAL_REVIEW_ERRORS)),
+                )
+            )
+            events = result.scalars().all()
+            if not events:
+                return
+
+            counts: dict[str, int] = {}
+            for event in events:
+                counts[str(event.error or "")] = counts.get(str(event.error or ""), 0) + 1
+                event.status = "ignored"
+
+            await session.commit()
+        logger.info(
+            "Auto-ignored stale manual_review events: total=%s breakdown=%s",
+            len(events),
+            counts,
+        )
+    except Exception as e:
+        logger.error("Auto-ignore manual_review error: %s", e)
 
 
 async def marketing_post_job():
@@ -342,6 +390,7 @@ def setup_scheduler():
     scheduler.add_job(reverse_matching_job, IntervalTrigger(minutes=5), id="reverse_matching")
     scheduler.add_job(retention_nudge_job, IntervalTrigger(hours=4), id="retention_nudge")
     scheduler.add_job(overdue_payment_check_job, IntervalTrigger(hours=1), id="overdue_payments")
+    scheduler.add_job(auto_ignore_stale_manual_review_job, IntervalTrigger(hours=1), id="auto_ignore_manual_review")
     scheduler.add_job(auto_purge_job, CronTrigger(hour=3, minute=0), id="auto_purge")
     scheduler.add_job(weekly_report_job, CronTrigger(day_of_week="mon", hour=9, minute=0), id="weekly_report")
     scheduler.add_job(marketing_post_job, CronTrigger(hour="9,15,21", minute=0), id="marketing_post")

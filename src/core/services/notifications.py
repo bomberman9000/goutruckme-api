@@ -64,26 +64,20 @@ async def collect_matching_available_vehicle_user_ids(session, cargo: Cargo) -> 
     return matches
 
 
-def _mask_phone(phone: str) -> str:
-    """Скрывает последние 4 цифры: +7 900 *** **67 → +7 900 *** **XX"""
-    digits = [c for c in phone if c.isdigit()]
-    if len(digits) < 5:
-        return "📞 Скрыт"
-    masked = phone[:-4] + "XXXX"
-    return masked
-
-
 def _build_cargo_notification_text(
     cargo: Cargo,
     owner_company: CompanyDetails | None,
     owner: User | None,
-    *,
-    show_phone: bool = False,
+    ai_badge: str | None = None,
+    price_hint: str | None = None,
 ) -> str:
     text = "🔔 <b>Новый груз по вашему маршруту!</b>\n\n"
     text += f"📍 {cargo.from_city} → {cargo.to_city}\n"
     text += f"📦 {cargo.cargo_type} | {cargo.weight} т\n"
-    text += f"💰 {cargo.price:,} ₽\n"
+    text += f"💰 {cargo.price:,} ₽"
+    if price_hint:
+        text += f"  <i>{price_hint}</i>"
+    text += "\n"
     text += f"📅 {cargo.load_date.strftime('%d.%m.%Y')}"
     if cargo.load_time:
         text += f" в {cargo.load_time}"
@@ -97,20 +91,55 @@ def _build_cargo_notification_text(
     elif owner:
         text += f"\n👤 {owner.full_name}\n"
 
-    phone = cargo.phone or (owner.phone if owner else None)
-    if phone:
-        if show_phone:
-            text += f"\n📞 {phone}"
-        else:
-            text += f"\n📞 {_mask_phone(phone)}"
-            text += "  🔒 <i>Откройте подпиской</i>"
+    if ai_badge:
+        text += f"\n{ai_badge}"
+
     return text
+
+
+async def _get_ai_notification_extras(cargo: Cargo) -> tuple[str | None, str | None]:
+    """Return (ai_badge, price_hint) from cached antifraud + market data. Never raises."""
+    ai_badge: str | None = None
+    price_hint: str | None = None
+
+    # 1. Antifraud badge from Redis cache
+    try:
+        from src.services.cargo_antifraud import get_antifraud_result
+        af = await get_antifraud_result(cargo.id)
+        if af and "risk_score" in af:
+            score = int(af["risk_score"])
+            rec = af.get("recommendation", "accept")
+            if score < 35:
+                ai_badge = f"🟢 AI: низкий риск ({score}/100)"
+            elif score < 70:
+                ai_badge = f"🟡 AI: средний риск ({score}/100)"
+            else:
+                ai_badge = f"🔴 AI: высокий риск ({score}/100) — {rec}"
+    except Exception:
+        pass
+
+    # 2. Price hint vs market average
+    try:
+        from src.core.services.price_predict import predict_route_price
+        market = await predict_route_price(cargo.from_city, cargo.to_city)
+        if market.get("available") and market.get("current_avg") and cargo.price:
+            avg = int(market["current_avg"])
+            diff_pct = round((cargo.price - avg) / avg * 100)
+            if diff_pct >= 10:
+                price_hint = f"(+{diff_pct}% рынка 📈)"
+            elif diff_pct <= -10:
+                price_hint = f"({diff_pct}% рынка 📉)"
+    except Exception:
+        pass
+
+    return ai_badge, price_hint
 
 
 async def dispatch_cargo_notification(cargo: Cargo, user_ids: list[int]) -> int:
     if not user_ids:
         return 0
 
+    import asyncio
     from src.bot.bot import bot
     from src.bot.keyboards import notification_kb
 
@@ -119,34 +148,60 @@ async def dispatch_cargo_notification(cargo: Cargo, user_ids: list[int]) -> int:
             select(CompanyDetails).where(CompanyDetails.user_id == cargo.owner_id)
         )
         owner = await session.scalar(select(User).where(User.id == cargo.owner_id))
-        users = (
-            await session.execute(select(User).where(User.id.in_(user_ids)))
-        ).scalars().all()
-    users_map = {u.id: u for u in users}
 
-    has_phone = bool(cargo.phone or (owner and owner.phone))
+    ai_badge, price_hint = await _get_ai_notification_extras(cargo)
+    text = _build_cargo_notification_text(cargo, owner_company, owner, ai_badge, price_hint)
+    kb = notification_kb(cargo.id)
 
     sent = 0
     for user_id in user_ids:
         try:
-            recipient = users_map.get(user_id)
-            is_premium = bool(
-                recipient
-                and recipient.is_premium
-                and (
-                    recipient.premium_until is None
-                    or recipient.premium_until >= datetime.utcnow()
-                )
-            )
-            text = _build_cargo_notification_text(
-                cargo, owner_company, owner, show_phone=is_premium or not has_phone
-            )
-            kb = notification_kb(cargo.id, is_premium=is_premium, has_phone=has_phone)
-            await bot.send_message(user_id, text, reply_markup=kb, parse_mode="HTML")
+            await bot.send_message(user_id, text, parse_mode="HTML", reply_markup=kb)
             sent += 1
         except Exception:
             pass
+
+    # Send Kimi AI insight as follow-up in background (non-blocking)
+    if sent > 0:
+        asyncio.create_task(_send_ai_insight(cargo, user_ids[:sent]))
+
     return sent
+
+
+async def _send_ai_insight(cargo: Cargo, user_ids: list[int]) -> None:
+    """Send short Kimi AI insight about the cargo as a follow-up message."""
+    try:
+        from src.services.ai_kimi import kimi_service
+        from src.bot.bot import bot
+
+        cargo_text = (
+            f"{cargo.from_city} — {cargo.to_city}, "
+            f"{cargo.cargo_type}, {cargo.weight} т, {cargo.price} руб"
+        )
+        result = await kimi_service.logist_mode(cargo_text)
+
+        lines: list[str] = ["💡 <b>AI-инсайт по грузу:</b>"]
+        risks = result.get("risks") or []
+        if risks:
+            lines.append(f"⚠️ {', '.join(str(r) for r in risks[:2])}")
+        questions = result.get("questions") or []
+        if questions:
+            lines.append(f"❓ Уточни: {questions[0]}")
+        if result.get("vehicle"):
+            lines.append(f"🚛 Рекомендуемый ТС: {result['vehicle']}")
+
+        if len(lines) == 1:
+            return  # nothing useful to say
+
+        insight_text = "\n".join(lines)
+        for user_id in user_ids:
+            try:
+                await bot.send_message(user_id, insight_text, parse_mode="HTML")
+            except Exception:
+                pass
+    except Exception as e:
+        from src.core.logger import logger
+        logger.warning("notifications.ai_insight error cargo_id=%d error=%s", cargo.id, e)
 
 
 async def notify_subscribers(cargo: Cargo) -> int:

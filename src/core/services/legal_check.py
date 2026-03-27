@@ -1,11 +1,14 @@
 """
-AI-юрист: проверка контрагента по ИНН
-- ФНС (ЕГРЮЛ/ЕГРИП)
-- Арбитражные суды (kad.arbitr.ru)
-- ФССП (исполнительные производства)
-- Банкротство (fedresurs)
+Светофор — проверка контрагента по ИНН.
+
+Free: ФНС + Арбитраж (счётчики) + ФССП + Банкротство
+Pro:  + DaData (учредители, ОКВЭД, капитал)
+      + РНП ФАС (реестр недобросовестных поставщиков)
+      + Реестр залогов движимого имущества
+      + Детализация арбитража (суммы, последние дела)
 """
 
+import os
 import httpx
 from datetime import datetime
 
@@ -166,6 +169,105 @@ async def check_bankrupt(inn: str) -> dict:
         return {"status": "error", "message": str(e)}
 
 
+# ---------------------------------------------------------------------------
+# Pro checks
+# ---------------------------------------------------------------------------
+
+async def check_dadata_pro(inn: str) -> dict:
+    """Расширенные данные компании через DaData (учредители, ОКВЭД, капитал)."""
+    token = os.getenv("DADATA_API_TOKEN", "")
+    if not token:
+        return {"status": "skip", "message": "DaData токен не настроен"}
+    url = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/party"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                url,
+                json={"query": inn, "count": 1},
+                headers={
+                    "Authorization": f"Token {token}",
+                    "Content-Type": "application/json",
+                },
+            )
+        suggestions = resp.json().get("suggestions", [])
+        if not suggestions:
+            return {"status": "not_found"}
+        d = suggestions[0].get("data", {})
+        founders = []
+        for f in (d.get("founders") or [])[:5]:
+            name = f.get("fio", {}).get("name") or f.get("name", "")
+            share = f.get("share", {}).get("value", "")
+            founders.append(f"{name} {share}%".strip())
+        managers = []
+        for m in (d.get("managers") or [])[:3]:
+            fio = m.get("fio", {})
+            name = f"{fio.get('surname','')} {fio.get('name','')} {fio.get('patronymic','')}".strip()
+            post = m.get("post", "")
+            managers.append(f"{name} ({post})" if post else name)
+        capital = (d.get("finance") or {}).get("ustavnyj_kapital")
+        okved = d.get("okved", "")
+        okved_name = d.get("okved_type", "")
+        state = (d.get("state") or {})
+        liquidation_date = state.get("liquidation_date")
+        return {
+            "status": "ok",
+            "founders": founders,
+            "managers": managers,
+            "capital_rub": capital,
+            "okved": okved,
+            "okved_name": okved_name,
+            "employee_count": (d.get("finance") or {}).get("average_employees"),
+            "liquidation_date": liquidation_date,
+            "registration_date": state.get("registration_date"),
+        }
+    except Exception as e:
+        logger.warning("dadata_pro error inn=%s error=%s", inn, e)
+        return {"status": "error", "message": str(e)}
+
+
+async def check_rnp(inn: str) -> dict:
+    """Проверка в реестре недобросовестных поставщиков ФАС."""
+    url = "https://rnp.fas.gov.ru/rnp/search/json"
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(url, params={"searchString": inn, "page": 0, "size": 5})
+        if resp.status_code != 200:
+            return {"status": "skip", "message": f"РНП недоступен ({resp.status_code})"}
+        data = resp.json()
+        items = data.get("data", []) or data.get("items", []) or (data if isinstance(data, list) else [])
+        in_rnp = len(items) > 0
+        return {
+            "status": "ok",
+            "in_rnp": in_rnp,
+            "count": len(items),
+            "message": f"⛔ В РНП ({len(items)} записей)" if in_rnp else "✅ Не в реестре недобросовестных",
+        }
+    except Exception as e:
+        logger.warning("rnp check error inn=%s error=%s", inn, e)
+        return {"status": "error", "message": str(e)}
+
+
+async def check_zalog(inn: str) -> dict:
+    """Проверка залогов движимого имущества (reestr-zalogov.ru)."""
+    url = "https://www.reestr-zalogov.ru/search/index"
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(url, params={
+                "notariatType": 2,
+                "pledgorInn": inn,
+                "page": 0,
+            })
+        has_zalog = "Ничего не найдено" not in resp.text and str(inn) in resp.text
+        return {
+            "status": "ok",
+            "has_zalog": has_zalog,
+            "message": "⚠️ Найдены залоги движимого имущества" if has_zalog else "✅ Залогов не обнаружено",
+        }
+    except Exception as e:
+        logger.warning("zalog check error inn=%s error=%s", inn, e)
+        return {"status": "error", "message": str(e)}
+
+
 async def full_legal_check(inn: str) -> dict:
     """Полная проверка контрагента по ИНН."""
     results = {
@@ -268,5 +370,128 @@ def format_legal_check(result: dict) -> str:
         text += "\n⚠️ <b>Факторы риска:</b>\n"
         for factor in result["risk_factors"]:
             text += f"• {factor}\n"
+
+    return text
+
+
+# ---------------------------------------------------------------------------
+# Pro full check
+# ---------------------------------------------------------------------------
+
+async def full_legal_check_pro(inn: str) -> dict:
+    """Полная Pro-проверка: базовые источники + DaData + РНП + Залоги."""
+    import asyncio
+    base, dadata, rnp, zalog = await asyncio.gather(
+        full_legal_check(inn),
+        check_dadata_pro(inn),
+        check_rnp(inn),
+        check_zalog(inn),
+    )
+    result = {**base, "dadata": dadata, "rnp": rnp, "zalog": zalog, "is_pro": True}
+
+    # Extra risk scoring for Pro
+    extra_score = 0
+    extra_factors = list(base.get("risk_factors", []))
+
+    if rnp.get("status") == "ok" and rnp.get("in_rnp"):
+        extra_score += 40
+        extra_factors.append(f"⛔ Реестр недобросовестных поставщиков ({rnp['count']} записей)")
+
+    if zalog.get("status") == "ok" and zalog.get("has_zalog"):
+        extra_score += 15
+        extra_factors.append("⚠️ Залоги движимого имущества")
+
+    if dadata.get("status") == "ok":
+        cap = dadata.get("capital_rub")
+        if cap and cap < 10_000:
+            extra_score += 10
+            extra_factors.append(f"⚠️ Минимальный уставный капитал ({cap:,} ₽)")
+
+    total = min(100, base.get("risk_score", 0) + extra_score)
+    result["risk_score"] = total
+    result["risk_factors"] = extra_factors
+    result["risk_level"] = (
+        "🟢 Низкий" if total < 20
+        else "🟡 Средний" if total < 50
+        else "🔴 Высокий"
+    )
+    return result
+
+
+def format_legal_check_pro(result: dict) -> str:
+    """Форматирует Pro-отчёт проверки."""
+    # Base section (reuse base formatter intro)
+    text = "🔍 <b>Проверка контрагента — Pro</b>\n"
+    text += f"ИНН: <code>{result['inn']}</code>\n\n"
+
+    fns = result.get("fns", {})
+    if fns.get("status") == "ok":
+        status = "✅ Действующая" if fns.get("is_active") else "❌ Ликвидирована"
+        text += f"🏢 <b>{fns.get('name', '—')}</b>\n"
+        text += f"📍 {fns.get('address', '—')[:60]}\n"
+        text += f"👤 Директор: {fns.get('director', '—')}\n"
+        text += f"📅 Регистрация: {fns.get('reg_date', '—')}\n"
+        text += f"📊 Статус: {status}\n\n"
+
+    # DaData block
+    dd = result.get("dadata", {})
+    if dd.get("status") == "ok":
+        text += "📋 <b>Расширенные данные (DaData):</b>\n"
+        if dd.get("okved"):
+            text += f"   ОКВЭД: {dd['okved']} {dd.get('okved_name','')[:40]}\n"
+        if dd.get("capital_rub") is not None:
+            cap = dd["capital_rub"]
+            text += f"   💰 Уставный капитал: {cap:,} ₽\n".replace(",", " ")
+        if dd.get("employee_count"):
+            text += f"   👥 Сотрудников: {dd['employee_count']}\n"
+        if dd.get("founders"):
+            text += f"   🏛 Учредители: {', '.join(dd['founders'][:3])}\n"
+        if dd.get("managers"):
+            text += f"   👔 Руководство: {dd['managers'][0]}\n"
+        text += "\n"
+
+    # Arbitr
+    arbitr = result.get("arbitr", {})
+    if arbitr.get("status") == "ok":
+        text += "⚖️ <b>Арбитражные суды:</b>\n"
+        text += f"   Всего: {arbitr.get('total_cases', 0)} | "
+        text += f"Истец: {arbitr.get('as_plaintiff', 0)} | "
+        text += f"Ответчик: {arbitr.get('as_defendant', 0)}\n"
+        for case in (arbitr.get("recent_cases") or [])[:2]:
+            num = case.get("CaseId", "")
+            if num:
+                text += f"   📄 {num}\n"
+        text += "\n"
+
+    # ФССП
+    fssp = result.get("fssp", {})
+    if fssp.get("status") == "ok":
+        text += f"📋 <b>ФССП:</b> {fssp.get('message','?')}\n"
+
+    # Банкротство
+    bankrupt = result.get("bankrupt", {})
+    if bankrupt.get("status") == "ok":
+        text += f"💀 <b>Банкротство:</b> {bankrupt.get('message','?')}\n"
+
+    # РНП
+    rnp = result.get("rnp", {})
+    if rnp.get("status") == "ok":
+        text += f"🏛 <b>РНП ФАС:</b> {rnp.get('message','?')}\n"
+
+    # Залоги
+    zalog = result.get("zalog", {})
+    if zalog.get("status") == "ok":
+        text += f"🔒 <b>Залоги:</b> {zalog.get('message','?')}\n"
+
+    text += "\n━━━━━━━━━━━━━━━━━━━━\n"
+    risk = result.get("risk_score", 0)
+    text += f"📊 <b>Риск-скор: {risk}/100</b>\n"
+    text += f"🚦 {result.get('risk_level','?')}\n"
+
+    factors = result.get("risk_factors", [])
+    if factors:
+        text += "\n⚠️ <b>Факторы риска:</b>\n"
+        for f in factors:
+            text += f"• {f}\n"
 
     return text

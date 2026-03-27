@@ -68,21 +68,48 @@ async def build_marketing_post(limit: int = 5) -> str | None:
     text = "🚛 <b>ГрузПоток — Лучшие грузы прямо сейчас</b>\n"
     text += f"📊 {total} грузов за последние 6 часов\n\n"
 
+    from src.core.ai import calculate_market_rate
+
     for i, ev in enumerate(hot_deals, 1):
         hot = "🔥 " if ev.is_hot_deal else ""
-        rate = f"{ev.rate_rub:,}" if ev.rate_rub else "договорная"
 
-        rpk = ""
-        if ev.rate_rub:
-            fc = city_coords(ev.from_city) if ev.from_city else None
-            tc = city_coords(ev.to_city) if ev.to_city else None
-            if fc and tc:
-                dist = haversine_km(fc[0], fc[1], tc[0], tc[1])
-                if dist > 10:
-                    rpk = f" ({int(ev.rate_rub / dist)} ₽/км)"
+        fc = city_coords(ev.from_city) if ev.from_city else None
+        tc = city_coords(ev.to_city) if ev.to_city else None
+        dist = haversine_km(fc[0], fc[1], tc[0], tc[1]) if fc and tc else None
+
+        # Рекомендованная рыночная цена
+        rec = None
+        if dist and dist > 50:
+            try:
+                mr = calculate_market_rate(
+                    from_city=ev.from_city,
+                    to_city=ev.to_city,
+                    distance_km=dist,
+                    weight=ev.weight_t or 20.0,
+                    body_type=ev.body_type,
+                )
+                rec = mr.get("price")
+            except Exception:
+                pass
+
+        rpk = f" ({int(ev.rate_rub / dist)} ₽/км)" if ev.rate_rub and dist and dist > 10 else ""
+        rate_str = f"{ev.rate_rub:,}".replace(",", " ") if ev.rate_rub else None
 
         text += f"{i}. {hot}<b>{ev.from_city} → {ev.to_city}</b>\n"
-        text += f"   {ev.body_type or '?'} • {ev.weight_t or 0}т • {rate} ₽{rpk}\n"
+        text += f"   {ev.body_type or '?'} • {ev.weight_t or 0}т"
+        if rate_str:
+            text += f" • {rate_str} ₽{rpk}"
+        text += "\n"
+        if rec:
+            rec_str = f"{rec:,}".replace(",", " ")
+            diff = ""
+            if ev.rate_rub and rec:
+                pct = round((ev.rate_rub - rec) / rec * 100)
+                if pct > 10:
+                    diff = f" 🟢 +{pct}% к рынку"
+                elif pct < -10:
+                    diff = f" 🔴 {pct}% к рынку"
+            text += f"   📊 Рек. цена: {rec_str} ₽{diff}\n"
         if ev.load_date:
             text += f"   📅 {ev.load_date}\n"
         text += "\n"
