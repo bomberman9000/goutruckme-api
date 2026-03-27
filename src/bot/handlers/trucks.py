@@ -9,7 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from sqlalchemy import select
+from sqlalchemy import select, or_
 
 from src.bot.keyboards import webapp_entry_kb, cancel_kb
 from src.core.config import settings
@@ -268,20 +268,43 @@ def _premium_teaser_text(
 
 async def _reply_truck_offer_hint(message: Message, text: str) -> None:
     from src.parser_bot.truck_extractor import parse_truck_regex
+    from src.core.database import async_session
+    from src.core.models import Cargo, CargoStatus
+    from sqlalchemy import select
+    from aiogram.utils.keyboard import InlineKeyboardBuilder as _IKB
+    from aiogram.types import InlineKeyboardButton as _TIKB
 
     parsed = parse_truck_regex(text)
-    parts = ["🚚 Похоже, вы предлагаете свободную машину."]
-    preview: list[str] = []
-    if parsed.truck_type:
-        preview.append(parsed.truck_type)
-    if parsed.capacity_tons:
-        preview.append(f"{parsed.capacity_tons}т")
-    if parsed.base_city:
-        preview.append(parsed.base_city)
-    if preview:
-        parts.append("Распознал: " + " • ".join(preview))
-    parts.append("Сейчас публикация своей машины идет через Mini App → раздел «Мой парк».")
-    await message.answer("\n\n".join(parts), reply_markup=webapp_entry_kb())
+    city = parsed.base_city
+    weight = parsed.capacity_tons
+
+    if not city:
+        await message.answer("Укажите город отправки, например: «стою в Москве, 20 тонн, тент»")
+        return
+
+    await message.answer(f"⏳ Ищу грузы из {city}...")
+    async with async_session() as session:
+        q = select(Cargo).where(Cargo.status.in_([CargoStatus.NEW, CargoStatus.ACTIVE]))
+        q = q.where(Cargo.from_city.ilike(f"%{city}%"))
+        if weight:
+            q = q.where(or_(Cargo.weight <= weight, Cargo.weight.is_(None)))
+        q = q.order_by(Cargo.id.desc()).limit(5)
+        cargos = (await session.execute(q)).scalars().all()
+
+    if not cargos:
+        await message.answer(
+            f"Грузов из {city} пока нет. Можно поискать вручную через Доску грузов.",
+            reply_markup=webapp_entry_kb()
+        )
+        return
+
+    b = _IKB()
+    for c in cargos:
+        price_str = f"{c.price:,}₽".replace(",", "\u00a0") if c.price else "договор"
+        b.row(_TIKB(text=f"📦 {c.from_city}→{c.to_city} {c.weight}т {price_str}", callback_data=f"cargo_open_{c.id}"))
+    b.row(_TIKB(text="🔍 Больше грузов", callback_data="search_cargo"))
+    await message.answer(f"🚛 Нашёл {len(cargos)} груза из {city}:", reply_markup=b.as_markup())
+
 
 
 async def _run_match_and_reply(

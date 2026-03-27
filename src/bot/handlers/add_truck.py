@@ -187,7 +187,37 @@ async def add_truck_city(message: Message, state: FSMContext):
     await state.update_data(location_city=city)
     await message.answer(
         f"✅ Город: <b>{city}</b>\n\n"
-        "Введите гос. номер машины (необязательно, для отображения в объявлении):" + CANCEL_HINT,
+        "Введите объём кузова в м³ (например: 82 для фуры):" + CANCEL_HINT,
+        reply_markup=skip_kb(),
+    )
+    await state.set_state(AddTruck.volume_m3)
+
+
+@router.callback_query(AddTruck.volume_m3, F.data == "skip")
+async def add_truck_volume_skip(cb: CallbackQuery, state: FSMContext):
+    await state.update_data(volume_m3=None)
+    await cb.answer()
+    await cb.message.answer(
+        "Введите гос. номер машины (необязательно):" + CANCEL_HINT,
+        reply_markup=skip_kb(),
+    )
+    await state.set_state(AddTruck.plate_number)
+
+
+@router.message(AddTruck.volume_m3)
+async def add_truck_volume(message: Message, state: FSMContext):
+    text = (message.text or "").strip().replace(",", ".")
+    try:
+        vol = float(text)
+        if not (1 <= vol <= 500):
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введите число от 1 до 500 (например: 82)")
+        return
+    await state.update_data(volume_m3=vol)
+    await message.answer(
+        f"✅ Объём: <b>{vol} м³</b>\n\n"
+        "Введите гос. номер машины (необязательно):" + CANCEL_HINT,
         reply_markup=skip_kb(),
     )
     await state.set_state(AddTruck.plate_number)
@@ -217,6 +247,7 @@ async def _show_truck_confirm(obj, state: FSMContext, edit: bool = False):
         "📋 <b>Проверьте данные машины:</b>\n\n"
         f"Кузов: <b>{data['body_type']}</b>\n"
         f"Грузоподъёмность: <b>{data['capacity_tons']} т</b>\n"
+        f"Объём: <b>{data.get('volume_m3') or '—'} м³</b>\n"
         f"Город: <b>{data['location_city']}</b>\n"
         f"Номер: <b>{data.get('plate_number') or '—'}</b>\n\n"
         "Всё верно?"
@@ -237,6 +268,7 @@ async def add_truck_save(cb: CallbackQuery, state: FSMContext):
             user_id=cb.from_user.id,
             body_type=data["body_type"],
             capacity_tons=data["capacity_tons"],
+            volume_m3=data.get("volume_m3"),
             location_city=data.get("location_city"),
             plate_number=data.get("plate_number"),
             is_available=True,

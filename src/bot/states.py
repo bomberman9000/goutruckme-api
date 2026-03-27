@@ -105,6 +105,7 @@ class AddTruck(StatesGroup):
     body_type     = State()
     capacity_tons = State()
     location_city = State()
+    volume_m3     = State()
     plate_number  = State()
     confirm       = State()
 

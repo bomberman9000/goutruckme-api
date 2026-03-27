@@ -581,6 +581,7 @@ class UserVehicle(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, index=True)
     body_type: Mapped[str] = mapped_column(String(64))
     capacity_tons: Mapped[float] = mapped_column(Float, default=20.0)
+    volume_m3: Mapped[float | None] = mapped_column(Float, nullable=True)
     location_city: Mapped[str | None] = mapped_column(String(120), nullable=True)
     is_available: Mapped[bool] = mapped_column(Boolean, default=False)
     plate_number: Mapped[str | None] = mapped_column(String(20), nullable=True)

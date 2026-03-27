@@ -210,6 +210,13 @@ async def reverse_matching_job():
                             ParserIngestEvent.body_type.is_(None),
                         )
                     )
+                if vehicle.capacity_tons:
+                    stmt = stmt.where(
+                        or_(
+                            ParserIngestEvent.weight_t <= vehicle.capacity_tons,
+                            ParserIngestEvent.weight_t.is_(None),
+                        )
+                    )
 
                 matches = (
                     await session.execute(stmt.order_by(ParserIngestEvent.id.desc()).limit(3))
