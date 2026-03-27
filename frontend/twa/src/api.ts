@@ -542,6 +542,33 @@ export type WebappProfileResponse = {
   refund_journal: RefundJournalItem[];
 };
 
+export type WebappCargoDetailResponse = {
+  id: number;
+  from_city: string | null;
+  to_city: string | null;
+  cargo_type: string | null;
+  weight: number | null;
+  volume: number | null;
+  price: number | null;
+  load_date: string | null;
+  load_time: string | null;
+  comment: string | null;
+  status: string;
+  created_at: string;
+  owner: {
+    id: number | null;
+    name: string | null;
+  };
+  company: {
+    id: number;
+    name: string | null;
+    inn: string | null;
+    rating: number | null;
+    open_claims: number;
+  } | null;
+  responses_count: number;
+};
+
 type MyCargoResponse = {
   items: MyCargoItem[];
   limit: number;
@@ -571,6 +598,16 @@ export async function fetchWebappProfile(): Promise<WebappProfileResponse> {
   }
   if (!response.ok) {
     throw await buildApiError(response, "Profile request failed");
+  }
+  return response.json();
+}
+
+export async function fetchWebappCargoDetail(cargoId: number): Promise<WebappCargoDetailResponse> {
+  const response = await fetch(`/api/webapp/cargo/${cargoId}`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw await buildApiError(response, "Cargo detail request failed");
   }
   return response.json();
 }

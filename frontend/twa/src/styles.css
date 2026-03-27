@@ -197,8 +197,13 @@ body {
 }
 
 .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.card-route { display: flex; align-items: center; gap: 6px; }
-.route-text { font-size: 16px; font-weight: 600; }
+.card-route { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.route-text {
+  font-size: 16px;
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .distance { color: var(--muted); font-size: 12px; background: #1a2030; padding: 2px 6px; border-radius: 6px; }
 .hot-badge { font-size: 14px; }
 .card-freshness { font-size: 11px; color: var(--muted); }
@@ -221,12 +226,12 @@ body {
 }
 
 .card-body { display: flex; gap: 16px; margin-bottom: 10px; }
-.card-col { flex: 1; }
+.card-col { flex: 1; min-width: 0; }
 
 .specs { display: flex; flex-direction: column; gap: 4px; }
 .spec-row { display: flex; justify-content: space-between; font-size: 13px; }
 .spec-label { color: var(--muted); }
-.spec-value { font-weight: 500; }
+.spec-value { font-weight: 500; overflow-wrap: anywhere; text-align: right; }
 
 .price-col { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .price-main {
@@ -277,6 +282,8 @@ body {
   background: rgba(59, 130, 246, 0.08);
   border-radius: 999px;
   padding: 2px 8px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .load-date { color: var(--muted); margin-left: auto; }
 
@@ -308,6 +315,102 @@ body {
 .action-btn.reply { background: #0d2818; border-color: var(--green); }
 .action-btn.fav { background: #261f08; border-color: var(--hot); min-width: 36px; justify-content: center; }
 .action-btn.ati { background: #1a2040; border-color: #6366f1; }
+
+@media (max-width: 700px) {
+  .cargo-card {
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .card-top {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .card-route {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .route-text {
+    flex: 1 1 100%;
+    font-size: 15px;
+    line-height: 1.35;
+  }
+
+  .distance,
+  .card-freshness,
+  .payment-terms,
+  .customer-type,
+  .company-rating,
+  .load-date {
+    white-space: normal;
+  }
+
+  .card-body {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .spec-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .spec-value {
+    text-align: left;
+  }
+
+  .price-col {
+    align-items: flex-start;
+    text-align: left;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .price-main {
+    font-size: 20px;
+  }
+
+  .trust-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .load-date {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .card-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .action-btn {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+
+  .action-btn.primary {
+    grid-column: 1 / -1;
+  }
+
+  .my-cargo-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .my-cargo-statuses {
+    align-items: flex-start;
+  }
+}
 .action-btn.report { background: transparent; border-color: #444; color: #888; min-width: 32px; justify-content: center; }
 .action-btn.report:hover { border-color: var(--red); color: var(--red); }
 .trip-calc-panel {
@@ -1024,7 +1127,8 @@ body {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
 }
 .vehicle-card.available { border-color: var(--green); }
-.vehicle-info { display: flex; flex-direction: column; gap: 4px; }
+.vehicle-info { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.vehicle-status { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
 .plate { color: var(--muted); font-size: 12px; font-family: monospace; }
 .verified { color: var(--green); font-size: 12px; }
 .status-badge.free { color: var(--green); font-weight: 600; font-size: 14px; }

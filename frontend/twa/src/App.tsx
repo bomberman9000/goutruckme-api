@@ -42,7 +42,9 @@ import {
   type VehicleItem,
   type VehicleMapItem,
   type VehicleMatchResponse,
+  type WebappCargoDetailResponse,
   type WebappProfileResponse,
+  fetchWebappCargoDetail,
 } from "./api";
 
 import { CargoMap } from "./CargoMap";
@@ -67,6 +69,24 @@ type ActionGuide = {
 } | null;
 
 const BODY_TYPES = ["тент", "рефрижератор", "трал", "борт", "контейнер", "изотерм"];
+const SEARCH_NOISE_TOKENS = new Set([
+  "нужно",
+  "надо",
+  "перевести",
+  "перевезти",
+  "отвезти",
+  "доставить",
+  "отправить",
+  "есть",
+  "груз",
+  "из",
+  "в",
+  "на",
+  "до",
+  "сегодня",
+  "завтра",
+  "послезавтра",
+]);
 
 function trustStars(score: number | null): string {
   if (score == null) return "☆☆☆";
@@ -156,6 +176,60 @@ async function copyText(value: string): Promise<boolean> {
 
 const PREMIUM_BOT_LINK = "https://t.me/gotruck_ai_bot?start=buy_premium";
 
+function parseCargoHash(hash: string): number | null {
+  const match = hash.trim().match(/^#cargo\/(\d+)$/);
+  if (!match) {
+    return null;
+  }
+  const cargoId = Number(match[1]);
+  return Number.isInteger(cargoId) && cargoId > 0 ? cargoId : null;
+}
+
+function mapWebappCargoToFeedItem(item: WebappCargoDetailResponse): FeedItem {
+  return {
+    id: item.id,
+    stream_entry_id: `webapp-cargo-${item.id}`,
+    source: "webapp",
+    from_city: item.from_city,
+    to_city: item.to_city,
+    from_lat: null,
+    from_lon: null,
+    to_lat: null,
+    to_lon: null,
+    body_type: item.cargo_type,
+    rate_rub: item.price,
+    weight_t: item.weight,
+    phone: null,
+    phone_masked: true,
+    can_view_contact: false,
+    trust_score: null,
+    trust_verdict: null,
+    trust_comment: null,
+    provider: item.owner?.name ?? null,
+    status: item.status,
+    created_at: item.created_at,
+    load_date: item.load_date,
+    load_time: item.load_time,
+    cargo_description: item.comment,
+    payment_terms: null,
+    is_direct_customer: null,
+    dimensions: item.volume ? `${item.volume} м³` : null,
+    is_hot_deal: false,
+    suggested_response: null,
+    reply_link: null,
+    external_url: null,
+    phone_blacklisted: false,
+    rate_per_km: null,
+    distance_km: null,
+    freshness: "Открыт по ссылке",
+    ati_link: null,
+    payment_status: null,
+    verified_payment: false,
+    company_name: item.company?.name ?? null,
+    company_rating: item.company?.rating ?? null,
+  };
+}
+
 export function App() {
   const [tab, setTab] = useState<Tab>("feed");
   const [items, setItems] = useState<FeedItem[]>([]);
@@ -185,6 +259,9 @@ export function App() {
   const [matchSummaryError, setMatchSummaryError] = useState<string | null>(null);
   const [vehicleMapItems, setVehicleMapItems] = useState<VehicleMapItem[]>([]);
   const [vehicleMapError, setVehicleMapError] = useState<string | null>(null);
+  const [deepLinkedCargo, setDeepLinkedCargo] = useState<FeedItem | null>(null);
+  const [deepLinkedCargoId, setDeepLinkedCargoId] = useState<number | null>(() => parseCargoHash(window.location.hash));
+  const [deepLinkError, setDeepLinkError] = useState<string | null>(null);
   const [copied, setCopied] = useState<number | null>(null);
   const [showAddTruck, setShowAddTruck] = useState(false);
   const [addingVehicle, setAddingVehicle] = useState(false);
@@ -222,6 +299,12 @@ export function App() {
     return typeof value === "string" && value.trim() ? value.trim() : null;
   });
   const canUseTelegramOnlyActions = Boolean(initData);
+  const visibleFeedItems = useMemo(() => {
+    if (!deepLinkedCargo) {
+      return items;
+    }
+    return [deepLinkedCargo, ...items.filter((item) => item.id !== deepLinkedCargo.id)];
+  }, [deepLinkedCargo, items]);
 
   function handleBuyPremium(note?: string) {
     const tg = (window as any)?.Telegram?.WebApp;
@@ -251,17 +334,35 @@ export function App() {
   const parsedSearch = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return {};
-    const tokens = q.split(/\s+/);
+    const tokens = q
+      .replace(/[.,;:!?()[\]{}"']/g, " ")
+      .split(/\s+/)
+      .filter(Boolean);
+
+    // Search bar is for short route filters, not full natural-language cargo requests.
+    if (tokens.length > 4) return {};
+
     let from_city: string | undefined;
     let to_city: string | undefined;
     let body_type: string | undefined;
     const cityTokens: string[] = [];
 
     for (const t of tokens) {
-      const bt = BODY_TYPES.find((b) => b.startsWith(t) || t.startsWith(b.slice(0, 3)));
+      if (
+        t.length < 2
+        || SEARCH_NOISE_TOKENS.has(t)
+        || /^\d/.test(t)
+        || /^(?:\d+(?:[.,]\d+)?)(?:кг|kg|т|тонн?|м3|м³|₽|р|руб)?$/.test(t)
+      ) {
+        continue;
+      }
+
+      const bt = t.length >= 3
+        ? BODY_TYPES.find((b) => b.startsWith(t) || t.startsWith(b.slice(0, 3)))
+        : undefined;
       if (bt) {
         body_type = bt;
-      } else if (!t.match(/^\d/) && t.length >= 2) {
+      } else if (t.length >= 2) {
         cityTokens.push(t);
       }
     }
@@ -305,6 +406,48 @@ export function App() {
   }, [selected, cursor, initData, parsedSearch]);
 
   useEffect(() => { void load(true); }, [selected.join(","), initData, searchQuery]);
+
+  useEffect(() => {
+    const syncDeepLink = () => {
+      setDeepLinkedCargoId(parseCargoHash(window.location.hash));
+    };
+    window.addEventListener("hashchange", syncDeepLink);
+    return () => window.removeEventListener("hashchange", syncDeepLink);
+  }, []);
+
+  useEffect(() => {
+    if (!deepLinkedCargoId) {
+      setDeepLinkedCargo(null);
+      setDeepLinkError(null);
+      return;
+    }
+
+    let active = true;
+    const loadDeepLinkedCargo = async () => {
+      try {
+        const detail = await fetchWebappCargoDetail(deepLinkedCargoId);
+        if (!active) {
+          return;
+        }
+        setDeepLinkedCargo(mapWebappCargoToFeedItem(detail));
+        setDeepLinkError(null);
+        setTab("feed");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } catch (err) {
+        if (!active) {
+          return;
+        }
+        setDeepLinkedCargo(null);
+        setDeepLinkError(err instanceof Error ? err.message : "Не удалось открыть карточку груза");
+        setTab("feed");
+      }
+    };
+
+    void loadDeepLinkedCargo();
+    return () => {
+      active = false;
+    };
+  }, [deepLinkedCargoId]);
 
   const loadSubscriptions = useCallback(async () => {
     setSubscriptionsLoading(true);
@@ -1898,17 +2041,28 @@ export function App() {
             <div className="cabinet-meta">ИНН 6318240460 · КПП 631801001</div>
             <div className="cabinet-meta">Банк Точка · р/с 40702810720000287623</div>
             <div className="cabinet-meta">БИК 044525104 · к/с 30101810745374525104</div>
-            <button
-              className="action-btn"
-              style={{marginTop: 10}}
-              onClick={() => {
-                const tg = (window as Window & {Telegram?: {WebApp?: {openLink?: (u: string) => void}}}).Telegram?.WebApp;
-                const url = "https://miniapp.144.31.64.130.sslip.io/requisites";
-                if (tg?.openLink) tg.openLink(url); else window.open(url, "_blank");
-              }}
-            >
-              Полные реквизиты →
-            </button>
+            <div style={{display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap"}}>
+              <button
+                className="action-btn"
+                onClick={() => {
+                  const tg = (window as Window & {Telegram?: {WebApp?: {openLink?: (u: string) => void}}}).Telegram?.WebApp;
+                  const url = window.location.origin + "/requisites";
+                  if (tg?.openLink) tg.openLink(url); else window.open(url, "_blank");
+                }}
+              >
+                Реквизиты →
+              </button>
+              <button
+                className="action-btn"
+                onClick={() => {
+                  const tg = (window as Window & {Telegram?: {WebApp?: {openLink?: (u: string) => void}}}).Telegram?.WebApp;
+                  const url = window.location.origin + "/oferta";
+                  if (tg?.openLink) tg.openLink(url); else window.open(url, "_blank");
+                }}
+              >
+                Оферта →
+              </button>
+            </div>
           </div>
         </section>
       </div>
@@ -2139,7 +2293,8 @@ export function App() {
 
       {tab === "feed" && (
         <>
-          <section className="feed">{items.map(renderCard)}</section>
+          {deepLinkError && <div className="error">{deepLinkError}</div>}
+          <section className="feed">{visibleFeedItems.map(renderCard)}</section>
           <section className="load-more">
             <button disabled={loading} onClick={() => void load(true)}>
               {loading ? "⏳" : "🔄 Обновить"}
