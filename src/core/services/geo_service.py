@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import asyncio
 import logging
 from typing import Any
 
@@ -11,6 +12,10 @@ from src.core.config import settings
 from src.core.geo import CITY_COORDS, _normalize_city_key, city_coords, haversine_km
 
 logger = logging.getLogger(__name__)
+
+# Rate limiter: Nominatim требует не более 1 req/sec
+_nominatim_lock = asyncio.Lock()
+_NOMINATIM_DELAY = 1.1  # sec
 
 
 @dataclass(slots=True)
@@ -101,13 +106,19 @@ class GeoService:
             "addressdetails": 1,
         }
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(self.geo_url, params=params, headers=self.headers)
+            async with _nominatim_lock:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.get(self.geo_url, params=params, headers=self.headers)
+                await asyncio.sleep(_NOMINATIM_DELAY)
+                if response.status_code == 429:
+                    # Rate limited — не кешируем, попробуем снова позже
+                    logger.warning("geo geocode 429 city=%s, skipping cache", city_name)
+                    return None
                 response.raise_for_status()
                 payload = response.json()
         except Exception as exc:
             logger.warning("geo geocode failed city=%s error=%s", city_name, str(exc)[:160])
-            self._city_cache[key] = None
+            # Сетевая ошибка — не кешируем None, повторим при следующем запросе
             return None
 
         row = self._pick_city_candidate(payload)

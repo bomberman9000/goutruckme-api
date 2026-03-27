@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from src.core.cities import city_directory, resolve_city
+from src.core.database import async_session
 from src.core.geo import city_coords
+from src.core.models import DriverTracking
 from src.core.services.geo_service import get_geo_service
 
 router = APIRouter(tags=["geo"])
@@ -61,6 +66,34 @@ async def list_directory_cities(
         if len(items) >= limit:
             break
     return CitySuggestionResponse(items=items, limit=limit)
+
+
+@router.get("/api/v1/geo/live-drivers")
+async def live_drivers(stale_minutes: int = Query(default=30, ge=1, le=120)):
+    """Active drivers who shared live location via bot. Used by the map."""
+    cutoff = datetime.utcnow() - timedelta(minutes=stale_minutes)
+    async with async_session() as session:
+        rows = (await session.execute(
+            select(DriverTracking).where(
+                DriverTracking.is_active.is_(True),
+                DriverTracking.lat.isnot(None),
+                DriverTracking.updated_at >= cutoff,
+            )
+        )).scalars().all()
+
+    return {
+        "drivers": [
+            {
+                "user_id": d.user_id,
+                "name": d.full_name or "Водитель",
+                "lat": d.lat,
+                "lon": d.lon,
+                "updated_at": d.updated_at.isoformat(),
+            }
+            for d in rows
+        ],
+        "total": len(rows),
+    }
 
 
 @router.get("/api/v1/geo/cities/resolve", response_model=CityResolveResponse)
