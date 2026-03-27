@@ -55,6 +55,54 @@ async def lifespan(app: FastAPI):
     from src.bot.handlers.ai_assistant import router as ai_assistant_router
     from src.bot.handlers.vehicle_intake import router as vehicle_intake_router
 
+    # Init database and redis
+    await init_db()
+    logger.info("Database initialized")
+
+    redis = await get_redis()
+    await redis.ping()
+    logger.info("Redis connected")
+
+    from aiogram import Dispatcher
+    from aiogram.fsm.storage.redis import RedisStorage
+    from src.bot.middlewares.watchdog import WatchdogMiddleware
+    from src.bot.middlewares.logging import LoggingMiddleware
+
+    dp = Dispatcher(storage=RedisStorage(redis=redis))
+    logger.info("FSM storage: Redis")
+
+    dp.message.middleware(WatchdogMiddleware())
+    dp.callback_query.middleware(WatchdogMiddleware())
+    dp.message.middleware(LoggingMiddleware())
+    dp.callback_query.middleware(LoggingMiddleware())
+
+    dp.include_router(admin_router)
+    dp.include_router(start_router)
+    dp.include_router(cargo_router)
+    dp.include_router(search_router)
+    dp.include_router(inline_router)
+    dp.include_router(rating_router)
+    dp.include_router(profile_router)
+    dp.include_router(analytics_router)
+    dp.include_router(chat_router)
+    dp.include_router(antifraud_router)
+    dp.include_router(geolocation_router)
+    dp.include_router(driver_tracking_router)
+    dp.include_router(claims_router)
+    dp.include_router(legal_router)
+    dp.include_router(verification_router)
+    dp.include_router(feedback_router)
+    dp.include_router(errors_router)
+    dp.include_router(reminder_router)
+    dp.include_router(payments_router)
+    dp.include_router(referral_router)
+    dp.include_router(add_truck_router)
+    dp.include_router(ai_assistant_router)
+    dp.include_router(vehicle_intake_router)
+
+    setup_scheduler()
+    logger.info("Scheduler started")
+
     # Register bot commands menu
     try:
         from aiogram.types import BotCommand
@@ -196,7 +244,7 @@ from src.api.geo import router as geo_router
 from src.api.match import router as match_router
 from src.api.billing import router as billing_router
 from src.core.ai_diag import explain_health
-from src.core.services.watchdog import watchdog
+from src.core.services.watchdog import watchdog, watchdog_loop
 
 app.include_router(admin_panel_router)
 app.include_router(webapp_router)
@@ -295,8 +343,8 @@ async def api_cargos(from_city: str = None, to_city: str = None):
 
     return [{"id": c.id, "from": c.from_city, "to": c.to_city, "weight": c.weight, "price": c.price} for c in cargos]
 
-from src.api.v1.dogruz import router as dogruz_router
-app.include_router(dogruz_router, prefix="/api/v1")
+# from src.api.v1.dogruz import router as dogruz_router
+# app.include_router(dogruz_router, prefix="/api/v1")
 
 @app.get("/")
 async def root(request: Request):

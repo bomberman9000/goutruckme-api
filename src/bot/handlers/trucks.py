@@ -552,9 +552,9 @@ async def truck_to_cargo(cb: CallbackQuery, state: FSMContext):
 
 
 @router.message(StateFilter(None), F.text.func(_looks_like_truck_free_text_candidate))
-async def smart_truck_text(message: Message, state: FSMContext):
+async def smart_truck_text(message: Message, state: FSMContext, override_text: str | None = None):
     _ = state
-    text = (message.text or "").strip()
+    text = override_text or (message.text or "").strip()
     if not text or text.startswith("/") or _is_cancel_text(text):
         return
 

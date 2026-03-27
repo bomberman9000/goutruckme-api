@@ -367,6 +367,24 @@ async def _call_groq(system: str, user: str, api_key: str) -> str:
     return response.choices[0].message.content.strip()
 
 
+
+async def _call_gemini(system: str, user: str, api_key: str, model: str = "gemini-2.0-flash") -> str:
+    import httpx
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    async with httpx.AsyncClient(timeout=20) as http:
+        response = await http.post(
+            url,
+            headers={"Content-Type": "application/json"},
+            json={
+                "contents": [{"parts": [{"text": f"{system}\n\nUSER TEXT:\n{user}"}]}],
+                "generationConfig": {"temperature": 0.1, "maxOutputTokens": 400}
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+
 async def _call_openai(system: str, user: str, api_key: str, model: str) -> str:
     import httpx
 
@@ -389,10 +407,13 @@ async def parse_truck_llm(text: str) -> ParsedTruck | None:
     from src.core.config import settings
 
     try:
-        if settings.groq_api_key:
-            raw = await _call_groq(_TRUCK_SYSTEM_PROMPT, text[:2000], settings.groq_api_key)
+        gemini_key = getattr(settings, "gemini_api_key", None)
+        if gemini_key:
+            raw = await _call_gemini(_TRUCK_SYSTEM_PROMPT, text[:2000], gemini_key, getattr(settings, "gemini_model", "gemini-2.0-flash"))
         elif settings.openai_api_key:
             raw = await _call_openai(_TRUCK_SYSTEM_PROMPT, text[:2000], settings.openai_api_key, settings.openai_model)
+        elif settings.groq_api_key:
+            raw = await _call_groq(_TRUCK_SYSTEM_PROMPT, text[:2000], settings.groq_api_key)
         else:
             return None
 

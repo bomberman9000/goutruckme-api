@@ -462,6 +462,14 @@ async def send_cargo_details(message: Message, cargo_id: int) -> bool:
     else:
         text += "\n⚠️ Компания не зарегистрирована"
 
+    # For parsed cargos: extract phone from comment
+    parsed_phone = None
+    if is_parsed and cargo.comment:
+        phones = re.findall(r'[+]?[\d]{10,13}', cargo.comment)
+        if phones:
+            parsed_phone = phones[0]
+            text += "\n📞 Контакт: " + parsed_phone
+
     if can_show_contacts and is_participant:
         other = carrier if is_owner else owner
         if other:
@@ -486,6 +494,16 @@ async def send_cargo_details(message: Message, cargo_id: int) -> bool:
         reply_markup = cargo_actions(
             cargo.id, is_owner, cargo.status, owner_company_id, can_bump=can_bump
         )
+
+    if parsed_phone:
+        from aiogram.utils.keyboard import InlineKeyboardBuilder as _IKB
+        _b = _IKB.from_markup(reply_markup)
+        clean_phone = parsed_phone.lstrip('+')
+        _b.row(InlineKeyboardButton(
+            text="✍️ Написать в Telegram",
+            url=f"tg://resolve?phone={clean_phone}"
+        ))
+        reply_markup = _b.as_markup()
 
     await message.answer(text, reply_markup=reply_markup)
     return True
@@ -1448,94 +1466,53 @@ def _nlp_confirm_kb() -> InlineKeyboardMarkup:
 
 @router.message(StateFilter(None, CargoNLPConfirm.wait_confirm), F.voice)
 async def nlp_voice_detect(message: Message, state: FSMContext):
-    """Голосовое сообщение → транскрипция → NLP парсинг груза."""
+    """Голосовое сообщение → транскрипция → умный NLP парсинг (машина или груз)."""
     from src.core.ai import transcribe_voice
+    
     current = await state.get_state()
     if current is not None:
         await state.clear()
 
-    wait_msg = await message.answer("🎙 Распознаю...")
+    wait_msg = await message.answer("🎤 <i>Слушаю...</i>", parse_mode="HTML")
     try:
-        tg_file = await message.bot.get_file(message.voice.file_id)
-        bio = await message.bot.download_file(tg_file.file_path)
-        text = await transcribe_voice(bio.read())
+        from src.bot.bot import bot as _bot
+        file = await _bot.get_file(message.voice.file_id)
+        bio = await _bot.download_file(file.file_path)
+        file_bytes = bio.read()
+        text = await transcribe_voice(file_bytes)
     except Exception as e:
-        logger.error("voice error: %s", e)
-        await wait_msg.delete()
-        await message.answer("❌ Ошибка. Напиши текстом.")
+        logger.error("Voice transcription failed: %s", e)
+        await wait_msg.edit_text("Не удалось распознать голос.")
         return
 
-    await wait_msg.delete()
     if not text:
-        await message.answer("❌ Не распознал речь. Попробуй ещё раз.")
+        await wait_msg.edit_text("Не распознал текст.")
         return
 
-    logger.info("voice user=%s text=%r", message.from_user.id, text)
-    await message.answer(f"🎙 <i>{text}</i>", parse_mode="HTML")
-
-    import re as _re
-    if _re.search(r"(?i)\d+\s*(кг|т\b|тн\b|тонн)", text):
-        try:
-            parsed = await parse_cargo_nlp(text)
-        except Exception as e:
-            logger.error("voice nlp error: %s", e)
-            await message.answer("❌ Не удалось разобрать заявку.")
-            return
-        if not parsed:
-            await message.answer("Не удалось разобрать. Попробуй: «Самара Питер 10 тонн тент завтра»")
-            return
-
-        load_date_str = parsed.get("load_date", "")
-        if load_date_str:
-            from datetime import datetime as _dt
-            try:
-                load_date_str = _dt.strptime(load_date_str, "%Y-%m-%d").strftime("%d.%m.%Y")
-                if parsed.get("load_time"):
-                    load_date_str += f" в {parsed['load_time']}"
-            except Exception:
-                pass
-        else:
-            from datetime import datetime as _dt
-            load_date_str = _dt.now().strftime("%d.%m.%Y")
-            parsed.setdefault("load_date", _dt.now().strftime("%Y-%m-%d"))
-
-        price_line = f"{parsed['price']:,} ₽".replace(",", " ") if parsed.get("price") else "не указана"
-        reply = (
-            f"📦 <b>Распознал груз:</b>\n\n"
-            f"📍 {parsed.get('from_city', '?')} → {parsed.get('to_city', '?')}\n"
-            f"📦 {parsed.get('cargo_type', 'тент')}\n"
-            f"⚖️ {parsed.get('weight', '?')} т\n"
-            f"💰 {price_line}\n"
-            f"📅 {load_date_str}\n\n"
-            "Опубликовать?"
-        )
-        await state.set_state(CargoNLPConfirm.wait_confirm)
-        await state.update_data(nlp_parsed=parsed)
-        await message.answer(reply, parse_mode="HTML", reply_markup=_nlp_confirm_kb())
-    else:
-        await message.answer("Не нашёл вес. Скажи: «Самара Питер 10 тонн тент»")
-
-
-@router.message(StateFilter(None), F.text.regexp(r"(?is).*\d+(?:[.,]\d+)?\s*(кг|т\b|тн\b|тонн).*"))
-async def nlp_cargo_detect(message: Message, state: FSMContext):
-    """Detect free-text cargo descriptions and offer quick creation."""
-    logger.info("NLP handler called: user=%s text=%r", message.from_user.id, message.text)
+    await wait_msg.edit_text(f"🎤 <i>{text}</i>", parse_mode="HTML")
+    
+    # 1. Проверяем, не ищет ли человек грузы для свободной машины
+    from src.bot.handlers.trucks import _looks_like_truck_free_text_candidate, smart_truck_text
+    if _looks_like_truck_free_text_candidate(text):
+        await smart_truck_text(message, state, override_text=text)
+        return
+        
+    # 2. Если это не машина, пробуем распарсить как груз
     try:
-        parsed = await parse_cargo_nlp(message.text)
+        parsed = await parse_cargo_nlp(text)
     except Exception as e:
-        logger.error("parse_cargo_nlp error: %s", e, exc_info=True)
-        return
-    logger.info("NLP parsed: %s", parsed)
-    if not parsed:
+        logger.error("parse_cargo_nlp error: %s", e)
         return
 
+    if not parsed:
+        await message.answer("Не смог найти вес и маршрут. Скажите, например: «Самара Питер 10 тонн тент»")
+        return
+
+    # Подготавливаем карточку груза для публикации (старая логика)
     if not parsed.get("price"):
         try:
             from src.core.ai import estimate_price_smart
-
-            est = await estimate_price_smart(
-                parsed["from_city"], parsed["to_city"], parsed["weight"], parsed.get("cargo_type", "тент")
-            )
+            est = await estimate_price_smart(parsed["from_city"], parsed["to_city"], parsed["weight"], parsed.get("cargo_type", "тент"))
             if est.get("price"):
                 parsed["price"] = est["price"]
                 parsed["price_estimated"] = True
@@ -1545,53 +1522,28 @@ async def nlp_cargo_detect(message: Message, state: FSMContext):
     weight_display = parsed["weight"]
     if parsed.get("load_date"):
         from datetime import datetime as _dt
-
         load_date_str = _dt.strptime(parsed["load_date"], "%Y-%m-%d").strftime("%d.%m.%Y")
         if parsed.get("load_time"):
             load_date_str += f" в {parsed['load_time']}"
     else:
-        from datetime import datetime as _dt
+        load_date_str = "не указана"
 
-        load_date_str = _dt.now().strftime("%d.%m.%Y")
-        parsed.setdefault("load_date", _dt.now().strftime("%Y-%m-%d"))
-
-    price_line = f"{parsed['price']:,} ₽" if parsed.get("price") else "не указана"
-    if parsed.get("price_estimated"):
-        price_line += " (расчётная)"
-    urgent_line = "\n⚡ <b>СРОЧНО</b>" if parsed.get("is_urgent") else ""
-
-    ati_line = ""
-    try:
-        from src.services.ati_service import get_route_rate_cached
-        rate = await get_route_rate_cached(parsed["from_city"], parsed["to_city"])
-        if rate:
-            ati_line = f"\n📊 Рынок ATI: <b>{rate.price_rub:,} ₽</b> ({rate.loads_count} грузов)".replace(",", " ")
-            if parsed.get("price") and rate.price_rub:
-                delta = int(parsed["price"]) - rate.price_rub
-                if abs(delta) > 1000:
-                    sign = "+" if delta > 0 else "−"
-                    ati_line += f" → {sign}{abs(delta):,} ₽ от рынка".replace(",", " ")
-    except Exception as e:
-        logger.debug("ATI rate skipped in NLP: %s", e)
-
-    text = (
-        f"📦 <b>Распознал груз:</b>{urgent_line}\n\n"
-        f"📍 {parsed['from_city']} → {parsed['to_city']}\n"
-        f"📦 {parsed['cargo_type']}\n"
-        f"⚖️ {weight_display} т\n"
-        f"💰 {price_line}{ati_line}\n"
-        f"📅 {load_date_str}\n\n"
-        "Опубликовать?"
-    )
+    reply = "<b>📦 Распознал груз:</b>\n"
+    reply += f"📍 {parsed['from_city']} ➔ {parsed['to_city']}\n"
+    reply += f"📦 {parsed.get('cargo_type', 'тент')}\n"
+    reply += f"⚖️ {weight_display} т\n"
+    
+    if parsed.get("price"):
+        reply += f"💰 {parsed['price']}\n"
+    else:
+        reply += "💰 не указана\n"
+        
+    reply += f"📅 {load_date_str}\n\n"
+    reply += "Опубликовать?"
 
     await state.set_state(CargoNLPConfirm.wait_confirm)
-    await state.update_data(nlp_parsed=parsed)
-    try:
-        await message.answer(text, parse_mode="HTML", reply_markup=_nlp_confirm_kb())
-        logger.info("NLP reply sent to user=%s", message.from_user.id)
-    except Exception as e:
-        logger.error("NLP reply failed: %s", e, exc_info=True)
-
+    await state.update_data(parsed_cargo=parsed)
+    await message.answer(reply, parse_mode="HTML", reply_markup=_nlp_confirm_kb())
 
 @router.callback_query(F.data == "nlp_cargo_confirm")
 async def nlp_cargo_confirm(cb: CallbackQuery, state: FSMContext):

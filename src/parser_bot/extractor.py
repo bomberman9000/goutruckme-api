@@ -837,356 +837,33 @@ def _build_llm_system_prompt() -> str:
 
 
 def _extract_json(text: str) -> dict | None:
-    """Safely extract a JSON object from LLM output that may contain markdown."""
+    """Safely extract a JSON object from LLM output (removes markdown, <think>, etc.)."""
+    import re
     cleaned = text.strip()
-    if cleaned.startswith("```"):
-        lines = cleaned.splitlines()
-        lines = [line for line in lines if not line.strip().startswith("```")]
-        cleaned = "\n".join(lines).strip()
+    
+    if "<think>" in cleaned:
+        cleaned = re.sub(r'<think>.*?</think>', '', cleaned, flags=re.DOTALL).strip()
+        
+    cleaned = re.sub(r'^```[a-zA-Z]*\n?', '', cleaned)
+    cleaned = re.sub(r'\n?```$', '', cleaned)
+    
     start = cleaned.find("{")
     end = cleaned.rfind("}")
+    
     if start == -1 or end == -1 or end <= start:
         return None
+        
+    json_str = cleaned[start : end + 1]
+    
     try:
-        return json.loads(cleaned[start : end + 1])
-    except (json.JSONDecodeError, ValueError):
-        return None
-
-
-def _llm_result_to_parsed(
-    data: dict, raw_text: str, *, keywords: Iterable[str]
-) -> ParsedCargo | None:
-    from_city = _normalize_city(str(data.get("from_city") or "").strip())
-    to_city = _normalize_city(str(data.get("to_city") or "").strip())
-    invalid_city_markers = {
-        _city_key("нет данных"),
-        _city_key("не указано"),
-        _city_key("неизвестно"),
-        _city_key("unknown"),
-        _city_key("n/a"),
-        _city_key("none"),
-        _city_key("умная логистика"),
-        _city_key("этрн"),
-    }
-    from_city_key = _city_key(from_city)
-    to_city_key = _city_key(to_city)
-    if (
-        from_city_key in invalid_city_markers
-        or to_city_key in invalid_city_markers
-        or _is_invalid_city_name(from_city)
-        or _is_invalid_city_name(to_city)
-    ):
-        return None
-    if not from_city or not to_city:
-        return None
-
-    # Guardrail: if the message has no explicit route separator, verify both
-    # cities are still present in the raw text (full name or known alias).
-    if ROUTE_RE.search(raw_text) is None:
-        text_lc = raw_text.lower().replace("ё", "е")
-        from_markers = CITY_ALIAS_INDEX.get(from_city.lower(), {from_city.lower()})
-        to_markers = CITY_ALIAS_INDEX.get(to_city.lower(), {to_city.lower()})
-        if not any(marker in text_lc for marker in from_markers):
-            return None
-        if not any(marker in text_lc for marker in to_markers):
-            return None
-
-    body_type = (data.get("body_type") or "").strip().lower() or None
-    if body_type:
-        body_type = BODY_TYPES.get(body_type, body_type)
-
-    weight: float | None = None
-    if data.get("weight") is not None:
+        return json.loads(json_str)
+    except Exception as e:
         try:
-            weight = float(str(data["weight"]).replace(",", "."))
-        except (ValueError, TypeError):
-            pass
-
-    rate: int | None = None
-    if data.get("rate") is not None:
-        try:
-            raw_rate = str(data["rate"]).replace(" ", "").replace(",", ".")
-            rate = int(float(raw_rate))
-        except (ValueError, TypeError):
-            pass
-
-    load_date = (data.get("load_date") or "").strip() or None
-    load_time = (data.get("load_time") or "").strip() or None
-
-    cargo_description = (data.get("cargo_description") or "").strip() or None
-    payment_terms = (data.get("payment_terms") or "").strip() or None
-    dimensions = (data.get("dimensions") or "").strip() or None
-
-    is_direct_customer: bool | None = None
-    raw_direct = data.get("is_direct_customer")
-    if isinstance(raw_direct, bool):
-        is_direct_customer = raw_direct
-    elif isinstance(raw_direct, str):
-        is_direct_customer = raw_direct.strip().lower() in ("true", "1", "да")
-
-    phone: str | None = None
-    llm_phone = (data.get("phone") or "").strip()
-    if llm_phone:
-        digits = "".join(ch for ch in llm_phone if ch.isdigit())
-        if len(digits) >= 10:
-            phone = _normalize_phone(digits)
-    if not phone:
-        phone_match = PHONE_RE.search(raw_text)
-        phone = _normalize_phone(phone_match.group(0)) if phone_match else None
-
-    inn = _extract_inn(raw_text, phone=phone)
-
-    text_lc = raw_text.lower()
-    matched_keywords = _extract_matched_keywords(text_lc, keywords) or ["auto"]
-
-    if from_city == to_city and rate is None and weight is None:
-        return None
-
-    return ParsedCargo(
-        from_city=from_city,
-        to_city=to_city,
-        body_type=body_type,
-        rate_rub=rate,
-        weight_t=weight,
-        phone=phone,
-        inn=inn,
-        matched_keywords=matched_keywords,
-        raw_text=raw_text,
-        load_date=load_date,
-        load_time=load_time,
-        cargo_description=cargo_description,
-        payment_terms=payment_terms,
-        is_direct_customer=is_direct_customer,
-        dimensions=dimensions,
-    )
-
-
-def evaluate_hot_deal(parsed: ParsedCargo) -> bool:
-    """Check if the rate is above market average for the route.
-
-    Uses the local distance-based price estimator from ``src.core.geo``
-    to compare.  A deal is "hot" when the offered rate is >=15 % above
-    the average calculated price.
-    """
-    if not parsed.rate_rub or not parsed.weight_t:
-        return False
-    try:
-        from src.core.geo import city_coords, haversine_km
-
-        fc = city_coords(parsed.from_city)
-        tc = city_coords(parsed.to_city)
-        if not fc or not tc:
-            return False
-        distance = haversine_km(fc[0], fc[1], tc[0], tc[1])
-        if distance < 10:
-            return False
-        avg_rate_per_km = 35 + min(parsed.weight_t, 20) * 0.5
-        avg_price = int(distance * avg_rate_per_km)
-        return parsed.rate_rub >= avg_price * 1.15
-    except Exception:
-        return False
-
-
-async def _call_groq(system_prompt: str, user_text: str, api_key: str) -> str:
-    from groq import AsyncGroq
-
-    client = AsyncGroq(api_key=api_key)
-    response = await client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_text},
-        ],
-        max_tokens=400,
-        temperature=0,
-    )
-    return response.choices[0].message.content.strip()
-
-
-async def _call_openai(
-    system_prompt: str,
-    user_text: str,
-    api_key: str,
-    model: str,
-) -> str:
-    import httpx
-
-    async with httpx.AsyncClient(timeout=30) as http:
-        resp = await http.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_text},
-                ],
-                "max_tokens": 400,
-                "temperature": 0,
-            },
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    return data["choices"][0]["message"]["content"].strip()
-
-
-_CARGO_SIGNAL_RE = re.compile(
-    r"(?:"
-    r"\d+\s*т(?:онн)?"                    # weight: 20т, 20 тонн
-    r"|руб|₽|\d+\s*к\b|\d+\s*тыс"        # price: 120к, 50 тыс, руб
-    r"|(?:->|→|—|–)\s*[А-Яа-я]"          # route arrow: -> Москва
-    r"|[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ]{3,20}-[A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ]{3,20}"  # compact route
-    r"|тент|реф|трал|борт|фура|контейнер" # vehicle types
-    r"|tent|ref|fura"                    # translit vehicle types
-    r"|погруз|выгруз|догруз|фрахт"        # logistics terms
-    r"|yuk|yuklan|naqd|nakd|товар"        # translit logistics/payment words
-    r"|ндс|предоплат|безнал"              # payment terms
-    r"|(?:\+7|^8\d{10}|\+998\d{9})"       # phone patterns
-    r")",
-    re.IGNORECASE,
-)
-
-_INVALID_GEO_TOKEN_RE = re.compile(
-    r"\b(?:оплата|оптала|нал|без\s+нала|перечис(?:ление|л)?|растаможка|растоможка|верхняя|боковая)\b",
-    re.IGNORECASE,
-)
-
-_MIN_CARGO_TEXT_LEN = 15
-_ZERO_WIDTH_RE = re.compile(r"[\u200b\u200c\u200d\ufeff]")
-
-
-def looks_like_cargo(text: str) -> bool:
-    """Lightweight pre-filter: True if the text likely contains cargo info.
-
-    Checks for logistics signal words (weight, price, vehicle types,
-    route arrows, phone patterns) without calling the LLM.  Messages
-    like "Привет всем" or "Обедаем" are skipped, saving API costs.
-    """
-    if len(text) < _MIN_CARGO_TEXT_LEN:
-        return False
-    return bool(_CARGO_SIGNAL_RE.search(text))
-
-
-def contains_invalid_geo_token(text: str) -> bool:
-    return bool(_INVALID_GEO_TOKEN_RE.search(text or ""))
-
-
-def _extract_standalone_city(line: str) -> str | None:
-    candidate = _ZERO_WIDTH_RE.sub("", (line or "")).strip()
-    if not candidate:
-        return None
-
-    if _parse_route(candidate)[0]:
-        return None
-
-    candidate = re.sub(r"[\U0001F1E6-\U0001F1FF]", "", candidate)
-    candidate = re.sub(r"[^0-9A-Za-zА-Яа-яЁёҚқҒғЎўҲҳҮүҰұ'’ʻ`\-\s]", " ", candidate)
-    candidate = re.sub(r"\s+", " ", candidate).strip()
-    if not candidate or re.search(r"\d", candidate):
-        return None
-
-    words = [word for word in candidate.split() if word]
-    while words and words[0].lower() in _STACKED_ROUTE_PREFIX_TOKENS:
-        words.pop(0)
-    if not words:
-        return None
-    if any(word.lower() in _STACKED_ROUTE_STOP_TOKENS for word in words):
-        return None
-
-    joined = " ".join(words)
-    joined_key = _city_key(joined)
-    if joined_key in _STACKED_ROUTE_KEEP_MULTIWORD_KEYS or joined_key in CITY_ALIASES:
-        city = _normalize_city(joined)
-    elif len(words) >= 3:
-        last_two = " ".join(words[-2:])
-        last_two_key = _city_key(last_two)
-        city = _normalize_city(last_two) if last_two_key in CITY_ALIASES else _normalize_city(words[-1])
-    elif len(words) == 2:
-        city = _normalize_city(words[-1])
-    else:
-        city = _normalize_city(words[0])
-
-    if not city or _is_invalid_city_name(city):
-        return None
-    return city
-
-
-def split_cargo_message_blocks(text: str) -> list[str]:
-    clean_text = _ZERO_WIDTH_RE.sub("", (text or "")).strip()
-    if not clean_text:
-        return []
-
-    lines = [line.strip() for line in clean_text.splitlines() if line.strip()]
-    if len(lines) <= 1:
-        return [clean_text]
-
-    blocks: list[str] = []
-    current: list[str] = []
-    current_has_route = False
-
-    for line in lines:
-        line_has_route = _parse_route(line)[0] is not None
-        if current and line_has_route and current_has_route:
-            blocks.append("\n".join(current).strip())
-            current = [line]
-            current_has_route = True
-            continue
-
-        current.append(line)
-        current_has_route = current_has_route or line_has_route
-
-    if current:
-        blocks.append("\n".join(current).strip())
-
-    normalized_blocks = [block for block in blocks if block]
-    expanded_blocks: list[str] = []
-
-    for block in normalized_blocks or [clean_text]:
-        block_lines = [line.strip() for line in block.splitlines() if line.strip()]
-        if len(block_lines) < 2:
-            expanded_blocks.append(block)
-            continue
-
-        explicit_route_lines = sum(1 for line in block_lines if _parse_route(line)[0])
-        if explicit_route_lines:
-            expanded_blocks.append(block)
-            continue
-
-        origin = _extract_standalone_city(block_lines[0])
-        if not origin:
-            expanded_blocks.append(block)
-            continue
-
-        destinations: list[str] = []
-        details_start = 1
-        for idx, line in enumerate(block_lines[1:], start=1):
-            city = _extract_standalone_city(line)
-            if city:
-                destinations.append(city)
-                details_start = idx + 1
-                continue
-            details_start = idx
-            break
-
-        if not destinations:
-            expanded_blocks.append(block)
-            continue
-
-        detail_lines = block_lines[details_start:]
-        common_tail = "\n".join(detail_lines).strip()
-        for destination in destinations:
-            synthetic = f"{origin} - {destination}"
-            if common_tail:
-                synthetic = f"{synthetic}\n{common_tail}"
-            expanded_blocks.append(synthetic)
-
-    if len(expanded_blocks) <= 1:
-        return [clean_text]
-    return expanded_blocks
-
+            # Fix unescaped newlines inside JSON strings
+            fixed_str = json_str.replace('\n', ' ')
+            return json.loads(fixed_str)
+        except Exception:
+            return None
 
 async def parse_cargo_message_llm(
     text: str, *, keywords: Iterable[str]
@@ -1215,22 +892,26 @@ async def parse_cargo_message_llm(
 
     from src.core.config import settings
 
-    has_groq = bool(getattr(settings, "groq_api_key", None))
+    gemini_key = getattr(settings, "gemini_api_key", None)
     has_openai = bool(getattr(settings, "openai_api_key", None))
+    has_groq = bool(getattr(settings, "groq_api_key", None))
 
-    if not has_groq and not has_openai:
+    if not gemini_key and not has_openai and not has_groq:
         return parse_cargo_message(clean_text, keywords=keywords)
 
     try:
         system_prompt = _build_llm_system_prompt()
 
-        if has_openai:
+        if gemini_key:
+            gemini_model = getattr(settings, "gemini_model", None) or "gemini-2.0-flash"
+            llm_output = await _call_gemini(
+                system_prompt, clean_text, gemini_key, gemini_model
+            )
+            provider = f"gemini/{gemini_model}"
+        elif has_openai:
             openai_model = getattr(settings, "openai_model", None) or "gpt-4o-mini"
             llm_output = await _call_openai(
-                system_prompt,
-                clean_text,
-                settings.openai_api_key,
-                openai_model,
+                system_prompt, clean_text, settings.openai_api_key, openai_model
             )
             provider = f"openai/{openai_model}"
         else:
