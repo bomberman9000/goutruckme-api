@@ -365,10 +365,12 @@ async def render_cargo_card(session, cargo: Cargo, viewer_id: int) -> tuple[str,
     is_owner = cargo.owner_id == viewer_id
     is_carrier = cargo.carrier_id == viewer_id if cargo.carrier_id else False
     is_participant = is_owner or is_carrier
-    can_show_contacts = is_participant and cargo.status in {CargoStatus.IN_PROGRESS, CargoStatus.COMPLETED}
+    is_parsed = cargo.source_platform and cargo.source_platform not in {"manual", "tg-bot"}
+    can_show_contacts = is_parsed or (is_participant and cargo.status in {CargoStatus.IN_PROGRESS, CargoStatus.COMPLETED})
 
-    if owner:
-        text += f"\n👤 Заказчик: {owner.full_name if owner.full_name else owner.id}"
+    if owner and not is_parsed:
+        _owner_display = ("@" + owner.username) if owner.username else (owner.full_name or str(owner.id))
+        text += f"\n👤 Выложил: {_owner_display}"
         if owner_company:
             rating = owner_company.total_rating
             stars = "⭐" * rating + "☆" * (10 - rating)
@@ -382,7 +384,8 @@ async def render_cargo_card(session, cargo: Cargo, viewer_id: int) -> tuple[str,
             stars_old = "⭐" * round(avg_rating) if avg_rating else "нет оценок"
             text += f"\n⭐ Оценки: {stars_old} ({rating_count or 0})"
             text += f"\n🛡 Верификация: {_verification_label(owner_profile)}"
-            text += "\n📵 Контакты скрыты до начала сделки"
+            if not is_parsed:
+                text += "\n📵 Контакты скрыты до начала сделки"
 
     owner_company_id = owner_company.id if owner_company else None
     can_bump = is_owner and cargo.status in {CargoStatus.NEW, CargoStatus.ACTIVE} and _is_premium_active(owner)
@@ -428,7 +431,8 @@ async def send_cargo_details(message: Message, cargo_id: int) -> bool:
     is_owner = cargo.owner_id == message.from_user.id
     is_carrier = cargo.carrier_id == message.from_user.id if cargo.carrier_id else False
     is_participant = is_owner or is_carrier
-    can_show_contacts = is_participant and cargo.status in {CargoStatus.IN_PROGRESS, CargoStatus.COMPLETED}
+    is_parsed = cargo.source_platform and cargo.source_platform not in {"manual", "tg-bot"}
+    can_show_contacts = is_parsed or (is_participant and cargo.status in {CargoStatus.IN_PROGRESS, CargoStatus.COMPLETED})
 
     text = f"📦 <b>Груз #{cargo.id}</b>\n\n"
     text += f"📍 {cargo.from_city} → {cargo.to_city}\n"
@@ -444,8 +448,11 @@ async def send_cargo_details(message: Message, cargo_id: int) -> bool:
     if cargo.comment:
         text += f"💬 {cargo.comment}\n"
 
-    owner_name = owner.full_name if owner else "N/A"
-    text += f"\n👤 Заказчик: {owner_name}"
+    if owner and not is_parsed:
+        owner_display = ("@" + owner.username) if owner.username else (owner.full_name or str(owner.id))
+    else:
+        owner_display = "N/A"
+    text += f"\n👤 Выложил: {owner_display}"
 
     if owner_company:
         rating = owner_company.total_rating
@@ -465,7 +472,8 @@ async def send_cargo_details(message: Message, cargo_id: int) -> bool:
         stars = "⭐" * round(avg_rating) if avg_rating else "нет оценок"
         text += f"\n⭐ Оценки: {stars} ({rating_count or 0})"
         text += f"\n🛡 Верификация: {_verification_label(owner_profile)}"
-        text += "\n📞 Контакты доступны только участникам сделки"
+        if not is_parsed:
+            text += "\n📞 Контакты доступны только участникам сделки"
 
     if cargo.status == CargoStatus.IN_PROGRESS and is_participant:
         text += "\n\n🗺 Трекинг доступен в меню сделки"
@@ -1686,17 +1694,33 @@ async def respond_cargo(cb: CallbackQuery):
         cargo = await session.execute(select(Cargo).where(Cargo.id == cargo_id))
         cargo = cargo.scalar_one_or_none()
 
+        owner = None
+        owner_contact = None
         if cargo:
             link = cargo_deeplink(cargo_id)
+            carrier_user = await session.get(User, cb.from_user.id)
+            if carrier_user and carrier_user.username:
+                carrier_contact = "@" + carrier_user.username
+            elif carrier_user and carrier_user.phone:
+                carrier_contact = carrier_user.phone
+            else:
+                carrier_contact = cb.from_user.full_name
             try:
                 await bot.send_message(
                     cargo.owner_id,
-                    f"📞 Новый отклик на груз #{cargo_id}!\n{link}"
+                    f"✉️ Новый отклик на груз #{cargo_id}!\nПеревозчик: {carrier_contact}\n{link}"
                 )
-            except:
+            except Exception:
                 pass
+            owner = await session.get(User, cargo.owner_id)
+            if owner and not is_parsed:
+                owner_contact = ("@" + owner.username) if owner.username else owner.phone
 
     await cb.answer("✅ Отклик отправлен!", show_alert=True)
+    if owner_contact:
+        await cb.message.answer(
+            f"✅ Отклик отправлен #{cargo_id}!\n📞 Контакт заказчика: {owner_contact}\nЗаказчик получил уведомление — ожидай связи."
+        )
     logger.info(f"Response from {cb.from_user.id} to cargo {cargo_id}")
 
 

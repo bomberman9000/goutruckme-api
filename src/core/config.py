@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379"
     database_url: str
     admin_id: int | None = None
-    admin_chat_id: int | None = None
+    watchdog_alert_chat_id: int | None = None
     debug: bool = False
 
     # Admin panel
@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     groq_api_key: str | None = None
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.0-flash-lite"
+
+    # OpenRouter (Kimi)
+    openrouter_api_key: str = ""
+    openrouter_model: str = "moonshotai/kimi-k2"
 
     # Hybrid AI router
     local_ollama_url: str = "http://localhost:11434"
@@ -54,6 +60,9 @@ class Settings(BaseSettings):
     )
     antifraud_strict_mode: bool = True
     antifraud_docs_enable: bool = True
+
+    # SMS.ru
+    sms_ru_api_key: str = ""
 
     # Cross-service sync
     internal_token: str = ""
@@ -121,7 +130,6 @@ class Settings(BaseSettings):
     parser_rate_recheck_with_llm: bool = False
 
     # Parser scoring
-    parser_russia_only: bool = False
     parser_score_min_trust: int = 40
     parser_scoring_enable_ai: bool = False
     parser_scoring_ai_model: str = ""
@@ -129,11 +137,14 @@ class Settings(BaseSettings):
     dadata_api_url: str = "https://suggestions.dadata.ru/suggestions/api/4_1/rs/findById/party"
     dadata_api_token: str = ""
 
+    # YooKassa
+    yookassa_shop_id: str = ""
+    yookassa_secret_key: str = ""
+
     # Premium (Telegram Stars)
     premium_stars_7d: int = 700
     premium_stars_30d: int = 2400
     truck_contact_unlock_stars: int = 190
-    cargo_contact_unlock_stars: int = 99
     referral_reward_days: int = 7
     referral_invited_reward_days: int = 3
     referral_ambassador_threshold: int = 10
@@ -152,18 +163,23 @@ class Settings(BaseSettings):
     escrow_provider: str = "mock"
     escrow_platform_fee_percent: float = 2.0
     escrow_fast_payout_fee_percent: float = 0.5
-    tochka_client_id: str = ""
+    tochka_client_id: str = ""      # ID из ЛК Точки
+    tochka_api_token: str = ""      # статический токен из ЛК Точки
+    tochka_base_url: str = "https://enter.tochka.com/uapi"
+    tochka_webhook_secret: str = ""
+    # legacy (не используется если есть tochka_api_token)
     tochka_client_secret: str = ""
-    tochka_base_url: str = "https://enter.tochka.com/api/v2"
+    tochka_token_url: str = "https://enter.tochka.com/connect/token"
+    tochka_customer_code: str = ""
 
-    @field_validator("admin_id", "parser_tg_api_id", "parser_default_user_id", mode="before")
+    @field_validator("admin_id", "watchdog_alert_chat_id", "parser_tg_api_id", "parser_default_user_id", mode="before")
     @classmethod
     def _empty_str_to_none_for_optional_ints(cls, value):
         if value == "":
             return None
         return value
 
-    @field_validator("groq_api_key", "openai_api_key", mode="before")
+    @field_validator("groq_api_key", "openai_api_key", "gemini_api_key", mode="before")
     @classmethod
     def _empty_str_to_none_for_optional_strs(cls, value):
         if value == "":
