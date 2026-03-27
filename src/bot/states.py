@@ -107,3 +107,20 @@ class AddTruck(StatesGroup):
     location_city = State()
     plate_number  = State()
     confirm       = State()
+
+
+class CargoTracking(StatesGroup):
+    wait_ttn_photo = State()
+
+
+class AIAssistant(StatesGroup):
+    choose_mode = State()
+    wait_text   = State()
+
+
+class VehicleIntake(StatesGroup):
+    choose_mode      = State()
+    wait_text        = State()
+    wait_sts_photo   = State()
+    wait_truck_photo = State()
+    confirm_parsed   = State()

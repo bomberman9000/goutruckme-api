@@ -41,6 +41,7 @@ def main_menu():
         InlineKeyboardButton(text="🚛 Мои машины", callback_data="my_trucks"),
         InlineKeyboardButton(text="🤖 AI-логист", callback_data="ai_assist"),
     )
+    b.row(InlineKeyboardButton(text="🚚 Добавить машину", callback_data="add_truck_smart"))
     b.row(
         InlineKeyboardButton(text="⭐ Кабинет", callback_data="profile"),
         InlineKeyboardButton(text="🆘 Поддержка", callback_data="feedback"),
@@ -267,6 +268,7 @@ def body_type_kb():
 def trucks_menu():
     b = InlineKeyboardBuilder()
     b.row(InlineKeyboardButton(text="➕ Добавить машину", callback_data="add_truck"))
+    b.row(InlineKeyboardButton(text="🚚 Добавить (умный ввод)", callback_data="add_truck_smart"))
     b.row(InlineKeyboardButton(text="🚛 Мои машины", callback_data="my_trucks"))
     b.row(InlineKeyboardButton(text="◀️ Меню", callback_data="menu"))
     return b.as_markup()
@@ -389,6 +391,17 @@ def site_cargo_button(cargo_id: int, site_action_link: str | None = None):
     )
 
 
+def respond_cargo_button(cargo_id: int):
+    """Inline button to open respond form in Mini App."""
+    url = _webapp_url(f"#respond/{cargo_id}")
+    if not url:
+        return None
+    return InlineKeyboardButton(
+        text="✉️ Откликнуться",
+        web_app=WebAppInfo(url=url),
+    )
+
+
 def cargo_open_rows(cargo_id: int, site_action_link: str | None = None) -> list[list[InlineKeyboardButton]]:
     from src.bot.utils import cargo_deeplink
 
@@ -406,6 +419,11 @@ def cargo_open_rows(cargo_id: int, site_action_link: str | None = None) -> list[
     wa_btn = webapp_cargo_button(cargo_id)
     if wa_btn:
         rows.append([wa_btn])
+
+    respond_btn = respond_cargo_button(cargo_id)
+    if respond_btn:
+        rows.append([respond_btn])
+
     return rows
 
 

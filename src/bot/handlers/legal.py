@@ -5,7 +5,10 @@ from aiogram.filters import Command
 
 from src.bot.states import LegalCheck
 from src.bot.keyboards import back_menu
-from src.core.services.legal_check import full_legal_check, format_legal_check
+from src.core.services.legal_check import (
+    full_legal_check, format_legal_check,
+    full_legal_check_pro, format_legal_check_pro,
+)
 from src.core.logger import logger
 
 router = Router()
@@ -18,7 +21,7 @@ async def cmd_check(message: Message, state: FSMContext):
 
     if len(parts) > 1:
         inn = parts[1].strip()
-        await do_check(message, inn)
+        await do_check(message, inn, user_id=message.from_user.id)
     else:
         await message.answer(
             "🔍 <b>Проверка контрагента</b>\n\n"
@@ -46,19 +49,40 @@ async def process_inn(message: Message, state: FSMContext):
         return
 
     await state.clear()
-    await do_check(message, inn)
+    await do_check(message, inn, user_id=message.from_user.id)
 
 
-async def do_check(message: Message, inn: str):
+async def do_check(message: Message, inn: str, user_id: int | None = None):
     """Выполняет проверку по ИНН и отправляет результат."""
+    from src.services.ai_limits import is_premium_user
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+    is_pro = await is_premium_user(user_id) if user_id else False
+
     msg = await message.answer(
-        "⏳ Проверяю контрагента...\n\nЭто займёт 10–30 секунд"
+        "⏳ Проверяю контрагента...\n\n"
+        + ("🔍 Расширенная проверка (Pro)..." if is_pro else "Это займёт 10–30 секунд")
     )
 
     try:
-        result = await full_legal_check(inn)
-        text = format_legal_check(result)
-        await msg.edit_text(text, reply_markup=back_menu())
+        if is_pro:
+            result = await full_legal_check_pro(inn)
+            text = format_legal_check_pro(result)
+        else:
+            result = await full_legal_check(inn)
+            text = format_legal_check(result)
+            text += (
+                "\n\n💎 <b>Светофор Pro</b> — учредители, РНП ФАС, реестр залогов "
+                "и детали арбитража доступны в подписке."
+            )
+
+        kb = back_menu()
+        if not is_pro:
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💎 Получить Pro", callback_data="show_premium")],
+                *back_menu().inline_keyboard,
+            ])
+        await msg.edit_text(text, reply_markup=kb, parse_mode="HTML")
     except Exception as e:
         logger.exception("Legal check error")
         await msg.edit_text(
@@ -90,4 +114,4 @@ async def check_company_by_id(cb: CallbackQuery):
         inn = company.inn
 
     await cb.answer("⏳ Проверяю...")
-    await do_check(cb.message, inn)
+    await do_check(cb.message, inn, user_id=cb.from_user.id)
