@@ -1,3 +1,18 @@
+import os as _os
+_sentry_dsn = _os.getenv("SENTRY_DSN", "")
+if _sentry_dsn:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.aiohttp import AioHttpIntegration
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        integrations=[FastApiIntegration(), AioHttpIntegration()],
+        traces_sample_rate=0.05,
+        environment=_os.getenv("APP_ENV", "production"),
+        release="goutruckme-bot@sprint4",
+        send_default_pii=False,
+    )
+
 from pathlib import Path
 import asyncio
 import os
@@ -32,10 +47,13 @@ async def lifespan(app: FastAPI):
     from src.bot.handlers.chat import router as chat_router
     from src.bot.handlers.antifraud import router as antifraud_router
     from src.bot.handlers.geolocation import router as geolocation_router
+    from src.bot.handlers.driver_tracking import router as driver_tracking_router
     from src.bot.handlers.inline import router as inline_router
     from src.bot.handlers.claims import router as claims_router
     from src.bot.handlers.legal import router as legal_router
-    from src.bot.handlers.trucks import router as trucks_router
+    from src.bot.handlers.add_truck import router as add_truck_router
+    from src.bot.handlers.ai_assistant import router as ai_assistant_router
+    from src.bot.handlers.vehicle_intake import router as vehicle_intake_router
     from src.bot.middlewares.logging import LoggingMiddleware
     from src.bot.middlewares.watchdog import WatchdogMiddleware
     from src.core.services.watchdog import watchdog_loop
@@ -103,6 +121,7 @@ async def lifespan(app: FastAPI):
     dp.include_router(chat_router)
     dp.include_router(antifraud_router)
     dp.include_router(geolocation_router)
+    dp.include_router(driver_tracking_router)
     dp.include_router(claims_router)
     dp.include_router(legal_router)
     dp.include_router(verification_router)
@@ -111,12 +130,26 @@ async def lifespan(app: FastAPI):
     dp.include_router(reminder_router)
     dp.include_router(payments_router)
     dp.include_router(referral_router)
-    from src.bot.handlers.moderator import router as moderator_router
-    dp.include_router(moderator_router)  # group auto-moderation
-    from src.bot.handlers.add_truck import router as add_truck_router
     dp.include_router(add_truck_router)
-    from src.bot.handlers.ai_nlu import router as ai_nlu_router
-    dp.include_router(ai_nlu_router)  # LAST — catch-all NLU
+    dp.include_router(ai_assistant_router)
+    dp.include_router(vehicle_intake_router)
+
+    # Register bot commands menu
+    try:
+        from aiogram.types import BotCommand
+        await bot.set_my_commands([
+            BotCommand(command="start",    description="Главное меню"),
+            BotCommand(command="ai",       description="🤖 AI-ассистент (логист, цена, антифрод, документ)"),
+            BotCommand(command="add_cargo", description="Разместить груз"),
+            BotCommand(command="search",   description="Найти груз"),
+            BotCommand(command="my_cargos", description="Мои грузы"),
+            BotCommand(command="profile",  description="Профиль"),
+            BotCommand(command="go_online", description="🟢 Выйти на линию (GPS-трекинг)"),
+            BotCommand(command="cancel",   description="Отмена"),
+        ])
+        logger.info("Bot commands registered")
+    except Exception as e:
+        logger.warning("set_my_commands failed: %s", e)
 
     polling_task = None
     if BOT_POLLING_ENABLED:
@@ -164,7 +197,6 @@ from src.api.feed import router as feed_router
 from src.api.antifraud import router as antifraud_api_router
 from src.api.antifraud_admin import router as antifraud_admin_api_router
 from src.api.internal import router as internal_api_router
-from src.api.live_tracking import router as live_tracking_router
 from src.api.export import router as export_router
 from src.api.analytics import router as analytics_router
 from src.api.ws_feed import router as ws_feed_router
@@ -172,6 +204,7 @@ from src.api.favorites import router as favorites_router
 from src.api.bridge import router as bridge_router
 from src.api.company import router as company_router
 from src.api.fleet import router as fleet_router
+from src.api.trucks import router as trucks_router
 from src.api.cargos import router as cargos_router
 from src.api.admin_stats import router as admin_stats_router
 from src.api.docs_gen import router as docs_gen_router
@@ -182,6 +215,7 @@ from src.api.subscriptions import router as subscriptions_router
 from src.api.escrow import router as escrow_router
 from src.api.geo import router as geo_router
 from src.api.match import router as match_router
+from src.api.billing import router as billing_router
 from src.core.ai_diag import explain_health
 from src.core.services.watchdog import watchdog
 
@@ -196,6 +230,7 @@ app.include_router(favorites_router)
 app.include_router(bridge_router)
 app.include_router(company_router)
 app.include_router(fleet_router)
+app.include_router(trucks_router)
 app.include_router(cargos_router)
 app.include_router(admin_stats_router)
 app.include_router(docs_gen_router)
@@ -206,10 +241,10 @@ app.include_router(subscriptions_router)
 app.include_router(escrow_router)
 app.include_router(geo_router)
 app.include_router(match_router)
+app.include_router(billing_router)
 app.include_router(antifraud_api_router)
 app.include_router(antifraud_admin_api_router)
 app.include_router(internal_api_router)
-app.include_router(live_tracking_router)
 
 
 @app.get("/health")
@@ -287,6 +322,16 @@ async def root(request: Request):
     if "text/html" in accept:
         return RedirectResponse(url="/webapp", status_code=302)
     return {"message": "Logistics Bot API", "admin": "/admin", "webapp": "/webapp"}
+
+@app.get("/requisites", include_in_schema=False)
+async def serve_requisites():
+    from fastapi.responses import FileResponse as _FR
+    return _FR("requisites.html", media_type="text/html", headers={"Cache-Control": "public, max-age=3600"})
+
+@app.get("/oferta", include_in_schema=False)
+async def serve_oferta():
+    from fastapi.responses import FileResponse as _FR
+    return _FR("oferta.html", media_type="text/html", headers={"Cache-Control": "public, max-age=3600"})
 
 if __name__ == "__main__":
     import uvicorn

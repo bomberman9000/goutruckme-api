@@ -16,7 +16,7 @@ WORKDIR /app
 RUN pip install uv
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+RUN uv add sentry-sdk && uv sync --no-dev
 
 # Чтобы exec python/uvicorn видел зависимости (не только uv run)
 ENV PATH="/app/.venv/bin:$PATH"

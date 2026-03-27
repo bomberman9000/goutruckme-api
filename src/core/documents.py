@@ -15,8 +15,8 @@ import re
 logger = logging.getLogger(__name__)
 
 # Фактические имена шрифтов для PDF заявок (после _register_application_fonts: DejaVu или Helvetica fallback)
-_APP_FONT_REGULAR = "DejaVuSans"
-_APP_FONT_BOLD = "DejaVuSans-Bold"
+_APP_FONT_REGULAR = "Roboto"
+_APP_FONT_BOLD = "Roboto-Bold"
 
 def _find_font_path(name: str) -> str | None:
     """Ищет .ttf в проекте, в reportlab, в системе."""
@@ -43,30 +43,37 @@ def _find_font_path(name: str) -> str | None:
     return None
 
 def _register_application_fonts() -> None:
-    """Регистрирует DejaVuSans (или fallback на Helvetica). Bold при отсутствии = regular. Не падать при отсутствии шрифтов."""
+    """Регистрирует Roboto для PDF (с fallback на DejaVuSans или Helvetica)."""
     global _APP_FONT_REGULAR, _APP_FONT_BOLD
     try:
-        if pdfmetrics.getFont(_APP_FONT_REGULAR):
+        if pdfmetrics.getFont("Roboto"):
             return
     except Exception:
         pass
-    path_reg = _find_font_path("DejaVuSans")
-    path_bold = _find_font_path("DejaVuSans-Bold")
-    if not path_reg:
+    font_dir = os.path.join(os.path.dirname(__file__), "fonts")
+    candidates = [
+        ("Roboto", os.path.join(font_dir, "Roboto-Regular.ttf")),
+        ("Roboto-Bold", os.path.join(font_dir, "Roboto-Bold.ttf")),
+    ]
+    fallbacks = [
+        ("Roboto", os.path.join(font_dir, "DejaVuSans.ttf")),
+        ("Roboto-Bold", os.path.join(font_dir, "DejaVuSans-Bold.ttf")),
+        ("Roboto", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        ("Roboto-Bold", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+    ]
+    paths = candidates if os.path.isfile(candidates[0][1]) else fallbacks
+    reg_path = next((p for _, p in paths if "Regular" in p or "Sans.ttf" in p), None) or paths[0][1]
+    bold_path = next((p for _, p in paths if "Bold" in p), None) or reg_path
+    if os.path.isfile(reg_path):
+        pdfmetrics.registerFont(TTFont("Roboto", reg_path))
+        pdfmetrics.registerFont(TTFont("Roboto-Bold", bold_path if os.path.isfile(bold_path) else reg_path))
+        _APP_FONT_REGULAR = "Roboto"
+        _APP_FONT_BOLD = "Roboto-Bold"
+    else:
         _APP_FONT_REGULAR = "Helvetica"
         _APP_FONT_BOLD = "Helvetica-Bold"
-        logger.warning(
-            "DejaVuSans.ttf не найден, используется Helvetica — кириллица в PDF заявок может отображаться некорректно. "
-            "Добавьте src/core/fonts/DejaVuSans.ttf или установите пакет dejavu-fonts."
-        )
-        return
-    pdfmetrics.registerFont(TTFont("DejaVuSans", path_reg))
-    if path_bold:
-        pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", path_bold))
-    else:
-        pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", path_reg))
-    _APP_FONT_REGULAR = "DejaVuSans"
-    _APP_FONT_BOLD = "DejaVuSans-Bold"
+        logger.warning("Roboto.ttf не найден, используется Helvetica.")
+
 
 # A4 portrait, margins in mm
 MM_PT = 2.834645669

@@ -59,9 +59,6 @@ class UserProfile(Base):
         Enum(VerificationStatus), default=VerificationStatus.BASIC
     )
     verification_doc_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    driver_license_file_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    sts_file_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    driver_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -105,9 +102,6 @@ class Cargo(Base):
     load_date: Mapped[datetime] = mapped_column(DateTime)
     load_time: Mapped[str | None] = mapped_column(String(10), nullable=True)  # формат "HH:MM"
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
-    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    photo_file_id: Mapped[str | None] = mapped_column(Text, nullable=True)
-    photo_approved: Mapped[bool] = mapped_column(Boolean, default=False)
     external_url: Mapped[str | None] = mapped_column(String(500), nullable=True, index=True)
     source_platform: Mapped[str] = mapped_column(String(64), default="manual", index=True)
 
@@ -119,7 +113,6 @@ class Cargo(Base):
         default=CargoPaymentStatus.UNSECURED,
     )
     payment_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    pickup_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -772,29 +765,6 @@ class TruckContactUnlock(Base):
     )
 
 
-
-class CargoContactUnlock(Base):
-    """Разовая оплата для просмотра телефона грузовладельца."""
-    __tablename__ = "cargo_contact_unlocks"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(BigInteger)
-    cargo_id: Mapped[int] = mapped_column(Integer, ForeignKey("cargos.id"))
-    amount_stars: Mapped[int] = mapped_column(Integer, default=0)
-    currency: Mapped[str] = mapped_column(String(10), default="XTR")
-    status: Mapped[str] = mapped_column(String(20), default="success")
-    invoice_payload: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    telegram_payment_charge_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    provider_payment_charge_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    __table_args__ = (
-        UniqueConstraint("user_id", "cargo_id", name="uq_cargo_contact_unlock_user_cargo"),
-        Index("ix_cargo_contact_unlocks_user", "user_id"),
-        Index("ix_cargo_contact_unlocks_cargo", "cargo_id"),
-        Index("ix_cargo_contact_unlocks_created", "created_at"),
-    )
-
 class ReferralInvite(Base):
     __tablename__ = "referral_invites"
 
@@ -880,3 +850,20 @@ class AdminAction(Base):
         Index("ix_admin_actions_action", "action"),
         Index("ix_admin_actions_ts", "timestamp"),
     )
+
+
+class DriverTracking(Base):
+    """Live GPS tracking for drivers who opted in via bot."""
+    __tablename__ = "driver_tracking"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # active = shared live location; inactive = stopped or consent withdrawn
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    live_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
