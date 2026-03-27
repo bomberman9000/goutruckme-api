@@ -427,7 +427,7 @@ def cargo_open_rows(cargo_id: int, site_action_link: str | None = None) -> list[
     if respond_btn:
         rows.append([respond_btn])
 
-    rows.append([InlineKeyboardButton(text=u25c0ufe0f u041cu0435u043du044e, callback_data=menu)])
+    rows.append([InlineKeyboardButton(text="◀️ Меню", callback_data="menu")])
 
     return rows
 
