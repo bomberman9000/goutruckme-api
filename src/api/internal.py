@@ -8,20 +8,12 @@ from fastapi import APIRouter, Header, HTTPException
 from sqlalchemy import or_, select
 
 from src.bot.bot import bot
+from src.bot.keyboards import cargo_open_rows
 from src.core.config import settings
 from src.core.database import async_session
 from src.core.logger import logger
 from src.core.models import Cargo, CargoPaymentStatus, CargoStatus, RouteSubscription, UserVehicle
 from src.core.schemas.sync import BotInternalEvent, InternalNotifyUserRequest, SharedSyncEvent
-
-
-def _cargo_bot_link(cargo_id: int) -> str:
-    """Deeplink на карточку груза в боте."""
-    username = (settings.bot_username or "").lstrip("@").strip()
-    if username:
-        return f"https://t.me/{username}?start=cargo_{cargo_id}"
-    return ""
-
 
 
 router = APIRouter(tags=["internal"])
@@ -43,25 +35,22 @@ def _require_internal_token(x_internal_token: str | None) -> None:
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
-
 def _build_cargo_notify_kb(
     cargo_id: int | None,
     external_url: str | None,
+    *,
+    site_action_link: str | None = None,
+    allow_synthetic_site_link: bool = False,
 ) -> InlineKeyboardMarkup | None:
-    """Кнопки: [Открыть в боте] [Открыть в PWA] [Источник]"""
     rows: list[list[InlineKeyboardButton]] = []
 
     if cargo_id:
-        bot_link = _cargo_bot_link(cargo_id)
-        if bot_link:
-            rows.append([InlineKeyboardButton(text="📦 Открыть в боте", url=bot_link)])
-
-        site_url = (settings.gruzpotok_public_url or "").rstrip("/")
-        if site_url:
-            rows.append([InlineKeyboardButton(
-                text="🌐 Открыть на сайте",
-                url=f"{site_url}/?cargo_id={cargo_id}",
-            )])
+        resolved_site_link = (site_action_link or "").strip()
+        if not resolved_site_link and allow_synthetic_site_link:
+            site_url = (settings.gruzpotok_public_url or "").rstrip("/")
+            if site_url:
+                resolved_site_link = f"{site_url}/?cargo_id={cargo_id}"
+        rows.extend(cargo_open_rows(cargo_id, site_action_link=resolved_site_link))
 
     if external_url:
         rows.append([InlineKeyboardButton(text="🔗 Источник", url=external_url)])
@@ -69,6 +58,7 @@ def _build_cargo_notify_kb(
     if not rows:
         return None
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
 
 def _default_event_message(event: SharedSyncEvent) -> str:
     order = event.order
@@ -81,6 +71,7 @@ def _default_event_message(event: SharedSyncEvent) -> str:
         route = " → ".join([x for x in [order.from_city, order.to_city] if x])
         parts = [f"📦 <b>Новый груз #{order.id}</b>"]
         parts.append(f"📍 {route or 'маршрут не указан'}")
+
         details = []
         if order.cargo_type or order.body_type:
             details.append(str(order.cargo_type or order.body_type))
@@ -88,12 +79,14 @@ def _default_event_message(event: SharedSyncEvent) -> str:
             details.append(f"{order.weight_t} т")
         if details:
             parts.append("🚛 " + " | ".join(details))
+
         if order.price_rub and int(order.price_rub) > 0:
             parts.append(f"💰 {int(order.price_rub):,} ₽")
         if order.load_date:
             parts.append(f"📅 {order.load_date}")
+
         meta = event.metadata or {}
-        phone = str(meta.get("phone") or "").strip()
+        phone = str(meta.get("phone") or order.meta.get("phone") or "").strip()
         if phone:
             masked = phone[:-4] + "****" if len(phone) > 4 else "****"
             parts.append(f"🔒 📞 {masked}")
@@ -161,6 +154,8 @@ async def _create_cargo_from_sync_event(event: SharedSyncEvent) -> int | None:
         return None
 
     source_platform = _normalize_source_platform(event)
+    if source_platform == "gruzpotok-api":
+        return None
 
     owner_id = _event_user_id(event) or settings.parser_default_user_id
     if owner_id is None:
@@ -202,9 +197,6 @@ async def _create_cargo_from_sync_event(event: SharedSyncEvent) -> int | None:
             if existing:
                 return int(existing.id)
 
-        raw_phone = str((order.meta or {}).get("phone") or "").strip() or None
-        if not raw_phone and isinstance(event.metadata, dict):
-            raw_phone = str(event.metadata.get("phone") or "").strip() or None
         cargo = Cargo(
             owner_id=int(owner_id),
             from_city=from_city,
@@ -214,7 +206,6 @@ async def _create_cargo_from_sync_event(event: SharedSyncEvent) -> int | None:
             price=price,
             load_date=_parse_load_date(order.load_date),
             comment=(raw_preview or "")[:500] or None,
-            phone=raw_phone,
             external_url=external_url,
             source_platform=source_platform,
             status=CargoStatus.NEW,
@@ -519,21 +510,35 @@ async def internal_sync_data(
                         "location_city": vehicle.location_city,
                     }
 
-    if cargo_id and body.order:
-        body.order.id = str(cargo_id)
     user_id = _event_user_id(body)
     notified = False
     message_id = None
 
+    if cargo_id and body.order and not body.order.id:
+        body.order.id = str(cargo_id)
+
     if user_id:
+        notify_cargo_id = cargo_id
+        if notify_cargo_id is None and body.order and body.order.id:
+            notify_cargo_id = _extract_user_id(body.order.id)
         msg_text = _default_event_message(body)
-        kb = _build_cargo_notify_kb(cargo_id=cargo_id, external_url=body.action_link)
+        raw_metadata = body.metadata if isinstance(body.metadata, dict) else {}
+        raw_site_action_link = raw_metadata.get("site_action_link") or raw_metadata.get("site_url")
+        site_action_link = raw_site_action_link.strip() if isinstance(raw_site_action_link, str) else None
+        source_value = str(body.source or (body.order.source if body.order else "") or "").strip().lower()
+        allow_synthetic_site_link = source_value in {"tg-bot", "gruzpotok-api"}
+        reply_markup = _build_cargo_notify_kb(
+            notify_cargo_id,
+            body.action_link,
+            site_action_link=site_action_link,
+            allow_synthetic_site_link=allow_synthetic_site_link,
+        )
         try:
             sent = await bot.send_message(
                 user_id,
                 msg_text,
                 parse_mode="HTML",
-                reply_markup=kb,
+                reply_markup=reply_markup,
                 disable_web_page_preview=True,
             )
             notified = True

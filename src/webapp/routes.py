@@ -1,11 +1,12 @@
 import json
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, func, or_, desc
+from sqlalchemy import select, func, or_, desc, text
 
 from src.core.auth.telegram_tma import TelegramTMAUser, get_required_tma_user
 from src.core.config import settings
@@ -33,6 +34,7 @@ router = APIRouter(tags=["webapp"])
 templates = Jinja2Templates(directory="src/webapp/templates")
 TWA_DIST_DIR = Path("frontend/twa/dist")
 TWA_INDEX_FILE = TWA_DIST_DIR / "index.html"
+PHONE_RE = re.compile(r"(?<!\w)(?:\+?\d[\d\s\-()]{7,}\d)")
 
 
 def _safe_meta_json(value: str | None) -> dict:
@@ -50,6 +52,20 @@ def _get_webapp_url() -> str:
     return "/webapp"
 
 
+def _mask_phone_text(phone: str) -> str:
+    digits = re.sub(r"\D", "", phone)
+    if len(digits) < 7:
+        return phone
+    masked = f"{digits[:-4]}****"
+    return f"+{masked}" if phone.strip().startswith("+") else masked
+
+
+def _sanitize_public_comment(comment: str | None) -> str | None:
+    if not comment:
+        return comment
+    return PHONE_RE.sub(lambda match: _mask_phone_text(match.group(0)), comment)
+
+
 async def _ensure_webapp_user(session, tma_user: TelegramTMAUser) -> User:
     user_id = int(tma_user.user_id)
     user = await session.scalar(
@@ -62,7 +78,9 @@ async def _ensure_webapp_user(session, tma_user: TelegramTMAUser) -> User:
     username = raw.get("username")
     first_name = (raw.get("first_name") or "").strip()
     last_name = (raw.get("last_name") or "").strip()
-    full_name = " ".join(part for part in (first_name, last_name) if part).strip()
+    full_name = " ".join(
+        part for part in (first_name, last_name) if part
+    ).strip()
     if not full_name:
         full_name = (username or "").strip() or f"User {user_id}"
 
@@ -141,7 +159,7 @@ async def webapp_cargos(
                 "price": c.price,
                 "load_date": c.load_date.strftime("%d.%m.%Y"),
                 "load_time": c.load_time,
-                "comment": c.comment,
+                "comment": _sanitize_public_comment(c.comment),
                 "status": c.status.value,
                 "created_at": c.created_at.isoformat(),
             })
@@ -153,18 +171,41 @@ async def webapp_cargos(
 async def webapp_cargo_detail(cargo_id: int):
     """Single cargo with owner company rating."""
     async with async_session() as session:
-        cargo = await session.scalar(
-            select(Cargo).where(Cargo.id == cargo_id)
-        )
+        cargo = (
+            await session.execute(
+                text(
+                    """
+                    SELECT
+                        id,
+                        owner_id,
+                        from_city,
+                        to_city,
+                        cargo_type,
+                        weight,
+                        volume,
+                        price,
+                        load_date,
+                        load_time,
+                        comment,
+                        status,
+                        created_at
+                    FROM cargos
+                    WHERE id = :cargo_id
+                    LIMIT 1
+                    """
+                ),
+                {"cargo_id": cargo_id},
+            )
+        ).mappings().first()
         if not cargo:
             raise HTTPException(status_code=404, detail="Not found")
 
         owner = await session.scalar(
-            select(User).where(User.id == cargo.owner_id)
+            select(User).where(User.id == cargo["owner_id"])
         )
         company = await session.scalar(
             select(CompanyDetails).where(
-                CompanyDetails.user_id == cargo.owner_id
+                CompanyDetails.user_id == cargo["owner_id"]
             )
         )
 
@@ -193,18 +234,18 @@ async def webapp_cargo_detail(cargo_id: int):
             }
 
     return {
-        "id": cargo.id,
-        "from_city": cargo.from_city,
-        "to_city": cargo.to_city,
-        "cargo_type": cargo.cargo_type,
-        "weight": cargo.weight,
-        "volume": cargo.volume,
-        "price": cargo.price,
-        "load_date": cargo.load_date.strftime("%d.%m.%Y"),
-        "load_time": cargo.load_time,
-        "comment": cargo.comment,
-        "status": cargo.status.value,
-        "created_at": cargo.created_at.isoformat(),
+        "id": cargo["id"],
+        "from_city": cargo["from_city"],
+        "to_city": cargo["to_city"],
+        "cargo_type": cargo["cargo_type"],
+        "weight": cargo["weight"],
+        "volume": cargo["volume"],
+        "price": cargo["price"],
+        "load_date": cargo["load_date"].strftime("%d.%m.%Y"),
+        "load_time": cargo["load_time"],
+        "comment": _sanitize_public_comment(cargo["comment"]),
+        "status": cargo["status"].value if hasattr(cargo["status"], "value") else str(cargo["status"]),
+        "created_at": cargo["created_at"].isoformat(),
         "owner": {
             "id": owner.id if owner else None,
             "name": owner.full_name if owner else "N/A",

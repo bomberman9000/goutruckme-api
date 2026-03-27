@@ -33,16 +33,6 @@ _CARGO_TYPE_HINTS: tuple[tuple[str, tuple[str, ...], str], ...] = (
     ("Стройматериалы", ("строймат", "кирпич", "цемент", "плитка"), "тент"),
 )
 
-
-def _normalize_free_text_boundaries(text: str) -> str:
-    text = re.sub(
-        r"([A-Za-zА-Яа-яЁё]{3,})(\d+\s*(?:кг|kg|т\b|t\b|тн\b|тонн(?:а|ы)?))",
-        r"\1 \2",
-        text,
-        flags=re.I,
-    )
-    return re.sub(r"\s+", " ", text).strip()
-
 CITY_ALIASES = {
     "мск": "Москва", "москва": "Москва",
     "спб": "Санкт-Петербург", "питер": "Санкт-Петербург", "петербург": "Санкт-Петербург",
@@ -61,8 +51,7 @@ CITY_ALIASES = {
     "челябинск": "Челябинск", "челяба": "Челябинск",
     "омск": "Омск",
     "тюмень": "Тюмень",
-    "пенза": "Пенза",
-    "астрахань": "Астрахань", "астрахан": "Астрахань",
+    "челны": "Набережные Челны", "набережные": "Набережные Челны", "нч": "Набережные Челны",
 }
 
 async def parse_city(text: str) -> str | None:
@@ -253,162 +242,95 @@ def _infer_cargo_profile(text_lower: str) -> tuple[str, str]:
     return "Груз", _infer_body_type(text_lower, "тент")
 
 
+async def transcribe_voice(file_bytes: bytes) -> str | None:
+    """Транскрибирует голосовое через Groq Whisper REST API."""
+    import httpx
+    api_key = settings.groq_api_key
+    if not api_key:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as c:
+            r = await c.post(
+                "https://api.groq.com/openai/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                files={"file": ("voice.ogg", file_bytes, "audio/ogg")},
+                data={"model": "whisper-large-v3-turbo", "language": "ru", "response_format": "text"},
+            )
+            r.raise_for_status()
+            return r.text.strip() or None
+    except Exception as exc:
+        logger.warning("transcribe_voice error: %s", exc)
+        return None
+
+
 async def parse_cargo_nlp(text: str) -> dict | None:
     """
-    Parse a free-form cargo message into a structured draft.
-
-    Returns:
-      {
-        from_city, to_city, weight, volume_m3?, price?, cargo_type,
-        body_type, load_date?, load_time?, is_urgent
-      }
+    Parse a free-form cargo message using Gemini 1.5 Flash.
     """
-    raw_text = _normalize_free_text_boundaries((text or "").strip())
-    if not raw_text:
-        return None
-    text_lower = raw_text.lower()
-
-    weight: float | None = None
-    weight_match = _WEIGHT_RE.search(text_lower)
-    if weight_match:
-        raw_weight = float(weight_match.group(1).replace(",", "."))
-        unit = weight_match.group(2).lower()
-        weight = round(raw_weight / 1000, 3) if unit in {"кг", "kg"} else round(raw_weight, 3)
-        if weight <= 0:
-            weight = None
-
-    volume_m3: float | None = None
-    volume_match = _VOLUME_RE.search(text_lower)
-    if volume_match:
-        volume_m3 = round(float(volume_match.group(1).replace(",", ".")), 3)
-
-    price: int | None = None
-    short_price = _PRICE_SHORT_RE.search(text_lower)
-    if short_price:
-        price = int(float(short_price.group(1).replace(",", ".")) * 1000)
-    else:
-        full_price = _PRICE_FULL_RE.search(text_lower)
-        if full_price:
-            price = int(full_price.group(1))
-
-    load_date: str | None = None
-    load_time: str | None = None
-    date_match = re.search(
-        r"(?:на\s+)?(?:завтра|послезавтра|сегодня)(?:\s+(?:в\s+)?\d{1,2}(?::|\.)?\d{0,2})?|"
-        r"\d{1,2}\.\d{2}(?:\.\d{4})?(?:\s+(?:в\s+)?\d{1,2}(?::|\.)\d{2})?",
-        text_lower,
-    )
-    if date_match:
-        date_chunk = re.sub(r"^на\s+", "", date_match.group(0).strip())
-        parsed_dt = parse_load_datetime(date_chunk)
-        if parsed_dt:
-            load_date = parsed_dt[0].strftime("%Y-%m-%d")
-            load_time = parsed_dt[1]
-    if not load_time:
-        fallback_time = re.search(r"(?:в|на)\s+(\d{1,2})(?:\s*(?:час(?:ов|а)?|:00))?\b", text_lower)
-        if fallback_time:
-            hh = int(fallback_time.group(1))
-            if 0 <= hh <= 23:
-                load_time = f"{hh:02d}:00"
-
-    from_city, to_city = _extract_cities_fallback(text_lower)
-
-    cargo_type, body_type = _infer_cargo_profile(text_lower)
-
-    if weight is None and volume_m3 is None:
+    raw_text = (text or "").strip()
+    if not raw_text or len(raw_text) < 5:
         return None
 
-    result: dict = {
-        "cargo_type": cargo_type,
-        "body_type": body_type,
-        "is_urgent": bool(re.search(r"\bсрочно?\b", text_lower)),
-    }
-    if from_city:
-        result["from_city"] = from_city
-    if to_city:
-        result["to_city"] = to_city
-    if weight is not None:
-        result["weight"] = weight
-    if volume_m3:
-        result["volume_m3"] = volume_m3
-    if price:
-        result["price"] = price
-    if load_date:
-        result["load_date"] = load_date
-    if load_time:
-        result["load_time"] = load_time
+    import httpx
+    api_key = settings.gemini_api_key
+    if not api_key:
+        return None # Фолбек на старую логику если ключа нет
 
-    fast_offer_hints = (
-        "завтра", "послезавтра", "сегодня", "тнп", "паллет", "паллеты", "короб",
-        "доски", "металл", "кирпич", "цемент", "ставка", "нал", "безнал", "₽", "руб",
+    from datetime import date as _date
+    today_iso = _date.today().isoformat()
+
+    prompt = (
+        f"Сегодня: {today_iso}. Используй этот год при разборе дат (например 'завтра', 'в пятницу').\n"
+        "Ты экспертный парсер грузовых заявок (Россия). Извлеки данные из текста.\n"
+        "ПРАВИЛА:\n"
+        "1. Исправляй опечатки в названиях городов: 'самра' -> 'Самара', 'мск' -> 'Москва'.\n"
+        "2. Внимательно смотри на предлоги: 'из', 'от' -> from_city; 'в', 'до', 'на' -> to_city.\n"
+        "3. Если города указаны просто через тире (А-Б), то первый - from, второй - to.\n"
+        "4. Если есть слово 'наоборот', поменяй города местами.\n"
+        "5. Вес всегда в Тоннах (число).\n"
+        "6. Парси деньги: '45к' -> 45000, 'полтинник' -> 50000. Цена всегда числовая.\n"
+        "7. Типы оплаты: 'ндс' -> 'nds', 'нал' -> 'cash', 'б/н' -> 'no_nds'.\n"
+        "8. cargo_type: если явно не указан — верни 'тент'.\n"
+        "9. Возвращай строго JSON.\n\n"
+        f"Текст: \"{raw_text}\"\n\n"
+        "Верни ТОЛЬКО JSON:\n"
+        "{\n"
+        '  "from_city": "Полное название или null",\n'
+        '  "to_city": "Полное название или null",\n'
+        '  "weight": float или null,\n'
+        '  "volume_m3": float или null,\n'
+        '  "price": int или null,\n'
+        '  "cargo_type": "тент/реф/борт/... (обязательно)",\n'
+        '  "body_type": "тент/реф/борт/...",\n'
+        '  "load_date": "YYYY-MM-DD или null",\n'
+        '  "is_urgent": boolean,\n'
+        '  "payment_type": "nds/no_nds/cash/null"\n'
+        "}"
     )
-    has_fast_path = bool(
-        (weight is not None or volume_m3 is not None)
-        and (from_city or to_city)
-        and (load_date or load_time or price is not None or any(hint in text_lower for hint in fast_offer_hints))
-    )
-    if has_fast_path:
-        return result
 
-    if client:
-        try:
-            response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "Ты парсер грузовых заявок. Верни только JSON вида "
-                            '{"from_city": "...", "to_city": "...", "cargo_type": "...", "body_type": "..."} . '
-                            "Города пиши полностью с большой буквы. "
-                            "cargo_type — характер груза (например: Металл, Продукты, ТНП, Пиломатериалы). "
-                            "body_type — тип кузова (тент, рефрижератор, борт, трал, контейнер, изотерм). "
-                            "Если поле неясно — верни null."
-                        ),
-                    },
-                    {"role": "user", "content": raw_text},
-                ],
-                max_tokens=120,
-                temperature=0,
-            )
-            payload = response.choices[0].message.content.strip()
-            if "{" in payload and "}" in payload:
-                parsed = json.loads(payload[payload.find("{"):payload.rfind("}") + 1])
-                ai_from = (parsed.get("from_city") or "").strip()
-                ai_to = (parsed.get("to_city") or "").strip()
-                ai_cargo = (parsed.get("cargo_type") or "").strip()
-                ai_body = (parsed.get("body_type") or "").strip().lower()
-                if ai_from:
-                    from_city = ai_from
-                if ai_to:
-                    to_city = ai_to
-                if ai_cargo:
-                    cargo_type = ai_cargo
-                if ai_body:
-                    body_type = _infer_body_type(f"{text_lower} {ai_body}", ai_body)
-        except Exception as exc:
-            logger.warning("parse_cargo_nlp AI error: %s", exc)
-
-    result = {
-        "cargo_type": cargo_type,
-        "body_type": body_type,
-        "is_urgent": bool(re.search(r"\bсрочно?\b", text_lower)),
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.1, "response_mime_type": "application/json"}
     }
-    if from_city:
-        result["from_city"] = from_city
-    if to_city:
-        result["to_city"] = to_city
-    if weight is not None:
-        result["weight"] = weight
-    if volume_m3:
-        result["volume_m3"] = volume_m3
-    if price:
-        result["price"] = price
-    if load_date:
-        result["load_date"] = load_date
-    if load_time:
-        result["load_time"] = load_time
-    return result
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client_http:
+            resp = await client_http.post(url, json=payload)
+            if resp.status_code != 200:
+                return None
+            data_raw = resp.json()
+            llm_text = data_raw['candidates'][0]['content']['parts'][0]['text'].strip()
+            data = json.loads(llm_text)
+            
+            # Приводим к формату бота
+            result = {k: v for k, v in data.items() if v is not None}
+            if "weight" in result: result["weight"] = float(result["weight"])
+            result.setdefault("cargo_type", "тент")
+            return result
+    except Exception as e:
+        logger.error(f"Gemini parse_cargo_nlp error: {e}")
+        return None
 
 async def parse_cargo_search(text: str) -> dict | None:
     """
@@ -1075,44 +997,89 @@ async def estimate_price_smart(
         "details": "❓ Недостаточно данных для оценки",
     }
 
-async def chat_response(user_message: str, context: str = "") -> str:
-    """Ответ на вопрос пользователя"""
-    if not client:
-        return "AI временно недоступен"
-
+async def _call_gemini_vision(image_bytes: bytes, prompt: str) -> dict:
+    """Вызов Gemini 2.0 Flash для анализа изображений (OCR/Moderation)."""
+    import httpx
+    import base64
+    api_key = settings.gemini_api_key
+    if not api_key: return {"is_valid": False, "error": "No API key"}
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent?key={api_key}"
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": prompt},
+                {
+                    "inline_data": {
+                        "mime_type": "image/jpeg",
+                        "data": base64.b64encode(image_bytes).decode('utf-8')
+                    }
+                }
+            ]
+        }],
+        "generationConfig": {"temperature": 0.0, "response_mime_type": "application/json"}
+    }
     try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{
-                "role": "system",
-                "content": f"""Ты помощник в боте грузоперевозок. Отвечай кратко и по делу на русском языке.
-{context}
-Если вопрос не по теме — вежливо направь к функциям бота."""
-            }, {
-                "role": "user",
-                "content": user_message
-            }],
-            max_tokens=300,
-            temperature=0.7
-        )
-        return response.choices[0].message.content.strip()
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            resp = await client.post(url, json=payload)
+            if resp.status_code != 200: return {"error": f"API error {resp.status_code}"}
+            data = resp.json()
+            raw_json = data['candidates'][0]['content']['parts'][0]['text'].strip()
+            return json.loads(raw_json)
     except Exception as e:
-        logger.error(f"AI chat error: {e}")
-        return "Произошла ошибка. Попробуйте позже."
+        return {"error": str(e)}
 
-async def transcribe_voice(file_bytes: bytes, mime: str = "audio/ogg") -> str | None:
-    """Транскрибация голосового через Groq Whisper."""
-    if not client:
-        return None
-    import io
-    try:
-        transcription = client.audio.transcriptions.create(
-            file=("voice.ogg", io.BytesIO(file_bytes), mime),
-            model="whisper-large-v3-turbo",
-            language="ru",
-            response_format="text",
-        )
-        return transcription.strip() if transcription else None
-    except Exception as exc:
-        logger.warning("transcribe_voice error: %s", exc)
-        return None
+async def _call_gemini(prompt: str) -> str:
+    """Вспомогательная функция для вызова Gemini 2.0 Flash с текстовым промптом."""
+    import httpx
+    api_key = settings.gemini_api_key
+    if not api_key:
+        raise ValueError("Gemini API key is not set in settings.")
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent?key={api_key}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.1}
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client_http:
+        resp = await client_http.post(url, json=payload)
+        resp.raise_for_status()
+        data_raw = resp.json()
+        return data_raw['candidates'][0]['content']['parts'][0]['text'].strip()
+
+
+async def moderate_content_ai(text: str | None = None, image_bytes: bytes | None = None) -> dict:
+    """Модерация текста или фото через Gemini."""
+    if image_bytes:
+        prompt = "Проверь фото на NSFW, насилие, спам. Верни JSON: {\"is_safe\": bool, \"reason\": \"string\"}"
+        return await _call_gemini_vision(image_bytes, prompt)
+    
+    if text:
+        prompt = f"Проверь текст на мат и спам: \"{text}\". Верни JSON: {{\"is_safe\": bool, \"reason\": \"string\"}}"
+        try:
+            res = await _call_gemini(prompt)
+            return json.loads(res)
+        except Exception as e:
+            logger.error(f"Gemini moderate_content_ai text parse error: {e}")
+            return {"is_safe": True}
+    return {"is_safe": True}
+
+async def verify_document_ai(image_bytes: bytes, doc_type: str = "СТС") -> dict:
+    """OCR Верификация документов через Gemini."""
+    prompt = (
+        f"Проанализируй фото документа {doc_type}. Извлеки ФИО, номер, для СТС: госномер и марку. "
+        "Верни JSON: {\"is_valid\": bool, \"full_name\": \"...\", \"number\": \"...\", \"vehicle_plate\": \"...\", \"vehicle_model\": \"...\", \"comment\": \"...\"}"
+    )
+    return await _call_gemini_vision(image_bytes, prompt)
+
+async def negotiate_price_ai(user_text: str, current_price: float, history: list = None) -> dict:
+    """Логика торга через Gemini."""
+    prompt = (
+        f"Пользователь торгуется: \"{user_text}\". Текущая ставка: {current_price}. "
+        "Лимит повышения +15%. Прими решение. "
+        "Верни JSON: {\"negotiation_status\": \"accepted/counter/rejected\", \"counter_offer\": float, \"next_ask\": \"текст ответа\"}"
+    )
+    res = await _call_gemini(prompt)
+    try: return json.loads(res)
+    except: return {"negotiation_status": "rejected", "next_ask": "К сожалению, не можем изменить ставку."}

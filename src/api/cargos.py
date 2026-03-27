@@ -620,7 +620,11 @@ async def create_manual_cargo(
             payment_terms=payment_terms,
             is_direct_customer=True,
             dimensions=_format_volume_dimensions(volume),
-            is_hot_deal=False,
+            is_hot_deal=bool(
+                user.is_premium and (
+                    user.premium_until is None or user.premium_until >= datetime.utcnow()
+                )
+            ),
             suggested_response=None,
             phone_blacklisted=False,
             from_lat=route_geo.origin.lat,
@@ -664,6 +668,8 @@ async def create_manual_cargo(
 
     await clear_cached("feed")
     background_tasks.add_task(notify_matching_carriers, cargo.id)
+    from src.services.cargo_antifraud import run_antifraud_check
+    background_tasks.add_task(run_antifraud_check, cargo.id, raw_text, tma_user.user_id)
     return ManualCargoResponse(cargo_id=cargo.id, feed_id=feed_event.id, parsed=preview)
 
 
