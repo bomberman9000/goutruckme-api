@@ -609,3 +609,103 @@ async def smart_truck_text(message: Message, state: FSMContext, override_text: s
     except Exception as exc:
         logger.exception("truck.free_text failed text=%r error=%s", text, exc)
         await message.answer("Не удалось выполнить подбор. Попробуйте еще раз.")
+
+
+# ──────────────────────────────────────────────────────────────
+# ПОИСК ГРУЗА ПОД МОЮ МАШИНУ
+# ──────────────────────────────────────────────────────────────
+
+async def _search_cargo_for_vehicle(message_or_cb, vehicle):
+    """Ищет грузы подходящие под машину водителя."""
+    from src.core.database import async_session
+    from src.core.models import Cargo, CargoStatus
+    from sqlalchemy import select, or_
+    from aiogram.utils.keyboard import InlineKeyboardBuilder as _IKB
+    from aiogram.types import InlineKeyboardButton as _TIKB
+
+    city = (vehicle.location_city or "").strip()
+    if not city:
+        text = "❌ У машины не указан город. Обнови местоположение."
+        if hasattr(message_or_cb, 'message'):
+            await message_or_cb.message.answer(text)
+        else:
+            await message_or_cb.answer(text)
+        return
+
+    msg = message_or_cb.message if hasattr(message_or_cb, 'message') else message_or_cb
+    await msg.answer(f"⏳ Ищу грузы из {city} для {vehicle.body_type} {vehicle.capacity_tons}т...")
+
+    async with async_session() as session:
+        q = select(Cargo).where(Cargo.status.in_([CargoStatus.NEW, CargoStatus.ACTIVE]))
+        q = q.where(Cargo.from_city.ilike(f"%{city}%"))
+        q = q.where(or_(Cargo.weight <= vehicle.capacity_tons, Cargo.weight.is_(None)))
+        if vehicle.volume_m3:
+            q = q.where(or_(Cargo.volume <= vehicle.volume_m3, Cargo.volume.is_(None)))
+        q = q.order_by(Cargo.id.desc()).limit(10)
+        cargos = (await session.execute(q)).scalars().all()
+
+    if not cargos:
+        b = _IKB()
+        b.row(_TIKB(text="🔍 Расширенный поиск", callback_data="search_cargo"))
+        await msg.answer(
+            f"📭 Грузов из {city} под вашу машину не найдено.\n"
+            "Попробуйте поиск по другим параметрам.",
+            reply_markup=b.as_markup()
+        )
+        return
+
+    b = _IKB()
+    for c in cargos:
+        price_str = f"{c.price:,}₽".replace(",", "\u00a0") if c.price else "договор"
+        b.row(_TIKB(
+            text=f"📦 {c.from_city}→{c.to_city} {c.weight or '?'}т {price_str}"[:60],
+            callback_data=f"cargo_open_{c.id}"
+        ))
+    b.row(_TIKB(text="🔍 Больше грузов", callback_data="search_cargo"))
+    await msg.answer(
+        f"🚛 Найдено {len(cargos)} груза из {city} под {vehicle.body_type} {vehicle.capacity_tons}т:",
+        reply_markup=b.as_markup()
+    )
+
+
+@router.callback_query(F.data.startswith("cargo_for_truck_"))
+async def cargo_for_truck(cb: CallbackQuery):
+    vehicle_id = int(cb.data.split("_")[-1])
+    async with async_session() as session:
+        vehicle = await session.get(UserVehicle, vehicle_id)
+    if not vehicle or vehicle.user_id != cb.from_user.id:
+        await cb.answer("Машина не найдена", show_alert=True)
+        return
+    await cb.answer()
+    await _search_cargo_for_vehicle(cb, vehicle)
+
+
+@router.callback_query(F.data == "find_cargo_for_truck")
+async def find_cargo_for_truck_menu(cb: CallbackQuery):
+    async with async_session() as session:
+        from sqlalchemy import select as _sel
+        vehicles = (await session.execute(
+            _sel(UserVehicle).where(UserVehicle.user_id == cb.from_user.id)
+        )).scalars().all()
+
+    if not vehicles:
+        await cb.answer()
+        await cb.message.answer("У вас нет зарегистрированных машин. Добавьте через «Мой парк».")
+        return
+
+    if len(vehicles) == 1:
+        await cb.answer()
+        await _search_cargo_for_vehicle(cb, vehicles[0])
+        return
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder as _IKB
+    from aiogram.types import InlineKeyboardButton as _TIKB
+    b = _IKB()
+    for v in vehicles:
+        status = "🟢" if v.is_available else "🔴"
+        label = f"{status} {v.body_type} {v.capacity_tons}т"
+        if v.location_city:
+            label += f" — {v.location_city}"
+        b.row(_TIKB(text=label[:60], callback_data=f"cargo_for_truck_{v.id}"))
+    await cb.answer()
+    await cb.message.answer("Выберите машину для поиска груза:", reply_markup=b.as_markup())

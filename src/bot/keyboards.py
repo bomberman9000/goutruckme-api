@@ -270,6 +270,7 @@ def trucks_menu():
     b.row(InlineKeyboardButton(text="➕ Добавить машину", callback_data="add_truck"))
     b.row(InlineKeyboardButton(text="🚚 Добавить (умный ввод)", callback_data="add_truck_smart"))
     b.row(InlineKeyboardButton(text="🚛 Мои машины", callback_data="my_trucks"))
+    b.row(InlineKeyboardButton(text="🔍 Найти груз под мою машину", callback_data="find_cargo_for_truck"))
     b.row(InlineKeyboardButton(text="◀️ Меню", callback_data="menu"))
     return b.as_markup()
 
@@ -294,6 +295,7 @@ def truck_detail_kb(vehicle_id: int, is_available: bool):
     else:
         b.row(InlineKeyboardButton(text="🟢 Выйти на линию", callback_data=f"truck_on_{vehicle_id}"))
     b.row(InlineKeyboardButton(text="🗑 Удалить", callback_data=f"truck_del_{vehicle_id}"))
+    b.row(InlineKeyboardButton(text="🔍 Найти груз", callback_data=f"cargo_for_truck_{vehicle_id}"))
     b.row(InlineKeyboardButton(text="◀️ Мои машины", callback_data="my_trucks"))
     return b.as_markup()
 
