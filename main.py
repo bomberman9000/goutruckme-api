@@ -52,6 +52,7 @@ async def lifespan(app: FastAPI):
     from src.bot.handlers.claims import router as claims_router
     from src.bot.handlers.legal import router as legal_router
     from src.bot.handlers.add_truck import router as add_truck_router
+    from src.bot.handlers.trucks import router as trucks_router
     from src.bot.handlers.ai_assistant import router as ai_assistant_router
     from src.bot.handlers.vehicle_intake import router as vehicle_intake_router
 
@@ -97,6 +98,7 @@ async def lifespan(app: FastAPI):
     dp.include_router(payments_router)
     dp.include_router(referral_router)
     dp.include_router(add_truck_router)
+    dp.include_router(trucks_router)
     dp.include_router(ai_assistant_router)
     dp.include_router(vehicle_intake_router)
 
