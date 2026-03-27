@@ -128,6 +128,13 @@ CITY_STOP_WORDS = {
     "oblast",
     "область",
     "обл",
+    "г",
+    "г.о",
+    "г о",
+    "городской",
+    "городского",
+    "округ",
+    "округа",
     "viloyat",
     "viloyati",
     "region",
@@ -174,6 +181,7 @@ CITY_INVALID_EXACT = {
     "киргизия",
     "беларусь",
     "белоруссия",
+    "беларуссия",
     "погрузка",
     "выгрузка",
     "кофе готов",
@@ -199,6 +207,20 @@ CITY_INVALID_EXACT = {
     "kz",
     "kg",
     "by",
+    "рф",
+    "сегодня",
+    "завтра",
+    "послезавтра",
+    "понедельник",
+    "вторник",
+    "среда",
+    "четверг",
+    "пятница",
+    "суббота",
+    "воскресенье",
+    "юклаш",
+    "yuklash",
+    "юқори",
 }
 
 CITY_INVALID_PREFIX_WORDS = {
@@ -307,6 +329,14 @@ CITY_ALIASES = {
     "екб": "Екатеринбург",
     "нн": "Нижний Новгород",
     "нижний новогород": "Нижний Новгород",
+    "краснадар": "Краснодар",
+    "городно": "Гродно",
+    "piter": "Санкт-Петербург",
+    "барисов": "Борисов",
+    "иванцаевич": "Ивацевичи",
+    "ивацевичи": "Ивацевичи",
+    "новогрудок": "Новогрудок",
+    "сморгонь": "Сморгонь",
     "йошкар ола": "Йошкар-Ола",
     "йошкар-ола": "Йошкар-Ола",
     "ростов на дону": "Ростов-на-Дону",
@@ -326,7 +356,7 @@ CITY_ALIASES = {
     "карши": "Карши",
     "нукус": "Нукус",
     "водий": "Водий",
-    "хоразм": "Хорезм",
+    "хоразм": "Ургенч",
     "фаргона": "Фергана",
     "фарғона": "Фергана",
     "фергана": "Фергана",
@@ -335,7 +365,8 @@ CITY_ALIASES = {
     "jizzax": "Джизак",
     "qashqadaryo": "Кашкадарья",
     "qoqon": "Коканд",
-    "xorazm": "Хорезм",
+    "xorazm": "Ургенч",
+    "хорезм": "Ургенч",
     "fargona": "Фергана",
     "farg'ona": "Фергана",
     "fargʻona": "Фергана",
@@ -511,12 +542,29 @@ class ParsedCargo:
 
 def _normalize_city(value: str) -> str:
     head = (value or "").split(",", 1)[0]
-    words = [w.strip(".,:;()[]{}") for w in head.replace("ё", "е").replace("Ё", "Е").split()]
+    words = [
+        w.strip(".,:;()[]{}-–—><")
+        for w in head.replace("ё", "е").replace("Ё", "Е").split()
+    ]
     words = [w for w in words if w]
     for idx, word in enumerate(words[1:], start=1):
         if word.lower() in _CITY_OPTION_MARKERS:
             words = words[:idx]
             break
+    if len(words) >= 2 and tuple(word.lower() for word in words[:2]) in {
+        ("г", "о"),
+        ("городской", "округ"),
+        ("городского", "округа"),
+        ("городское", "поселение"),
+        ("городского", "поселения"),
+    }:
+        words = words[2:]
+    if len(words) >= 2 and tuple(word.lower() for word in words[:2]) in {
+        ("г", "п"),
+        ("городской", "поселок"),
+        ("городской", "посёлок"),
+    }:
+        words = words[2:]
     while words and words[0].lower() in CITY_STOP_WORDS:
         words.pop(0)
     while words and words[-1].lower() in CITY_STOP_WORDS:
@@ -1176,12 +1224,7 @@ async def parse_cargo_message_llm(
     try:
         system_prompt = _build_llm_system_prompt()
 
-        if has_groq:
-            llm_output = await _call_groq(
-                system_prompt, clean_text, settings.groq_api_key
-            )
-            provider = "groq/llama-3.1-8b-instant"
-        else:
+        if has_openai:
             openai_model = getattr(settings, "openai_model", None) or "gpt-4o-mini"
             llm_output = await _call_openai(
                 system_prompt,
@@ -1190,6 +1233,11 @@ async def parse_cargo_message_llm(
                 openai_model,
             )
             provider = f"openai/{openai_model}"
+        else:
+            llm_output = await _call_groq(
+                system_prompt, clean_text, settings.groq_api_key
+            )
+            provider = "groq/llama-3.1-8b-instant"
 
         logger.info("LLM extractor [%s] raw: %s", provider, llm_output)
 

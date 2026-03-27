@@ -10,10 +10,10 @@ from datetime import datetime, timedelta, timezone
 
 import redis.asyncio as redis
 from telethon import TelegramClient, events, utils
-from telethon.errors import AuthKeyDuplicatedError, FloodWaitError
+from telethon.errors import AuthKeyDuplicatedError, FloodWaitError, UserAlreadyParticipantError, ChannelPrivateError
 from telethon.sessions import StringSession
-from telethon.tl import functions
-from telethon.tl.types import PeerChannel, User
+from telethon.tl import functions, types
+from telethon.tl.types import PeerChannel, User, Channel, Chat
 
 from src.core.config import settings
 from src.parser_bot.extractor import split_cargo_message_blocks
@@ -25,6 +25,100 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | parser-ingestor | %(message)s",
 )
 logger = logging.getLogger("parser-ingestor")
+
+
+REDIS_DISCOVERED_KEY = "parser:discovered_channels"  # Redis SET с peer_id
+DISCOVERY_INTERVAL_SEC = 6 * 3600  # раз в 6 часов
+DISCOVERY_KEYWORDS = [
+    "грузы по России", "фрахт тент реф", "грузы РФ тент",
+    "биржа грузов Россия", "перевозки тент борт реф",
+    "грузоперевозки Москва", "грузоперевозки Урал",
+    "грузоперевозки Сибирь", "грузоперевозки Краснодар",
+    "тент реф борт груз", "груз Москва Екатеринбург",
+]
+CARGO_TITLE_HINTS = re.compile(
+    r"груз|логист|фрахт|перевоз|транспорт|ати|ati|cargo|freight|экспедит|тент|фура",
+    re.I,
+)
+
+
+async def _auto_discover_channels(
+    client: TelegramClient,
+    redis_client: redis.Redis,
+    watched_chat_ids: set[int],
+) -> int:
+    """Ищет каналы с грузами, вступает, добавляет в watched_chat_ids."""
+    found = 0
+    for keyword in DISCOVERY_KEYWORDS:
+        try:
+            result = await client(functions.contacts.SearchRequest(q=keyword, limit=20))
+            chats = getattr(result, "chats", []) or []
+            for chat in chats:
+                if not isinstance(chat, (Channel, Chat)):
+                    continue
+                title = getattr(chat, "title", "") or ""
+                if not CARGO_TITLE_HINTS.search(title):
+                    continue
+                peer_id = int(utils.get_peer_id(chat))
+                if peer_id in watched_chat_ids:
+                    continue
+                # Проверяем что не приватный
+                if getattr(chat, "access_hash", None) is None:
+                    continue
+                try:
+                    await client(functions.channels.JoinChannelRequest(channel=chat))
+                    logger.info("auto-joined channel title=%r peer_id=%s", title, peer_id)
+                except (UserAlreadyParticipantError, ChannelPrivateError):
+                    # Уже в канале — всё равно добавляем в watch
+                    pass
+                except FloodWaitError as e:
+                    wait = max(1, int(getattr(e, "seconds", 60)))
+                    logger.info("join flood wait %ss, sleeping", wait)
+                    await asyncio.sleep(wait)
+                    continue
+                except Exception as e:
+                    logger.warning("auto-join failed title=%r error=%s", title, str(e)[:100])
+                    continue
+                watched_chat_ids.add(peer_id)
+                await redis_client.sadd(REDIS_DISCOVERED_KEY, peer_id)
+                found += 1
+            await asyncio.sleep(2)  # не спамим
+        except Exception as e:
+            logger.warning("discovery keyword=%r error=%s", keyword, str(e)[:100])
+    logger.info("auto-discovery done: found=%s total_watched=%s", found, len(watched_chat_ids))
+    return found
+
+
+async def _load_discovered_channels(
+    client: TelegramClient,
+    redis_client: redis.Redis,
+    watched_chat_ids: set[int],
+) -> None:
+    """Загружает ранее найденные каналы из Redis при старте."""
+    saved = await redis_client.smembers(REDIS_DISCOVERED_KEY)
+    for raw in saved:
+        try:
+            peer_id = int(raw)
+            if peer_id not in watched_chat_ids:
+                watched_chat_ids.add(peer_id)
+                logger.info("loaded discovered channel peer_id=%s from redis", peer_id)
+        except Exception:
+            pass
+
+
+async def _discovery_loop(
+    client: TelegramClient,
+    redis_client: redis.Redis,
+    watched_chat_ids: set[int],
+) -> None:
+    """Фоновый цикл автодискавери каналов."""
+    while True:
+        await asyncio.sleep(60)  # первый запуск через минуту после старта
+        try:
+            await _auto_discover_channels(client, redis_client, watched_chat_ids)
+        except Exception as e:
+            logger.warning("discovery loop error: %s", e)
+        await asyncio.sleep(DISCOVERY_INTERVAL_SEC)
 
 
 def _heartbeat_key() -> str:
@@ -288,9 +382,15 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
         await client.disconnect()
         return
     watched_chat_ids = set(resolved_chat_ids)
+    # Загружаем ранее найденные каналы из Redis
+    await _load_discovered_channels(client, stream.redis, watched_chat_ids)
     await _update_heartbeat(stream.redis)
     health_task = asyncio.create_task(
         _health_monitor(stream.redis, started_monotonic=time.monotonic())
+    )
+    # Запускаем фоновый autodiscovery
+    discovery_task = asyncio.create_task(
+        _discovery_loop(client, stream.redis, watched_chat_ids)
     )
     await _startup_backfill(client, stream, watched_chat_ids)
 
@@ -332,6 +432,9 @@ async def _run_once(stream: RedisLogisticsStream, chat_ids: list[int | str]) -> 
             health_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await health_task
+        discovery_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await discovery_task
         with contextlib.suppress(Exception):
             await client.disconnect()
 

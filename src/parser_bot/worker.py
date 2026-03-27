@@ -49,13 +49,11 @@ _CARGO_INTENT_RE = re.compile(
     r"(?:\bгруз\s+готов\b|\bгруз\s+бор\b|\bюк\s+бор\b|\byuk\s+bor\b|\bмашина\s+(?:керак|нужна|нужен)\b|\bmashina\s+kerak\b|\bрастаможка\b|\bчерез\s+паром\b)",
     re.IGNORECASE,
 )
-
 _EMAIL_RE = re.compile(r"\b[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[A-Za-z]{2,}\b")
 _VOLUME_RE = re.compile(
     r"\b\d{1,4}(?:[.,]\d+)?\s*(?:м3|м³|m3|куб(?:а|ов|ик)?|куб\.)\b",
     re.IGNORECASE,
 )
-
 
 
 def _join_url(base_url: str, path: str) -> str:
@@ -386,30 +384,47 @@ def _has_weight_or_volume(parsed: ParsedCargo) -> bool:
     return bool(_VOLUME_RE.search(parsed.raw_text or ""))
 
 
+_TG_USERNAME_RE = re.compile(r"@[a-zA-Z][a-zA-Z0-9_]{3,}")
+
+
 def _has_contact_signal(parsed: ParsedCargo) -> bool:
-    return bool(parsed.phone)
+    if parsed.phone:
+        return True
+    if _extract_email(parsed.raw_text) is not None:
+        return True
+    # Telegram-username в тексте (@username) — валидный контакт для TG-каналов
+    return bool(_TG_USERNAME_RE.search(parsed.raw_text or ""))
 
 
-def _has_cargo_type(parsed: ParsedCargo) -> bool:
-    return bool(parsed.body_type or parsed.cargo_description)
-
-
-def _required_fields_review_reason(parsed: ParsedCargo) -> str | None:
+def _required_fields_review_reason(parsed: ParsedCargo, source: str | None = None) -> str | None:
     has_measurement = _has_weight_or_volume(parsed)
-    has_contact     = _has_contact_signal(parsed)
-    has_type        = _has_cargo_type(parsed)
-
-    reasons = []
-    if not has_contact:
-        reasons.append("missing_phone")
-    if not has_measurement:
-        reasons.append("missing_weight_or_volume")
-    if not has_type:
-        reasons.append("missing_cargo_type")
-
-    if not reasons:
+    has_contact = _has_contact_signal(parsed)
+    if has_measurement and has_contact:
         return None
-    return ",".join(reasons)
+    # Для TG-источников: вес без контакта — ок (ответить можно прямо в канале)
+    if has_measurement and (source or "").startswith("tg:"):
+        return None
+    if not has_measurement and not has_contact:
+        return "missing_weight_or_volume_and_contact"
+    if not has_measurement:
+        return "missing_weight_or_volume"
+    return "missing_contact"
+
+
+def _relaxed_manual_review_sources() -> set[str]:
+    raw = str(settings.parser_relaxed_manual_review_sources or "")
+    return {item.strip() for item in raw.split(",") if item.strip()}
+
+
+def _should_soft_review_incomplete(source: str | None, parsed: ParsedCargo, reason: str | None) -> bool:
+    source_name = (source or "").strip()
+    if not source_name:
+        return False
+    if source_name not in _relaxed_manual_review_sources():
+        return False
+    if reason != "missing_weight_or_volume":
+        return False
+    return _has_contact_signal(parsed)
 
 
 def _is_unrealistic_rate(parsed: ParsedCargo) -> bool:
@@ -618,6 +633,38 @@ async def _push_to_api(
     return data if isinstance(data, dict) else {}
 
 
+async def _push_to_targets(
+    http_client: httpx.AsyncClient,
+    sync_targets: list[str],
+    payload: dict[str, Any],
+) -> tuple[dict[str, Any], int | None]:
+    sync_result: dict[str, Any] = {}
+    cargo_id: int | None = None
+    site_load_id: int | None = None
+
+    for idx, target_url in enumerate(_ordered_sync_targets(sync_targets)):
+        current_payload = payload
+        if _is_tg_bot_target(target_url) and site_load_id:
+            current_payload = dict(payload)
+            current_metadata = dict(payload.get("metadata") or {})
+            site_action_link = _site_action_link(site_load_id)
+            if site_action_link:
+                current_metadata["site_action_link"] = site_action_link
+            current_payload["metadata"] = current_metadata
+
+        current_result = await _push_to_api(http_client, target_url, current_payload)
+        if idx == 0:
+            sync_result = current_result
+        current_cargo_id = _extract_cargo_id(current_result)
+        if current_cargo_id and cargo_id is None:
+            cargo_id = current_cargo_id
+        current_site_load_id = _extract_site_load_id(current_result)
+        if current_site_load_id and site_load_id is None:
+            site_load_id = current_site_load_id
+
+    return sync_result, cargo_id
+
+
 def _extract_cargo_id(sync_result: dict[str, Any]) -> int | None:
     try:
         value = sync_result.get("cargo_id")
@@ -627,6 +674,50 @@ def _extract_cargo_id(sync_result: dict[str, Any]) -> int | None:
     except (TypeError, ValueError):
         return None
     return cargo_id if cargo_id > 0 else None
+
+
+def _extract_site_load_id(sync_result: dict[str, Any]) -> int | None:
+    try:
+        order_sync = sync_result.get("order_sync")
+        if isinstance(order_sync, dict):
+            value = order_sync.get("load_id")
+        else:
+            value = sync_result.get("load_id")
+        if value is None:
+            return None
+        load_id = int(value)
+    except (TypeError, ValueError):
+        return None
+    return load_id if load_id > 0 else None
+
+
+def _site_action_link(site_load_id: int | None) -> str | None:
+    if not site_load_id or site_load_id <= 0:
+        return None
+    base_url = str(settings.gruzpotok_public_url or "").strip().rstrip("/")
+    if not base_url:
+        return None
+    return f"{base_url}/?cargo_id={site_load_id}"
+
+
+def _is_tg_bot_target(sync_url: str) -> bool:
+    base_url = str(settings.tg_bot_internal_url or "").strip().rstrip("/")
+    return bool(base_url) and sync_url.startswith(base_url)
+
+
+def _is_gruzpotok_target(sync_url: str) -> bool:
+    base_url = str(settings.gruzpotok_api_internal_url or "").strip().rstrip("/")
+    return bool(base_url) and sync_url.startswith(base_url)
+
+
+def _ordered_sync_targets(sync_targets: list[str]) -> list[str]:
+    return sorted(
+        sync_targets,
+        key=lambda sync_url: (
+            0 if _is_gruzpotok_target(sync_url) else 1 if _is_tg_bot_target(sync_url) else 2,
+            sync_targets.index(sync_url),
+        ),
+    )
 
 
 def _external_url_dedupe_key(url: str) -> str:
@@ -871,27 +962,6 @@ async def _process_message(
         parsed.to_lon = route_geo.destination.lon
         parsed.route_distance_km = route_geo.distance_km
 
-        # Фильтр: хотя бы один город должен быть в России
-        if getattr(settings, 'parser_russia_only', False):
-            from src.core.geo import RUSSIA_CITIES, _normalize_city_key
-            from_ru = _normalize_city_key(parsed.from_city or "") in RUSSIA_CITIES
-            to_ru = _normalize_city_key(parsed.to_city or '') in RUSSIA_CITIES
-            if not from_ru and not to_ru:
-                await _save_ingest_event(
-                    message=message,
-                    parsed=parsed,
-                    trust=None,
-                    is_spam=False,
-                    status='ignored',
-                    parse_method=parse_method,
-                    error='non_russia_route',
-                )
-                logger.info(
-                    'ignored non-russia route id=%s route=%s->%s',
-                    message.entry_id, parsed.from_city, parsed.to_city,
-                )
-                return
-
         if not _has_min_signal(parsed):
             await _save_ingest_event(
                 message=message,
@@ -903,8 +973,34 @@ async def _process_message(
             )
             return
 
-        required_fields_reason = _required_fields_review_reason(parsed)
+        source_name = message.source or settings.parser_source_name
+        required_fields_reason = _required_fields_review_reason(parsed, source=source_name)
         if required_fields_reason:
+            if _should_soft_review_incomplete(source_name, parsed, required_fields_reason):
+                await _save_ingest_event(
+                    message=message,
+                    parsed=parsed,
+                    trust=None,
+                    is_spam=False,
+                    status="manual_review",
+                    parse_method=parse_method,
+                    error=required_fields_reason,
+                    extra_details={
+                        "relaxed_source": True,
+                        "has_weight_or_volume": _has_weight_or_volume(parsed),
+                        "has_contact": _has_contact_signal(parsed),
+                        "email": _extract_email(parsed.raw_text),
+                    },
+                )
+                logger.info(
+                    "sent to manual review by relaxed source id=%s source=%s route=%s->%s reason=%s",
+                    message.entry_id,
+                    source_name,
+                    parsed.from_city,
+                    parsed.to_city,
+                    required_fields_reason,
+                )
+                return
             await _save_ingest_event(
                 message=message,
                 parsed=parsed,
@@ -1076,22 +1172,13 @@ async def _process_message(
                 parsed.from_city,
                 parsed.to_city,
                 trust.score if trust else "n/a",
-                ",".join(sync_targets),
             )
             return
 
         sync_payload = _build_sync_payload(parsed, message, trust=trust)
 
         try:
-            sync_result = None
-            cargo_id = None
-            for target_url in sync_targets:
-                current_result = await _push_to_api(http_client, target_url, sync_payload)
-                if sync_result is None:
-                    sync_result = current_result
-                current_cargo_id = _extract_cargo_id(current_result)
-                if current_cargo_id and not cargo_id:
-                    cargo_id = current_cargo_id
+            sync_result, cargo_id = await _push_to_targets(http_client, sync_targets, sync_payload)
             await _save_ingest_event(
                 message=message,
                 parsed=parsed,
@@ -1109,6 +1196,7 @@ async def _process_message(
                 cargo_id or "n/a",
                 parsed.inn or "n/a",
                 trust.score if trust else "n/a",
+                ",".join(sync_targets),
             )
         except Exception as exc:
             await stream.redis.delete(dedupe_key)
@@ -1176,11 +1264,11 @@ async def run() -> None:
     max_retries = max(0, int(settings.parser_worker_max_retries))
 
     redis_client, stream = await _connect_stream(block_ms=block_ms, group_name=group_name)
-    sync_targets: list[str] = []
-    for base_url in [settings.tg_bot_internal_url, settings.gruzpotok_api_internal_url]:
-        target = _join_url(base_url, settings.gruzpotok_sync_path)
-        if target and target not in sync_targets:
-            sync_targets.append(target)
+    sync_targets = _build_sync_targets()
+    if not sync_targets:
+        logger.error("No sync targets configured")
+        await _close_redis_client(redis_client)
+        return
     http_client = httpx.AsyncClient(timeout=max(3, int(settings.parser_http_timeout)))
 
     logger.info(
@@ -1239,6 +1327,17 @@ async def run() -> None:
 
 def main() -> None:
     asyncio.run(run())
+
+
+def _build_sync_targets() -> list[str]:
+    targets: list[str] = []
+    for base_url in [settings.tg_bot_internal_url, settings.gruzpotok_api_internal_url]:
+        if not str(base_url or "").strip():
+            continue
+        target = _join_url(base_url, settings.gruzpotok_sync_path)
+        if target not in targets:
+            targets.append(target)
+    return targets
 
 
 if __name__ == "__main__":
