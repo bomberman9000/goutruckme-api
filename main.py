@@ -18,7 +18,7 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from src.core.config import settings
 from src.core.logger import logger
@@ -54,85 +54,6 @@ async def lifespan(app: FastAPI):
     from src.bot.handlers.add_truck import router as add_truck_router
     from src.bot.handlers.ai_assistant import router as ai_assistant_router
     from src.bot.handlers.vehicle_intake import router as vehicle_intake_router
-    from src.bot.middlewares.logging import LoggingMiddleware
-    from src.bot.middlewares.watchdog import WatchdogMiddleware
-    from src.core.services.watchdog import watchdog_loop
-
-    logger.info("Starting bot...")
-
-    await init_db()
-    logger.info("Database initialized")
-
-    try:
-        from src.core.database import async_session
-        from src.core.market_data import seed_market_prices
-        from src.core.scheduler import archive_old_cargos_job
-        async with async_session() as session:
-            await seed_market_prices(session)
-        logger.info("Market prices seeded")
-    except Exception as e:
-        logger.warning("Market prices seed failed: %s", e)
-
-    try:
-        await archive_old_cargos_job()
-    except Exception as e:
-        logger.warning("Archive old cargos failed: %s", e)
-
-    redis = await get_redis()
-    await redis.ping()
-    logger.info("Redis connected")
-
-    from aiogram import Dispatcher
-    from aiogram.fsm.storage.redis import RedisStorage
-
-    dp = Dispatcher(storage=RedisStorage(redis=redis))
-    logger.info("FSM storage: Redis")
-
-    setup_scheduler()
-
-    import logging as _logging
-    _logging.getLogger("aiogram").setLevel(_logging.DEBUG)
-
-    async def debug_updates(handler, event, data):
-        kind = type(event).__name__
-        uid = getattr(event, "message_id", None) or getattr(event, "id", None)
-        print(f"[DEBUG] RAW UPDATE: {kind} (id={uid})", flush=True)
-        logger.info("RAW UPDATE: %s (id=%s)", kind, uid)
-        return await handler(event, data)
-
-    dp.message.outer_middleware(debug_updates)
-    dp.callback_query.outer_middleware(debug_updates)
-    dp.inline_query.outer_middleware(debug_updates)
-
-    dp.message.middleware(WatchdogMiddleware())
-    dp.callback_query.middleware(WatchdogMiddleware())
-    dp.message.middleware(LoggingMiddleware())
-    dp.callback_query.middleware(LoggingMiddleware())
-    from src.bot.handlers.feed_commands import router as feed_commands_router
-    dp.include_router(admin_router)
-    dp.include_router(start_router)
-    dp.include_router(feed_commands_router)
-    dp.include_router(cargo_router)
-    dp.include_router(search_router)
-    dp.include_router(inline_router)
-    dp.include_router(rating_router)
-    dp.include_router(profile_router)
-    dp.include_router(analytics_router)
-    dp.include_router(chat_router)
-    dp.include_router(antifraud_router)
-    dp.include_router(geolocation_router)
-    dp.include_router(driver_tracking_router)
-    dp.include_router(claims_router)
-    dp.include_router(legal_router)
-    dp.include_router(verification_router)
-    dp.include_router(feedback_router)
-    dp.include_router(errors_router)
-    dp.include_router(reminder_router)
-    dp.include_router(payments_router)
-    dp.include_router(referral_router)
-    dp.include_router(add_truck_router)
-    dp.include_router(ai_assistant_router)
-    dp.include_router(vehicle_intake_router)
 
     # Register bot commands menu
     try:
@@ -181,6 +102,64 @@ async def lifespan(app: FastAPI):
     await close_redis()
 
 app = FastAPI(title="Logistics Bot API", lifespan=lifespan)
+
+
+# ── Security headers ──────────────────────────────────────────────────────────
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(self), microphone=()"
+    if request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+# ── Global rate limit (anti-flood) ───────────────────────────────────────────
+_rl_store: dict = {}  # fallback in-memory if Redis unavailable
+
+def _rl_client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown")
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    import time
+    path = request.url.path
+    # Skip static assets
+    if path.startswith(("/webapp/assets", "/static", "/favicon")):
+        return await call_next(request)
+
+    ip = _rl_client_ip(request)
+
+    # Stricter limit for Telegram WebApp auth endpoint
+    if path in ("/webapp/auth", "/api/auth", "/auth/login"):
+        limit, window = 10, 60
+    else:
+        limit, window = 120, 60
+
+    key = f"{ip}:{path if limit == 10 else 'global'}"
+    now = time.time()
+    bucket = _rl_store.get(key, {"count": 0, "reset": now + window})
+    if now > bucket["reset"]:
+        bucket = {"count": 0, "reset": now + window}
+    bucket["count"] += 1
+    _rl_store[key] = bucket
+
+    if bucket["count"] > limit:
+        retry = int(bucket["reset"] - now)
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Слишком много запросов. Попробуйте позже."},
+            headers={"Retry-After": str(max(1, retry))},
+        )
+
+    return await call_next(request)
+
 
 TWA_ASSETS_DIR = Path("frontend/twa/dist/assets")
 app.mount(
@@ -315,6 +294,9 @@ async def api_cargos(from_city: str = None, to_city: str = None):
         cargos = result.scalars().all()
 
     return [{"id": c.id, "from": c.from_city, "to": c.to_city, "weight": c.weight, "price": c.price} for c in cargos]
+
+from src.api.v1.dogruz import router as dogruz_router
+app.include_router(dogruz_router, prefix="/api/v1")
 
 @app.get("/")
 async def root(request: Request):
