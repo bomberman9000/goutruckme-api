@@ -30,7 +30,8 @@ def _site_url(path: str = "") -> str:
 
 def main_menu():
     b = InlineKeyboardBuilder()
-    b.row(InlineKeyboardButton(text="🔵 Найти груз (я водитель)", callback_data="search_cargo"))
+    b.row(InlineKeyboardButton(text="🔍 Найти груз под мою машину", callback_data="find_cargo_for_truck"))
+    b.row(InlineKeyboardButton(text="🔵 Найти груз (поиск)", callback_data="search_cargo"))
     b.row(InlineKeyboardButton(text="🚛 Найти машину (я заказчик)", callback_data="find_truck"))
     b.row(InlineKeyboardButton(text="📦 Разместить груз", callback_data="add_cargo"))
     b.row(
