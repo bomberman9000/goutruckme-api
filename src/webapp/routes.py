@@ -101,6 +101,16 @@ async def _ensure_webapp_user(session, tma_user: TelegramTMAUser) -> User:
 
 # --------------- HTML page ---------------
 
+@router.get("/billing", response_class=HTMLResponse)
+@router.get("/tariffs", response_class=HTMLResponse)
+async def billing_page():
+    """Deep-link: open the SPA at the billing section."""
+    if TWA_INDEX_FILE.exists():
+        return FileResponse(TWA_INDEX_FILE)
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/webapp")
+
+
 @router.get("/webapp", response_class=HTMLResponse)
 @router.get("/webapp/", response_class=HTMLResponse)
 async def webapp_page(request: Request):
