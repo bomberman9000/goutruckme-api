@@ -96,6 +96,16 @@ async def webapp_page(request: Request):
     })
 
 
+@router.get("/billing", response_class=HTMLResponse)
+@router.get("/tariffs", response_class=HTMLResponse)
+async def billing_page():
+    """Deep-link: open the SPA at the billing section."""
+    if TWA_INDEX_FILE.exists():
+        return FileResponse(TWA_INDEX_FILE)
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/webapp")
+
+
 # --------------- JSON API ---------------
 
 @router.get("/api/webapp/cargos")
