@@ -891,8 +891,15 @@ async def parse_cargo_message_llm(
         return None
 
     from src.core.config import settings
+    from src.parser_bot.truck_extractor import (
+        _call_gemini,
+        _call_groq,
+        _call_openai,
+    )
 
     gemini_key = getattr(settings, "gemini_api_key", None)
+    if not isinstance(gemini_key, str) or not gemini_key:
+        gemini_key = None
     has_openai = bool(getattr(settings, "openai_api_key", None))
     has_groq = bool(getattr(settings, "groq_api_key", None))
 
@@ -987,3 +994,269 @@ def build_content_dedupe_key(parsed: ParsedCargo) -> str:
     stable = "|".join(parts)
     digest = hashlib.sha1(stable.encode("utf-8")).hexdigest()
     return f"parser-content-dedupe:{digest}"
+
+
+# ---------------------------------------------------------------------------
+# looks_like_cargo — lightweight pre-filter for LLM calls
+# ---------------------------------------------------------------------------
+
+_CARGO_STRONG_RE = re.compile(
+    r"(?:"
+    r"\d+\s*(?:т(?:онн|онны|онна)?)\b"
+    r"|[→➞➡]"
+    r"|>{2,}"
+    r"|\b(?:тент|реф(?:рижератор)?|трал|борт|контейнер|фура|газель|изотерм|шаланда)\b"
+    r"|\b(?:ставка|фрахт|погрузка|выгрузка|загрузка)\b"
+    r")",
+    re.IGNORECASE | re.UNICODE,
+)
+
+_CARGO_WEAK_RE = re.compile(
+    r"\b(?:груз|машина|авто|тягач|перевоз|безнал|ндс|предоплат|нал)\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_cargo(text: str) -> bool:
+    """Return True if text has at least one strong logistics signal,
+    or two or more weak signals.  Used as a cheap pre-filter before LLM calls."""
+    if len(text.strip()) < 10:
+        return False
+    if _CARGO_STRONG_RE.search(text):
+        return True
+    weak = _CARGO_WEAK_RE.findall(text.lower())
+    return len(weak) >= 2
+
+
+# ---------------------------------------------------------------------------
+# _llm_result_to_parsed — convert LLM JSON dict → ParsedCargo
+# ---------------------------------------------------------------------------
+
+_LLM_PLACEHOLDER_CITIES: frozenset[str] = frozenset({
+    "нет данных", "не указан", "не указано", "неизвестно",
+    "не установлен", "не определён", "не определен",
+    "null", "none", "n/a", "n/d", "этрн",
+})
+
+
+def _llm_result_to_parsed(
+    data: dict, raw_text: str, *, keywords: Iterable[str]
+) -> "ParsedCargo | None":
+    """Convert a dict produced by LLM JSON output into a ParsedCargo instance."""
+    from_city = (data.get("from_city") or "").strip()
+    to_city = (data.get("to_city") or "").strip()
+
+    if not from_city or not to_city:
+        return None
+
+    if (
+        from_city.lower() in _LLM_PLACEHOLDER_CITIES
+        or to_city.lower() in _LLM_PLACEHOLDER_CITIES
+    ):
+        return None
+
+    if _is_invalid_city_name(from_city) or _is_invalid_city_name(to_city):
+        return None
+
+    body_type_raw = (data.get("body_type") or "").strip().lower()
+    body_type = BODY_TYPES.get(body_type_raw) if body_type_raw else None
+
+    weight_raw = data.get("weight")
+    weight_t: float | None = None
+    if weight_raw is not None:
+        try:
+            weight_t = float(str(weight_raw).replace(",", "."))
+        except (ValueError, TypeError):
+            weight_t = _parse_weight(raw_text)
+
+    rate_raw = data.get("rate")
+    rate_rub: int | None = None
+    if rate_raw is not None:
+        try:
+            rate_rub = int(rate_raw)
+        except (ValueError, TypeError):
+            rate_rub = _parse_price(raw_text)
+
+    phone_raw = (data.get("phone") or "").strip()
+    if phone_raw:
+        phone: str | None = _normalize_phone(phone_raw)
+    else:
+        phone_match = PHONE_RE.search(raw_text)
+        phone = _normalize_phone(phone_match.group(0)) if phone_match else None
+
+    inn = _extract_inn(raw_text, phone=phone)
+    text_lc = raw_text.lower()
+    matched_keywords = _extract_matched_keywords(text_lc, keywords) or ["auto"]
+
+    cargo_desc = (data.get("cargo_description") or "").strip() or None
+    payment_terms = (data.get("payment_terms") or "").strip() or None
+
+    dc_raw = data.get("is_direct_customer")
+    is_direct_customer: bool | None = None
+    if dc_raw is not None:
+        if isinstance(dc_raw, bool):
+            is_direct_customer = dc_raw
+        elif isinstance(dc_raw, str):
+            is_direct_customer = dc_raw.lower() in ("true", "1", "yes", "да")
+        else:
+            is_direct_customer = bool(dc_raw)
+
+    dimensions = (data.get("dimensions") or "").strip() or None
+
+    return ParsedCargo(
+        from_city=from_city,
+        to_city=to_city,
+        body_type=body_type,
+        rate_rub=rate_rub,
+        weight_t=weight_t,
+        phone=phone,
+        inn=inn,
+        matched_keywords=matched_keywords,
+        raw_text=raw_text,
+        load_date=data.get("load_date") or None,
+        load_time=data.get("load_time") or None,
+        cargo_description=cargo_desc,
+        payment_terms=payment_terms,
+        is_direct_customer=is_direct_customer,
+        dimensions=dimensions,
+    )
+
+
+# ---------------------------------------------------------------------------
+# evaluate_hot_deal — rate-per-km threshold check
+# ---------------------------------------------------------------------------
+
+_HOT_DEAL_RATE_THRESHOLD = 100  # rub/km
+
+
+def evaluate_hot_deal(parsed: "ParsedCargo") -> bool:
+    """Return True if the cargo rate is notably above the market rate-per-km."""
+    if not parsed.rate_rub:
+        return False
+    try:
+        from src.core.geo import city_coords, haversine_km
+
+        from_c = city_coords(parsed.from_city)
+        to_c = city_coords(parsed.to_city)
+        if not from_c or not to_c:
+            return False
+        dist = haversine_km(from_c[0], from_c[1], to_c[0], to_c[1])
+        if dist < 100:
+            return False
+        return (parsed.rate_rub / dist) >= _HOT_DEAL_RATE_THRESHOLD
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------------------
+# contains_invalid_geo_token — detect payment/noise strings in route text
+# ---------------------------------------------------------------------------
+
+_INVALID_GEO_TOKEN_RE = re.compile(
+    r"(?:"
+    r"опла(?:та|ты|тить|т)\b"
+    r"|опта(?:ла|ло|лы)\b"
+    r"|перечис(?:ление|л)?\b"
+    r"|без\s*нала?"
+    r"|безнал\b"
+    r"|\bнал\b"
+    r"|накд|нақд|naqd|nakd"
+    r"|тулов|тўлов|tolov"
+    r"|\bборди\b|\bkeldi\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def contains_invalid_geo_token(text: str) -> bool:
+    """Return True if text contains payment or noise tokens
+    that should never appear as a city/geo name."""
+    return bool(_INVALID_GEO_TOKEN_RE.search(text))
+
+
+# ---------------------------------------------------------------------------
+# split_cargo_message_blocks — multi-route message splitter
+# ---------------------------------------------------------------------------
+
+_FLAG_EMOJI_RE = re.compile(r"[\U0001F1E6-\U0001F1FF]{2}")
+
+
+def _extract_cities_from_stacked_line(line: str) -> list[str]:
+    """Extract normalised city names from a flag-emoji-prefixed stacked line."""
+    clean = _FLAG_EMOJI_RE.sub("", line)
+    clean = re.sub(r"[^\w\s\-'ʻ`.,]", " ", clean, flags=re.UNICODE)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    cities: list[str] = []
+    for token in clean.split():
+        token = token.strip(".,:-")
+        if not token or len(token) < 3:
+            continue
+        city = _normalize_city(token)
+        if city and not _is_invalid_city_name(city):
+            cities.append(city)
+    return cities
+
+
+def _expand_stacked_cities(lines: list[str], flag_indices: list[int]) -> list[str]:
+    """Expand a stacked city-list post into individual route blocks."""
+    groups: list[list[str]] = []
+    current_flag: str | None = None
+    current_cities: list[str] = []
+
+    for idx in flag_indices:
+        line = lines[idx]
+        flags = _FLAG_EMOJI_RE.findall(line)
+        flag = flags[0] if flags else ""
+        cities = _extract_cities_from_stacked_line(line)
+        if flag != current_flag:
+            if current_cities:
+                groups.append(current_cities)
+            current_flag = flag
+            current_cities = list(cities)
+        else:
+            current_cities.extend(cities)
+
+    if current_cities:
+        groups.append(current_cities)
+
+    if len(groups) < 2:
+        return ["\n".join(lines).strip()]
+
+    max_flag_idx = max(flag_indices)
+    tail_lines = [lines[i] for i in range(max_flag_idx + 1, len(lines)) if lines[i].strip()]
+    tail = "\n".join(tail_lines).strip()
+
+    from_city = groups[0][-1]  # last (most specific) city on the origin line
+    blocks: list[str] = []
+    for to_cities in groups[1:]:
+        for to_city in to_cities:
+            route_line = f"{from_city} - {to_city}"
+            block = route_line + ("\n" + tail if tail else "")
+            blocks.append(block)
+
+    return blocks if blocks else ["\n".join(lines).strip()]
+
+
+def split_cargo_message_blocks(text: str) -> list[str]:
+    """Split a multi-route message into individual cargo blocks.
+
+    Handles two formats:
+
+    1. Multiple paragraphs separated by blank lines, each with its own route.
+    2. Stacked city-list format (flag emoji + city names on separate lines).
+    """
+    clean = (text or "").strip()
+    if not clean:
+        return []
+
+    lines = clean.split("\n")
+    flag_indices = [i for i, ln in enumerate(lines) if _FLAG_EMOJI_RE.search(ln)]
+
+    if len(flag_indices) >= 2:
+        return _expand_stacked_cities(lines, flag_indices)
+
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", clean) if p.strip()]
+    if len(paragraphs) >= 2 and all(_parse_route(p)[0] is not None for p in paragraphs):
+        return paragraphs
+
+    return [clean]
