@@ -100,6 +100,7 @@ def _row(row_id: int, verdict: str = "green"):
     return SimpleNamespace(
         id=row_id,
         stream_entry_id=f"{row_id}-0",
+        source="parser",
         from_city="Москва",
         to_city="Казань",
         body_type="тент",

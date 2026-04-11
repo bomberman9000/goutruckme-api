@@ -64,12 +64,14 @@ def test_internal_sync_data_notifies_default_message(monkeypatch):
 
     captured = {}
 
-    async def _fake_send(payload):
-        captured["user_id"] = payload.user_id
-        captured["message"] = payload.message
-        return {"ok": True, "message_id": 999}
+    from types import SimpleNamespace
 
-    monkeypatch.setattr(internal_api, "_send_user_message", _fake_send)
+    async def _fake_bot_send(chat_id, text, **kwargs):
+        captured["user_id"] = chat_id
+        captured["message"] = text
+        return SimpleNamespace(message_id=999)
+
+    monkeypatch.setattr(internal_api.bot, "send_message", _fake_bot_send)
     client = _build_client()
 
     response = client.post(

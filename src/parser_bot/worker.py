@@ -494,6 +494,42 @@ def _rate_review_reason(parsed: ParsedCargo) -> str | None:
     return None
 
 
+_CA_CITIES = frozenset({
+    "ташкент", "самарканд", "бухара", "навои", "навоий", "фергана", "андижан",
+    "наманган", "карши", "нукус", "ургенч", "джизак", "термез", "денау",
+    "сурхандарья", "кашкадарья", "хорезм", "астана", "алматы", "шымкент",
+    "бишкек", "душанбе", "худжанд",
+})
+
+_RUB_OR_USD_RE = re.compile(
+    r"(?:₽|руб(?:лей|\.)?|\$|usd|дол(?:лар)?)",
+    re.IGNORECASE,
+)
+
+
+def _should_drop_ambiguous_million_rate(raw_text: str, parsed: ParsedCargo) -> bool:
+    """Return True when the rate is in the millions range, the text uses 'млн'
+    without an explicit RUB/USD currency marker, and the route involves a
+    Central Asian city — such rates are almost always in UZS/KZT, not RUB."""
+    rate = parsed.rate_rub
+    if not isinstance(rate, int) or rate < 1_000_000:
+        return False
+
+    text_lc = (raw_text or "").lower()
+    if "млн" not in text_lc and "мил" not in text_lc:
+        return False
+
+    if _RUB_OR_USD_RE.search(text_lc):
+        return False
+
+    to_key = (parsed.to_city or "").strip().lower()
+    from_key = (parsed.from_city or "").strip().lower()
+    if to_key in _CA_CITIES or from_key in _CA_CITIES:
+        return True
+
+    return False
+
+
 async def _maybe_recheck_with_llm(
     text: str,
     *,

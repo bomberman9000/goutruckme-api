@@ -263,9 +263,76 @@ async def transcribe_voice(file_bytes: bytes) -> str | None:
         return None
 
 
+_ROUTE_NLP_RE = re.compile(
+    r"(?P<from>[А-Яа-яЁёA-Za-z]{3,20})\s+(?P<to>[А-Яа-яЁёA-Za-z]{3,20})",
+)
+
+
+def _parse_cargo_nlp_regex(raw_text: str) -> dict | None:
+    """Regex-only fallback for parse_cargo_nlp when no LLM API key is set."""
+    text_lc = raw_text.lower()
+    result: dict = {}
+
+    # Volume
+    vol_match = _VOLUME_RE.search(raw_text)
+    if vol_match:
+        result["volume_m3"] = float(vol_match.group(1).replace(",", "."))
+
+    # Weight
+    weight_match = _WEIGHT_RE.search(raw_text)
+    if weight_match:
+        val = float(weight_match.group(1).replace(",", "."))
+        unit = weight_match.group(2).lower()
+        if unit in ("кг", "kg"):
+            val /= 1000
+        result["weight"] = val
+
+    # Price
+    price_match = _PRICE_SHORT_RE.search(raw_text)
+    if price_match:
+        result["price"] = int(float(price_match.group(1).replace(",", ".")) * 1000)
+    else:
+        price_full = _PRICE_FULL_RE.search(raw_text)
+        if price_full:
+            result["price"] = int(price_full.group(1))
+
+    # Cargo type & body type from hints
+    for cargo_name, hints, body in _CARGO_TYPE_HINTS:
+        if any(h in text_lc for h in hints):
+            result["cargo_type"] = cargo_name
+            result["body_type"] = body
+            break
+
+    if "body_type" not in result:
+        for body_name, hints in _BODY_TYPE_HINTS.items():
+            if any(h in text_lc for h in hints):
+                result["body_type"] = body_name
+                break
+
+    # Cities from aliases
+    words = re.split(r"[\s\-–—/|,]+", raw_text)
+    cities: list[str] = []
+    for w in words:
+        key = w.lower().strip(".,;:!?()")
+        if key in CITY_ALIASES:
+            cities.append(CITY_ALIASES[key])
+    if len(cities) >= 2:
+        result["from_city"] = cities[0]
+        result["to_city"] = cities[1]
+    elif len(cities) == 1:
+        result["from_city"] = cities[0]
+
+    if not result:
+        return None
+
+    result.setdefault("cargo_type", "тент")
+    return result
+
+
 async def parse_cargo_nlp(text: str) -> dict | None:
     """
     Parse a free-form cargo message using Gemini 1.5 Flash.
+    Falls back to regex extraction when no API key is available.
     """
     raw_text = (text or "").strip()
     if not raw_text or len(raw_text) < 5:
@@ -274,7 +341,7 @@ async def parse_cargo_nlp(text: str) -> dict | None:
     import httpx
     api_key = settings.gemini_api_key
     if not api_key:
-        return None # Фолбек на старую логику если ключа нет
+        return _parse_cargo_nlp_regex(raw_text)
 
     from datetime import date as _date
     today_iso = _date.today().isoformat()

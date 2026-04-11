@@ -50,6 +50,14 @@ class _FakeSession:
     def add(self, obj):
         self._pending.append(obj)
 
+    async def flush(self):
+        for obj in self._pending:
+            if isinstance(obj, RouteSubscription) and getattr(obj, "id", None) is None:
+                self._id += 1
+                obj.id = self._id
+                self.subscriptions.append(obj)
+        self._pending.clear()
+
     async def commit(self):
         for obj in list(self._pending):
             if isinstance(obj, RouteSubscription) and getattr(obj, "id", None) is None:
